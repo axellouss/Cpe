@@ -72,3 +72,26 @@ describe('jetons de couleur de l’application', () => {
     expect(blockAfter(css, '@media (prefers-color-scheme: dark)')).not.toMatch(/(^|\})\s*:root\s*\{/);
   });
 });
+
+describe('couleurs de l’éditeur de plan', () => {
+  const css = read('src/ui/plan/plan-editor.css');
+  const light = declarations(blockAfter(css, '.p2c-plan {'));
+  const systemDark = declarations(blockAfter(blockAfter(css, '@media (prefers-color-scheme: dark)'), ":root:not([data-theme='light']) .p2c-plan"));
+  const forcedDark = declarations(blockAfter(css, ":root[data-theme='dark'] .p2c-plan"));
+
+  it('donne les mêmes valeurs sombres sous le réglage du système et sous le thème imposé', () => {
+    expect(forcedDark).toEqual(systemDark);
+    expect(Object.keys(forcedDark).length).toBeGreaterThan(15);
+  });
+
+  it('ne redéfinit en sombre que des couleurs privées déjà définies en clair', () => {
+    for (const name of Object.keys(systemDark)) {
+      expect(name.startsWith('--_'), name).toBe(true);
+      expect(light, name).toHaveProperty(name);
+    }
+  });
+
+  it('n’applique pas le sombre du système quand la page impose le clair', () => {
+    expect(blockAfter(css, '@media (prefers-color-scheme: dark)')).not.toMatch(/(^|\})\s*\.p2c-plan\s*\{/);
+  });
+});

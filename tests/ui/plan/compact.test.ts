@@ -205,8 +205,9 @@ describe('légende des façades (ux-17)', () => {
     const tokens = (name: string): string[] => [...css.matchAll(new RegExp(`--_${name}: var\\(--p2c-${name}, (#[0-9a-f]{6})\\)`, 'g'))].map((m) => m[1]!);
     const muted = tokens('muted');
     const surface = tokens('surface');
-    expect(muted).toHaveLength(2);
-    expect(surface).toHaveLength(2);
-    for (let i = 0; i < 2; i++) expect(contrast(muted[i]!, surface[i]!), `${muted[i]} sur ${surface[i]}`).toBeGreaterThanOrEqual(4.5);
+    // Clair, sombre du système, sombre imposé par la page (data-theme) : ces deux derniers portent les mêmes valeurs.
+    expect(muted).toHaveLength(3);
+    expect(surface).toHaveLength(3);
+    for (let i = 0; i < 3; i++) expect(contrast(muted[i]!, surface[i]!), `${muted[i]} sur ${surface[i]}`).toBeGreaterThanOrEqual(4.5);
   });
 });

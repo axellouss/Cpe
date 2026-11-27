@@ -411,10 +411,14 @@ export function PlanEditor(props: PlanEditorProps) {
     mq.addEventListener('change', update);
     scheme.addEventListener('change', bump);
     pointer.addEventListener('change', touch);
+    // Thème imposé par la page (data-theme sur la racine) : le fond dessiné relit ses couleurs quand il change.
+    const themed = typeof MutationObserver === 'function' ? new MutationObserver(bump) : null;
+    themed?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     return () => {
       mq.removeEventListener('change', update);
       scheme.removeEventListener('change', bump);
       pointer.removeEventListener('change', touch);
+      themed?.disconnect();
     };
   }, [dpr]);
 

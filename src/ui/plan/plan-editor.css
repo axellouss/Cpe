@@ -51,8 +51,12 @@
   outline: none;
 }
 
+/*
+ * Sombre : suit le système, sauf si la page impose un thème par data-theme sur la racine (« light » ou « dark »).
+ * Les deux blocs portent les MÊMES valeurs : tests/ui/styles/theme.test.ts le vérifie.
+ */
 @media (prefers-color-scheme: dark) {
-  .p2c-plan {
+  :root:not([data-theme='light']) .p2c-plan {
     --_accent: var(--p2c-accent, #54c5b7);
     --_accent-ink: var(--p2c-accent-contrast, #04211d);
     --_canvas: var(--p2c-canvas, #14181b);
@@ -80,6 +84,35 @@
     --_north: var(--p2c-north, #ff7b6b);
     --_shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
   }
+}
+
+:root[data-theme='dark'] .p2c-plan {
+  --_accent: var(--p2c-accent, #54c5b7);
+  --_accent-ink: var(--p2c-accent-contrast, #04211d);
+  --_canvas: var(--p2c-canvas, #14181b);
+  --_paper: var(--p2c-paper, #1c2226);
+  --_surface: var(--p2c-surface, #242b30);
+  --_ink: var(--p2c-ink, #e8ecee);
+  --_muted: var(--p2c-muted, #a6b1b8);
+  --_border: var(--p2c-border, #3b454c);
+  --_plan-ink: var(--p2c-plan-ink, #c5cdd2);
+  --_grid: var(--p2c-grid, #232a2f);
+  --_grid-strong: var(--p2c-grid-strong, #313a40);
+  --_warn: var(--p2c-warn, #f0b25a);
+  --_warn-bg: var(--p2c-warn-bg, #3a2c12);
+  --_danger: var(--p2c-danger, #ff8a80);
+  --_snap: var(--p2c-snap, #ff7ac3);
+  --_heated: var(--p2c-heated, #b9683a);
+  --_heated-line: var(--p2c-heated-line, #f2b48a);
+  --_unheated: var(--p2c-unheated, #3a5c80);
+  --_unheated-line: var(--p2c-unheated-line, #a9c9ea);
+  --_b-heated: var(--p2c-boundary-heated, #9aa2a9);
+  --_b-unheated: var(--p2c-boundary-unheated, #7fb2e5);
+  --_b-ground: var(--p2c-boundary-ground, #d29a5e);
+  --_window: var(--p2c-window, #6bb5f2);
+  --_door: var(--p2c-door, #d4a373);
+  --_north: var(--p2c-north, #ff7b6b);
+  --_shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
 .p2c-plan:focus-visible {
