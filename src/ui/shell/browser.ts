@@ -58,6 +58,68 @@ export function downloadText(fileName: string, mime: string, content: string): b
   }
 }
 
+/** Issue d'un enregistrement : fait, refusé par la personne, contenu copié faute de mieux, ou impossible. */
+export type SaveOutcome = 'saved' | 'declined' | 'copied' | 'failed';
+
+/** Ce que la page hôte offre pour enregistrer un fichier quand le cadre interdit les téléchargements directs. */
+interface HostDownloads {
+  save(request: { filename: string; data: string }): Promise<unknown>;
+}
+interface HostBridge {
+  use(name: string): Promise<unknown>;
+}
+
+function hostBridge(): HostBridge | null {
+  const bridge = (globalThis as { claude?: { use?: unknown } }).claude;
+  return bridge && typeof bridge.use === 'function' ? (bridge as HostBridge) : null;
+}
+
+/**
+ * Vrai quand l'application est affichée dans un cadre hôte (page d'essai publiée) : les liens de téléchargement
+ * et les nouvelles fenêtres y restent sans effet, et l'enregistrement passe par l'hôte, qui demande confirmation.
+ */
+export function isHosted(): boolean {
+  return hostBridge() !== null;
+}
+
+let hostDownloadsOnce: { bridge: HostBridge; value: Promise<HostDownloads | null> } | null = null;
+
+function hostDownloads(): Promise<HostDownloads | null> {
+  const bridge = hostBridge();
+  if (!bridge) return Promise.resolve(null);
+  if (hostDownloadsOnce?.bridge !== bridge) {
+    const value = Promise.resolve()
+      .then(() => bridge.use('downloads'))
+      .then((found) => (found && typeof (found as HostDownloads).save === 'function' ? (found as HostDownloads) : null))
+      .catch(() => null);
+    hostDownloadsOnce = { bridge, value };
+  }
+  return hostDownloadsOnce.value;
+}
+
+/**
+ * Enregistre un fichier fabriqué dans la page, où que celle-ci soit affichée.
+ * Dans un navigateur ordinaire : téléchargement direct. Dans un cadre hôte : enregistrement par l'hôte ; s'il
+ * n'en propose pas, un lien de téléchargement ne ferait rien — le texte est alors copié si `copyFallback` le permet.
+ */
+export async function saveText(fileName: string, mime: string, content: string, copyFallback = false): Promise<SaveOutcome> {
+  if (!isHosted()) return downloadText(fileName, mime, content) ? 'saved' : 'failed';
+  const host = await hostDownloads();
+  if (host) {
+    try {
+      await host.save({ filename: fileName, data: content });
+      return 'saved';
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code === 'declined') return 'declined';
+    }
+  }
+  if (copyFallback && (await copyText(content))) return 'copied';
+  return 'failed';
+}
+
+// La réponse de l'hôte peut tarder : on la demande dès le chargement pour qu'elle soit prête au premier clic.
+if (isHosted()) void hostDownloads();
+
 /**
  * Ouvre une page HTML autonome dans une nouvelle fenêtre et lance l'impression (« enregistrer en PDF »).
  * Renvoie faux si le navigateur a bloqué la fenêtre : l'appelant propose alors le téléchargement du fichier.

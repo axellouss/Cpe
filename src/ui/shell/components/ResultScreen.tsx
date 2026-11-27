@@ -13,9 +13,9 @@ import { useMemo } from 'react';
 import type { Finding, LuxeebSheets, Project, Severity } from '../../../core/types';
 import { findingText } from '../../../engine';
 import { buildReportHtml, exportFileName, EXPORT_MIME, guideDisclaimer, PASTE_EOL, projectFileErrorMessage, sheetsToCsv } from '../../../export';
-import type { GuideItem, GuideRow, GuideSection, GuideTable } from '../../../export';
+import type { ExportFileKind, GuideItem, GuideRow, GuideSection, GuideTable } from '../../../export';
 import { serializeWorkspace } from '../autosave';
-import { downloadText, openPrintable } from '../browser';
+import { isHosted, openPrintable, saveText } from '../browser';
 import { derive, guide } from '../compute';
 import { jumpLabelKey, jumpTargetFor } from '../jump';
 import { selectMarks, selectProject, useShell, useShellStore } from '../store';
@@ -447,25 +447,31 @@ function Downloads({ sheets, project }: { sheets: LuxeebSheets; project: Project
   const documents = useShell((s) => s.documents);
   const toast = store.getState().showToast;
 
-  const guard = (action: () => boolean, okKey: string): void => {
+  /**
+   * Enregistre un fichier et dit ce qui s'est réellement passé. Dans une page hôte (essai publié), l'hôte demande
+   * confirmation : un refus ne dit rien ; s'il ne sait pas enregistrer, le texte est copié plutôt que de prétendre
+   * à un téléchargement qui n'a pas eu lieu.
+   */
+  const save = async (kind: ExportFileKind, build: () => string, copyFallback: boolean, savedKey: string, savedTone: 'ok' | 'info'): Promise<void> => {
     try {
-      const ok = action();
-      toast(tr(ok ? okKey : 'shell.result.download.failed'), ok ? 'ok' : 'warn');
+      const outcome = await saveText(exportFileName(project, kind), EXPORT_MIME[kind], build(), copyFallback);
+      if (outcome === 'saved') toast(tr(savedKey), savedTone);
+      else if (outcome === 'copied') toast(tr('shell.result.download.copied'), 'info');
+      else if (outcome === 'failed') toast(tr('shell.result.download.failed'), 'warn');
     } catch (error) {
       toast(projectFileErrorMessage(error, lang), 'warn');
     }
   };
 
-  const csv = (): void => guard(() => downloadText(exportFileName(project, 'csv'), EXPORT_MIME.csv, sheetsToCsv(sheets, project, lang)), 'shell.result.download.done');
-  const json = (): void =>
-    guard(() => downloadText(exportFileName(project, 'project'), EXPORT_MIME.project, serializeWorkspace({ project, marks })), 'shell.result.download.done');
+  const csv = (): void => void save('csv', () => sheetsToCsv(sheets, project, lang), true, 'shell.result.download.done', 'ok');
+  const json = (): void => void save('project', () => serializeWorkspace({ project, marks }), true, 'shell.result.download.done', 'ok');
   const report = (): void => {
     try {
       const html = buildReportHtml(sheets, project, lang, { date: new Date(), sources: documents.map((d) => d.doc.fileName) });
-      if (openPrintable(html)) return;
+      // Dans une page hôte, aucune fenêtre ne s'ouvre : le dossier est enregistré, à ouvrir puis imprimer.
+      if (!isHosted() && openPrintable(html)) return;
       // Fenêtre bloquée par le navigateur : le dossier est proposé en téléchargement, à ouvrir puis imprimer.
-      const ok = downloadText(exportFileName(project, 'report'), EXPORT_MIME.report, html);
-      toast(tr(ok ? 'shell.result.report.blocked' : 'shell.result.download.failed'), ok ? 'info' : 'warn');
+      void save('report', () => html, false, 'shell.result.report.blocked', 'info');
     } catch (error) {
       toast(projectFileErrorMessage(error, lang), 'warn');
     }
