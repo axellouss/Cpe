@@ -1,0 +1,477 @@
+/**
+ * Plan2CPE — modèle de données partagé (contrat entre lecteurs de plans, éditeur, moteur et export).
+ *
+ * Conventions valables PARTOUT dans le code :
+ *  - Repère plan : x vers la droite, y vers le BAS (comme l'écran). Les lecteurs CAO/IFC inversent y à l'import.
+ *  - « Unité de feuille » (uf) : unité brute du plan (mm, cm, pt PDF, pixel…). `metresPerUnit` convertit en mètres.
+ *  - Angles en degrés. Azimut : 0 = Nord, 90 = Est, sens horaire.
+ *  - `northAngle` = azimut vers lequel pointe le HAUT de la feuille (0 si le nord est en haut).
+ *  - Dimensions thermiques selon le règlement luxembourgeois (RGD 2021, annexe I, ch. 5.1) :
+ *      · enveloppe A et volume Ve  → dimensions EXTÉRIEURES (brutes)
+ *      · surface de référence An   → surface NETTE des locaux conditionnés (hauteur libre > 1,0 m)
+ *      · fenêtres                  → dimensions brutes du gros œuvre (« Rohbaumaß »)
+ *  - L'outil est un ASSISTANT : chaque valeur porte sa provenance et l'expert reste responsable du CPE.
+ */
+
+// ───────────────────────────── Bases ─────────────────────────────
+
+export interface Vec2 {
+  x: number;
+  y: number;
+}
+
+export interface BBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/** Les 8 secteurs de LuxEeB-Tool + horizontal. */
+export type Orientation = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
+export type OrientationOrHorizontal = Orientation | 'H';
+
+export const ORIENTATIONS: readonly Orientation[] = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
+export type Lang = 'fr' | 'de';
+
+/**
+ * D'où vient une valeur.
+ *  - plan     : lue/mesurée sur le plan (géométrie, cote, étiquette)
+ *  - calc     : calculée à partir d'autres valeurs
+ *  - default  : valeur par défaut de l'outil — À CONFIRMER par l'expert
+ *  - estimate : estimation grossière — À REMPLACER
+ *  - user     : saisie ou confirmée par l'expert
+ */
+export type Provenance = 'plan' | 'calc' | 'default' | 'estimate' | 'user';
+
+export interface Sourced<T> {
+  value: T;
+  from: Provenance;
+  /** Courte explication affichable (« Échelle 1:100 lue dans le cartouche »). */
+  note?: string;
+}
+
+// ───────────────────────────── Plans lus ─────────────────────────────
+
+export type SourceKind = 'ifc' | 'dwg' | 'dxf' | 'pdf' | 'image' | 'manual';
+
+export interface PlanText {
+  text: string;
+  /** Point d'ancrage (uf). */
+  x: number;
+  y: number;
+  /** Hauteur du texte (uf), si connue. */
+  height?: number;
+}
+
+export interface DetectedRoom {
+  name: string;
+  /** Surface écrite sur le plan (m²), si une étiquette en donne une. */
+  statedArea?: number;
+  /** Surface mesurée du polygone (m²), si un contour fermé a été trouvé et l'échelle connue. */
+  measuredArea?: number;
+  /** Contour intérieur de la pièce (uf). */
+  polygon?: Vec2[];
+  /** Position de l'étiquette (uf). */
+  at?: Vec2;
+  /** Proposition : pièce comptée dans An ? 'ask' = ambigu (cave, buanderie, grenier…). */
+  heatedGuess: 'yes' | 'no' | 'ask';
+}
+
+export interface DetectedOpening {
+  kind: 'window' | 'door' | 'unknown';
+  /** Extrémités de l'ouverture sur le mur (uf). */
+  a: Vec2;
+  b: Vec2;
+  /** Largeur (m) si l'échelle est connue. */
+  width?: number;
+  /** Hauteur (m) si connue (IFC, attribut de bloc, nom de bloc « 1,40x1,35 »). */
+  height?: number;
+  /** Vrai si l'ouverture donne sur l'extérieur du contour détecté. */
+  exterior?: boolean;
+}
+
+export interface SheetDetection {
+  /** Contour extérieur brut proposé pour la zone chauffée (uf, polygone simple). */
+  outline?: Vec2[];
+  rooms: DetectedRoom[];
+  openings: DetectedOpening[];
+  /** Hauteur d'étage brute (m) si lisible (IFC, coupe). */
+  storeyHeight?: number;
+  /** Hauteur libre (m) si lisible. */
+  clearHeight?: number;
+  /** Altitude du niveau (m) si lisible. */
+  elevation?: number;
+  /** Remarques du lecteur (non traduites : texte libre court, en français). */
+  notes: string[];
+}
+
+/** Une feuille = une vue en plan exploitable (page PDF, espace objet DWG, étage IFC, image). */
+export interface PlanSheet {
+  id: string;
+  name: string;
+  /** Étendue du contenu (uf). */
+  bbox: BBox;
+  /** Fond matriciel (page PDF rendue, scan). Couvre le rectangle indiqué (uf). */
+  image?: { url: string; x: number; y: number; width: number; height: number };
+  /**
+   * Traits vectoriels pour l'affichage et l'accrochage : [x1, y1, x2, y2, …] (uf).
+   * Les arcs et courbes sont discrétisés par le lecteur.
+   */
+  segments?: Float32Array;
+  texts?: PlanText[];
+  /** Échelle : mètres par unité de feuille. null = inconnue → l'utilisateur doit « poser la règle ». */
+  metresPerUnit: Sourced<number> | null;
+  detected: SheetDetection;
+}
+
+export interface PlanDocument {
+  fileName: string;
+  kind: SourceKind;
+  sheets: PlanSheet[];
+  /** Azimut du haut de la feuille, si le fichier le donne de façon crédible (IFC TrueNorth non par défaut, flèche nord). */
+  northAngle?: Sourced<number>;
+  /** Vrai si toutes les feuilles partagent le même repère (IFC) : les étages sont superposables tels quels. */
+  storeysAligned: boolean;
+  /** Messages du lecteur destinés à l'utilisateur (français, courts). */
+  warnings: string[];
+}
+
+// ───────────────────────────── Bâtiment confirmé par l'expert ─────────────────────────────
+
+/** Ce qu'il y a de l'autre côté d'une paroi. */
+export type Boundary =
+  | 'outside' // air extérieur
+  | 'ground' // terre
+  | 'unheated' // local non chauffé (garage, cave, grenier, cage d'escalier froide)
+  | 'heated'; // bâtiment/local voisin chauffé (mitoyen) → pas de déperdition, hors tableau d'enveloppe
+
+export type ConstructionCategory =
+  | 'wall' // mur (extérieur, contre terre, contre non chauffé)
+  | 'roof' // toiture (plate ou inclinée) contre extérieur
+  | 'ceiling' // plancher haut vers grenier non chauffé
+  | 'floor' // plancher bas (terre-plein, sur cave non chauffée, sur extérieur)
+  | 'door'; // porte opaque
+
+/** Type d'élément opaque (LuxEeB-Tool : « opake Bauteile », 20 emplacements au maximum). */
+export interface Construction {
+  id: string;
+  name: string;
+  category: ConstructionCategory;
+  /** Valeur U (W/m²K) si l'expert la connaît déjà ; sinon null → à définir dans LuxEeB-Tool. */
+  u: Sourced<number> | null;
+}
+
+/** Type de fenêtre (LuxEeB-Tool : « transparente Bauteile »). */
+export interface WindowType {
+  id: string;
+  name: string;
+  uw: Sourced<number> | null;
+  g: Sourced<number> | null;
+}
+
+export interface StoreyEdge {
+  boundary: Boundary;
+  /** Type de mur ; null = type par défaut de la catégorie. */
+  constructionId: string | null;
+}
+
+export interface Opening {
+  id: string;
+  /** Indice de l'arête du contour qui porte l'ouverture (arête i : outline[i] → outline[i+1]). */
+  edgeIndex: number;
+  kind: 'window' | 'door';
+  /** Dimensions brutes du gros œuvre (m). */
+  width: number;
+  height: number;
+  count: number;
+  /** Position du centre le long de l'arête, 0..1 (affichage uniquement). */
+  position: number;
+  /** Type de fenêtre (kind = 'window') ; null = type par défaut. */
+  windowTypeId: string | null;
+  from: Provenance;
+}
+
+export interface Room {
+  id: string;
+  name: string;
+  /** Surface nette (m²). */
+  area: Sourced<number>;
+  /** Comptée dans An ? */
+  heated: boolean;
+  /** Vrai tant que l'expert n'a pas tranché une pièce ambiguë. */
+  needsReview: boolean;
+  polygon?: Vec2[];
+  at?: Vec2;
+}
+
+export interface Storey {
+  id: string;
+  name: string;
+  /** Feuille sur laquelle le contour a été tracé (null = saisie sans plan). */
+  sheetId: string | null;
+  /** Contour extérieur BRUT de la zone chauffée, en unités de feuille. Polygone simple, sens quelconque. */
+  outline: Vec2[];
+  /** Même longueur que `outline`. */
+  edges: StoreyEdge[];
+  /** Échelle appliquée au contour (m par uf). */
+  metresPerUnit: Sourced<number>;
+  /** Hauteur d'étage brute, de dessus de dalle à dessus de dalle (m) — pour A et Ve. */
+  grossHeight: Sourced<number>;
+  /** Hauteur libre sous plafond (m) — pour Vn. */
+  clearHeight: Sourced<number>;
+  openings: Opening[];
+  rooms: Room[];
+  /** Surface nette chauffée de l'étage saisie directement (m²). Prioritaire sur la somme des pièces. */
+  netAreaOverride: Sourced<number> | null;
+}
+
+/** Fermeture haute du dernier étage chauffé. */
+export type TopKind =
+  | 'flat-roof' // toiture plate
+  | 'pitched-roof' // toiture inclinée, combles CHAUFFÉS : le dernier étage est sous les rampants
+  | 'attic-ceiling'; // plancher haut vers grenier NON chauffé
+
+export type RoofShape = 'gable' | 'hip' | 'mono';
+
+export interface TopClosure {
+  kind: TopKind;
+  /** Pente en degrés (toiture inclinée). */
+  pitchDeg: number;
+  shape: RoofShape;
+  /**
+   * Direction du faîtage dans le repère de la feuille, en degrés depuis l'axe +x (0 = horizontal sur la feuille).
+   * null = le long du plus grand côté du contour.
+   */
+  ridgeAngle: number | null;
+  /** Hauteur du mur de jambette / Kniestock (m), pour 'pitched-roof'. */
+  kneeWallHeight: number;
+  constructionId: string | null;
+  from: Provenance;
+}
+
+/** Fermeture basse du premier étage chauffé. */
+export type BottomKind =
+  | 'slab-on-ground' // dalle sur terre-plein
+  | 'above-unheated' // plancher sur cave / local non chauffé
+  | 'above-outside'; // plancher sur extérieur (pilotis, passage)
+
+export interface BottomClosure {
+  kind: BottomKind;
+  constructionId: string | null;
+  from: Provenance;
+}
+
+/** Ligne d'enveloppe ajoutée à la main par l'expert (cas que la géométrie simple ne couvre pas). */
+export interface ManualRow {
+  id: string;
+  label: string;
+  constructionId: string | null;
+  windowTypeId: string | null;
+  count: number;
+  length: number;
+  width: number;
+  orientation: OrientationOrHorizontal;
+  boundary: Boundary;
+  /** Fenêtre/porte à déduire de la ligne suivante. */
+  deduct: boolean;
+}
+
+export interface BuildingModel {
+  /** Étages CHAUFFÉS, du plus bas au plus haut. */
+  storeys: Storey[];
+  northAngle: Sourced<number>;
+  /** Vrai si les contours des étages sont dans un repère commun (IFC). */
+  storeysAligned: boolean;
+  top: TopClosure;
+  bottom: BottomClosure;
+  constructions: Construction[];
+  windowTypes: WindowType[];
+  manualRows: ManualRow[];
+}
+
+// ───────────────────────────── Réponses aux questions ─────────────────────────────
+
+export type BuildingType = 'EFH' | 'MFH'; // maison unifamiliale / immeuble collectif (termes LuxEeB-Tool)
+export type Occasion = 'new' | 'existing';
+
+export type HeatGenerator =
+  | 'gas-condensing'
+  | 'gas-low-temp'
+  | 'oil-condensing'
+  | 'oil-low-temp'
+  | 'old-boiler'
+  | 'heat-pump-air'
+  | 'heat-pump-ground'
+  | 'pellets'
+  | 'wood-logs'
+  | 'district-heating'
+  | 'electric-direct'
+  | 'other';
+
+export type HeatEmission = 'radiators' | 'floor-heating' | 'mixed' | 'air';
+export type HotWater = 'with-heating' | 'separate-electric' | 'separate-heat-pump' | 'separate-other';
+export type Ventilation = 'windows' | 'exhaust' | 'balanced-hr';
+export type WindowGeneration = 'single' | 'double-old' | 'double-lowe' | 'triple';
+
+export interface ProjectAnswers {
+  projectName: string;
+  street: string;
+  postcode: string;
+  locality: string;
+  buildingType: BuildingType | null;
+  dwellings: number | null;
+  occasion: Occasion | null;
+  yearBuilt: number | null;
+  /** Isolation ajoutée après coup (cm) ; null = non renseigné, 0 = aucune. */
+  insulationWallsCm: number | null;
+  insulationRoofCm: number | null;
+  insulationFloorCm: number | null;
+  windowGeneration: WindowGeneration | null;
+  heatGenerator: HeatGenerator | null;
+  heatGeneratorYear: number | null;
+  heatEmission: HeatEmission | null;
+  hotWater: HotWater | null;
+  ventilation: Ventilation | null;
+  /** Résultat d'un test d'étanchéité (n50, 1/h) ; null = pas de test. */
+  n50: number | null;
+  solarThermal: boolean | null;
+  photovoltaic: boolean | null;
+}
+
+export interface Project {
+  version: 1;
+  model: BuildingModel;
+  answers: ProjectAnswers;
+}
+
+// ───────────────────────────── Résultat : fiches LuxEeB-Tool ─────────────────────────────
+
+/**
+ * Une ligne du tableau « Flächeneingabe der Gebäudehülle » de LuxEeB-Tool.
+ * Colonnes de saisie de LuxEeB-Tool, dans l'ordre : Bauteil | Anzahl | Länge | Breite | Orientierung | … | Abzug.
+ * Règle LuxEeB : les lignes marquées « Abzug » (X) sont déduites de la PROCHAINE ligne non marquée.
+ */
+export interface EnvelopeRow {
+  id: string;
+  kind: 'wall' | 'window' | 'door' | 'roof' | 'ceiling' | 'floor';
+  /** Libellé lisible (dans la langue demandée). */
+  label: string;
+  /** Nom du type d'élément à choisir dans la liste « Bauteil ». */
+  elementName: string;
+  constructionId: string | null;
+  windowTypeId: string | null;
+  count: number;
+  /** m, arrondi au cm. */
+  length: number;
+  /** m, arrondi au cm (hauteur pour un mur). */
+  width: number;
+  orientation: OrientationOrHorizontal;
+  boundary: Boundary;
+  deduct: boolean;
+  /** count × length × width (m²). */
+  grossArea: number;
+  /** Surface après déduction des lignes « Abzug » qui précèdent (m²) ; = grossArea pour les lignes déduites. */
+  netArea: number;
+  /** Provenance la plus faible parmi les données utilisées. */
+  from: Provenance;
+  storeyId: string | null;
+  manual: boolean;
+}
+
+/** Ligne du tableau « Energiebezugsflächen / Zonen » (An et Vn). */
+export interface ZoneRow {
+  id: string;
+  label: string;
+  /** Surface nette (m²). */
+  area: number;
+  clearHeight: number;
+  /** area × clearHeight (m³). */
+  airVolume: number;
+  from: Provenance;
+  storeyId: string | null;
+}
+
+/** Ligne du tableau « Gebäudevolumen Ve ». */
+export interface VolumeRow {
+  id: string;
+  label: string;
+  /** Surface brute (m²) ; LuxEeB accepte Anzahl × Breite × Länge × Höhe : on fournit surface et hauteur. */
+  area: number;
+  height: number;
+  volume: number;
+  from: Provenance;
+  storeyId: string | null;
+}
+
+/** Récapitulatif par type d'élément à créer dans LuxEeB-Tool. */
+export interface ConstructionSummary {
+  constructionId: string;
+  name: string;
+  category: ConstructionCategory;
+  boundary: Boundary;
+  /** Surface nette totale (m²). */
+  area: number;
+  u: Sourced<number> | null;
+  /** Paramètres des éléments contre terre demandés par LuxEeB-Tool. */
+  ground?: {
+    /** Surface de la dalle A (m²). */
+    slabArea?: number;
+    /** Périmètre caractéristique P (m) : uniquement les côtés contre terre/extérieur/non chauffé. */
+    perimeter?: number;
+  };
+}
+
+export interface WindowSummary {
+  windowTypeId: string;
+  name: string;
+  /** Surface totale (m²). */
+  area: number;
+  count: number;
+  /** Dimensions de la fenêtre la plus fréquente (m), utiles pour le calcul Uw dans LuxEeB-Tool. */
+  typicalWidth: number;
+  typicalHeight: number;
+  uw: Sourced<number> | null;
+  g: Sourced<number> | null;
+}
+
+export type Severity = 'info' | 'warn' | 'block';
+
+/** Contrôle de plausibilité. `code` est une clé de traduction ; `params` ses variables. */
+export interface Finding {
+  code: string;
+  severity: Severity;
+  params: Record<string, string | number>;
+}
+
+export interface Totals {
+  /** Surface de référence énergétique An (m²). */
+  an: number;
+  /** Volume d'air chauffé Vn (m³). */
+  vn: number;
+  /** Volume brut chauffé Ve (m³). */
+  ve: number;
+  /** Surface de l'enveloppe thermique A (m²) — hors parois mitoyennes chauffées. */
+  envelopeArea: number;
+  /** A/Ve (1/m). */
+  aOverVe: number;
+  /** Somme des surfaces brutes de plancher des étages chauffés (m²). */
+  grossFloorArea: number;
+  /** Surface totale des fenêtres (m²). */
+  windowArea: number;
+  /** Surface de façade contre extérieur, fenêtres comprises (m²). */
+  facadeArea: number;
+  anFrom: Provenance;
+  veFrom: Provenance;
+}
+
+export interface LuxeebSheets {
+  envelope: EnvelopeRow[];
+  zones: ZoneRow[];
+  volumes: VolumeRow[];
+  constructions: ConstructionSummary[];
+  windows: WindowSummary[];
+  totals: Totals;
+  findings: Finding[];
+}
