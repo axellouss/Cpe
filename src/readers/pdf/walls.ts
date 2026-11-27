@@ -20,7 +20,8 @@ function roundWidth(w: number): number {
   return Math.round(w * 100) / 100;
 }
 
-function isFrameSegment(s: RawSeg, pageW: number, pageH: number): boolean {
+/** Vrai pour un long trait proche du bord de la page : cadre de la feuille. */
+export function isFrameSegment(s: RawSeg, pageW: number, pageH: number): boolean {
   const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0);
   if (len <= 0.6 * Math.min(pageW, pageH)) return false;
   return (

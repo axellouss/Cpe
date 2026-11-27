@@ -9,6 +9,7 @@
  */
 import Coordinate from 'jsts/org/locationtech/jts/geom/Coordinate.js';
 import GeometryFactory from 'jsts/org/locationtech/jts/geom/GeometryFactory.js';
+import PrecisionModel from 'jsts/org/locationtech/jts/geom/PrecisionModel.js';
 import BufferOp from 'jsts/org/locationtech/jts/operation/buffer/BufferOp.js';
 import BufferParameters from 'jsts/org/locationtech/jts/operation/buffer/BufferParameters.js';
 import Polygonizer from 'jsts/org/locationtech/jts/operation/polygonize/Polygonizer.js';
@@ -51,6 +52,12 @@ interface JCollection {
 }
 
 const factory = new GeometryFactory();
+/**
+ * Fabrique à précision fixe (millième de point) pour les tampons de la fermeture : en flottants, jsts rogne parfois
+ * un angle du contour et invente un triangle à côté (rectangle de 567 × 454 pt, rayon 73,69 pt : mesuré). Avec
+ * une précision fixe, BufferOp arrondit les nœuds sur une grille et le résultat est juste.
+ */
+const fixedFactory = new GeometryFactory(new PrecisionModel(1000));
 
 function ringCoords(ring: readonly Vec2[]): Coordinate[] {
   const out: Coordinate[] = [];
@@ -60,17 +67,17 @@ function ringCoords(ring: readonly Vec2[]): Coordinate[] {
   return out;
 }
 
-function toJPolygon(ring: readonly Vec2[]): JGeom {
-  return factory.createPolygon(factory.createLinearRing(ringCoords(ring)), []) as JGeom;
+function toJPolygon(ring: readonly Vec2[], f: typeof factory = factory): JGeom {
+  return f.createPolygon(f.createLinearRing(ringCoords(ring)), []) as JGeom;
 }
 
-function toJLines(segs: readonly Seg[]): JGeom {
+function toJLines(segs: readonly Seg[], f: typeof factory = factory): JGeom {
   const lines: unknown[] = [];
   for (const s of segs) {
     if (s.ax === s.bx && s.ay === s.by) continue;
-    lines.push(factory.createLineString([new Coordinate(s.ax, s.ay), new Coordinate(s.bx, s.by)]));
+    lines.push(f.createLineString([new Coordinate(s.ax, s.ay), new Coordinate(s.bx, s.by)]));
   }
-  return factory.createMultiLineString(lines) as unknown as JGeom;
+  return f.createMultiLineString(lines) as unknown as JGeom;
 }
 
 function ringFromJ(ring: JGeom): Vec2[] {
@@ -226,10 +233,10 @@ export function simplifyRing(ring: readonly Vec2[], tol: number): Vec2[] {
 export function closeOutline(segs: readonly Seg[], r: number, minArea: number): Vec2[][] {
   if (segs.length === 0 || !(r > 0)) return [];
   try {
-    const dilated = jBuffer(toJLines(segs), r, true);
+    const dilated = jBuffer(toJLines(segs, fixedFactory), r, true);
     const rings: Vec2[][] = [];
     for (const blob of polysFromJ(dilated)) {
-      const eroded = jBuffer(toJPolygon(blob.outer), -r, false);
+      const eroded = jBuffer(toJPolygon(blob.outer, fixedFactory), -r, false);
       for (const p of polysFromJ(eroded)) if (ringArea(p.outer) > minArea) rings.push(p.outer);
     }
     rings.sort((a, b) => ringArea(b) - ringArea(a));
