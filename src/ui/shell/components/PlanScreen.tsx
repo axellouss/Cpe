@@ -402,7 +402,7 @@ function Checklist({ project, storey, steps, sheet }: { project: Project; storey
         {active ? (
           <div className={`guide__detail is-${active.state}`} ref={detail} data-testid="plan-step-detail">
             <h3 className="guide__detail-title">{tr(`shell.plan.step.${active.key}`)}</h3>
-            <p className="guide__why">{tr(`shell.plan.step.${active.key}.why`)}</p>
+            <p className="guide__why">{tr(active.status.key === 'shell.plan.status.scale.model' ? 'shell.plan.step.scale.why.model' : `shell.plan.step.${active.key}.why`)}</p>
             <p className="guide__status">{statusText(active, tr)}</p>
             {active.key === 'height' && !grossHeightUnused(project, storey) ? <HeightPicker storey={storey} step={active} /> : null}
             {active.key === 'outline' || active.key === 'rooms' ? <EnvelopeNote storey={storey} sheet={sheet} /> : null}
@@ -559,15 +559,23 @@ function SidePanel({ project, storey }: { project: Project; storey: Storey }) {
   }, [focus, store]);
 
   const netFrom = metrics?.netAreaFrom ?? 'estimate';
+  const underRoof = grossHeightUnused(project, storey);
   return (
     <aside className="panel" aria-label={tr('shell.plan.panel.label')}>
       <section className={`panel__group ${focus === 'heights' ? 'is-flash' : ''}`} ref={heights} aria-labelledby="panel-heights">
         <h2 id="panel-heights" className="panel__title">
           {tr('shell.plan.heights.title', { name: storey.name })}
         </h2>
-        <HeightRow storey={storey} kind="gross" focus={focus === 'heights'} />
-        <HeightRow storey={storey} kind="clear" focus={false} />
-        {storey.clearHeight.value > storey.grossHeight.value ? <p className="panel__warn">{tr('shell.plan.height.inverted')}</p> : null}
+        {underRoof ? (
+          // Dernier étage sous une toiture inclinée confirmée : sa hauteur brute ne sert pas (pente et jambette font foi).
+          <p className="panel__note" data-testid="height-under-roof">
+            {tr('shell.plan.height.underRoof')}
+          </p>
+        ) : (
+          <HeightRow storey={storey} kind="gross" focus={focus === 'heights'} />
+        )}
+        <HeightRow storey={storey} kind="clear" focus={underRoof && focus === 'heights'} />
+        {!underRoof && storey.clearHeight.value > storey.grossHeight.value ? <p className="panel__warn">{tr('shell.plan.height.inverted')}</p> : null}
       </section>
 
       <section className="panel__group" aria-labelledby="panel-storey">
@@ -583,7 +591,8 @@ function SidePanel({ project, storey }: { project: Project; storey: Storey }) {
                 {tr(`shell.plan.metrics.net.${netFrom}`)}
               </span>
             </Metric>
-            <Metric label={tr('shell.plan.metrics.volume')} value={metrics.grossVolume} unit="m³" />
+            {/* Sous la toiture inclinée, « surface × hauteur brute » ne serait pas le volume que le moteur retient. */}
+            {underRoof ? null : <Metric label={tr('shell.plan.metrics.volume')} value={metrics.grossVolume} unit="m³" />}
           </dl>
         ) : (
           <p className="muted">{tr('shell.plan.metrics.unavailable')}</p>
@@ -764,7 +773,7 @@ export function PlanScreen() {
                 storey={storey}
                 ghostStoreys={ghosts}
                 northAngle={project.model.northAngle.value}
-                tool={STEP_TOOL[planStep]}
+                tool={steps.find((s) => s.key === planStep)?.tool ?? STEP_TOOL[planStep]}
                 lang={lang}
                 constructions={project.model.constructions}
                 windowTypes={project.model.windowTypes}

@@ -252,6 +252,24 @@ describe('hauteur d’étage dans le guide', () => {
     expect(currentStorey(m.store.getState())?.clearHeight.from).toBe('default');
   });
 
+  it('sous une toiture inclinée confirmée, le panneau du dernier étage ne propose ni hauteur brute ni volume calculé avec elle', async () => {
+    const m = await openPlan(houseDoc());
+    const [ground, upper] = selectProject(m.store.getState()).model.storeys;
+    await act(async () => {
+      m.store.getState().setTop({ kind: 'pitched-roof' }, undefined, true);
+      m.store.getState().selectStorey(upper!.id);
+    });
+    expect(has('height-under-roof')).toBe(true);
+    expect(q('height-under-roof').textContent).toContain('rien à saisir');
+    expect(document.querySelector('.panel')?.textContent).not.toContain('Volume brut');
+    // Les autres étages gardent leur hauteur brute et leur volume.
+    await act(async () => {
+      m.store.getState().selectStorey(ground!.id);
+    });
+    expect(has('height-under-roof')).toBe(false);
+    expect(document.querySelector('.panel')?.textContent).toContain('Volume brut');
+  });
+
   it('n’est pas demandée au dernier étage sous une toiture inclinée confirmée', async () => {
     const m = await openPlan(houseDoc());
     await act(async () => {
@@ -319,6 +337,10 @@ describe('échelle : confirmée une fois par dessin', () => {
     await click('plan-step-button-scale');
     expect(q('plan-step-detail').textContent).toContain('Maquette en vraie grandeur');
     expect(has('plan-confirm-scale')).toBe(false);
+    // L'étape rouverte ne tend pas la règle : le plan se regarde, et l'explication ne demande rien.
+    expect(q('stub-editor').getAttribute('data-tool')).toBe('pan');
+    expect(q('plan-step-detail').textContent).toContain('ni règle à poser ni échelle à confirmer');
+    expect(q('plan-step-detail').textContent).not.toContain('Posez la règle');
     // L'échelle reste « lue sur le plan » dans le modèle : rien n'a été confirmé à la place de l'expert.
     expect(selectProject(m.store.getState()).model.storeys.map((s) => s.metresPerUnit.from)).toEqual(['plan', 'plan']);
   });
@@ -365,12 +387,15 @@ describe('page de résultat : étapes du plan jamais confirmées', () => {
     await click('plan-confirm-scale'); // vaut pour les deux étages
     await click('step-result');
     const block = q('unconfirmed');
-    expect(block.textContent).toContain('Étapes du plan non confirmées : 12');
+    // 6 étapes au rez-de-chaussée, 5 à l'étage : le nord vaut pour tout le bâtiment, il n'est rappelé qu'une fois.
+    expect(block.textContent).toContain('Étapes du plan non confirmées : 11');
     const rows = all('unconfirmed-storey');
     expect(rows).toHaveLength(2);
     expect(rows[0]!.textContent).toContain('Rez-de-chaussée');
     expect(rows[0]!.textContent).toContain('Contour chauffé · Hauteur d’étage · Derrière chaque façade · Fenêtres et portes · Nord · Pièces chauffées (An)');
     expect(rows[0]!.textContent).not.toContain('Échelle');
+    expect(rows[1]!.textContent).toContain('Contour chauffé · Hauteur d’étage · Derrière chaque façade · Fenêtres et portes · Pièces chauffées (An)');
+    expect(rows[1]!.textContent).not.toContain('Nord');
     expect(all('unconfirmed-jump')[1]!.getAttribute('aria-label')).toBe('Confirmer sur le plan : Étage');
 
     // Le bouton ouvre le bon étage, sur sa première étape encore ouverte.

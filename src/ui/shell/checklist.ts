@@ -114,8 +114,15 @@ export function planSteps(project: Project, storey: Storey, marks: Marks, sheet:
   const done = marks.plan[storey.id] ?? {};
   const hasOutline = storey.outline.length >= 3;
   const steps: PlanStepInfo[] = [];
-  const add = (key: PlanStepKey, state: StepState, statusKey: string, params: Record<string, string | number> = {}, canConfirm = state === 'toConfirm'): void => {
-    steps.push({ key, tool: STEP_TOOL[key], state, status: { key: statusKey, params }, canConfirm });
+  const add = (
+    key: PlanStepKey,
+    state: StepState,
+    statusKey: string,
+    params: Record<string, string | number> = {},
+    canConfirm = state === 'toConfirm',
+    tool: PlanTool = STEP_TOOL[key],
+  ): void => {
+    steps.push({ key, tool, state, status: { key: statusKey, params }, canConfirm });
   };
 
   // 1. Échelle
@@ -125,7 +132,8 @@ export function planSteps(project: Project, storey: Storey, marks: Marks, sheet:
   } else if (scale.from === 'user') {
     add('scale', 'done', 'shell.plan.status.scale.user', { value: scale.value });
   } else if (isRealSizeModel(storey, kind)) {
-    add('scale', 'done', 'shell.plan.status.scale.model');
+    // Rien à mesurer sur une maquette : l'étape rouverte montre le plan (outil de déplacement), pas la règle.
+    add('scale', 'done', 'shell.plan.status.scale.model', {}, false, 'pan');
   } else if (!isWeak(scale.from)) {
     add('scale', 'toConfirm', 'shell.plan.status.scale.plan', { value: scale.value });
   } else {
@@ -255,8 +263,19 @@ export interface UnconfirmedStorey {
  * La page de résultat le rappelle : des valeurs proposées par le lecteur n'y passent pas pour confirmées.
  */
 export function unconfirmedSteps(project: Project, marks: Marks, documents: readonly LoadedDocument[] = []): UnconfirmedStorey[] {
+  // Le nord vaut pour tout le bâtiment : il n'est rappelé qu'une fois, au premier étage où il reste à valider.
+  let northListed = false;
   return project.model.storeys
-    .map((storey) => ({ storey, steps: storeySteps(project, storey, marks, documents).filter((s) => s.state !== 'done') }))
+    .map((storey) => ({
+      storey,
+      steps: storeySteps(project, storey, marks, documents).filter((s) => {
+        if (s.state === 'done') return false;
+        if (s.key !== 'north') return true;
+        if (northListed) return false;
+        northListed = true;
+        return true;
+      }),
+    }))
     .filter((entry) => entry.steps.length > 0);
 }
 
