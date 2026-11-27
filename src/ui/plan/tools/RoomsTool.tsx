@@ -128,7 +128,7 @@ export function RoomsTool({ ctx }: { ctx: ToolContext }) {
         })}
       </Overlay>
       <TopBar>
-        <Hint>{tr(storey.rooms.length > 0 ? 'plan.rooms.hint' : 'plan.rooms.none')}</Hint>
+        <Hint>{tr(storey.rooms.length === 0 ? 'plan.rooms.none' : ctx.compact ? 'plan.rooms.hintShort' : 'plan.rooms.hint')}</Hint>
       </TopBar>
       <BottomBar>
         {unplaced.length > 0 ? (

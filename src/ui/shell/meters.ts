@@ -1,23 +1,29 @@
 /**
- * Les deux jauges de la barre du haut.
- *  - complet  : part des valeurs attendues qui sont renseignées ;
- *  - confirmé : part des valeurs attendues qui sont renseignées ET ne viennent ni d'une valeur par défaut
- *               ni d'une estimation (provenance 'plan', 'calc' ou 'user').
- * Les deux partagent le même dénominateur : « confirmé » ne dépasse donc jamais « complet ».
+ * Les deux jauges de la barre du haut. Elles comptent exactement les cases de la liste guidée du plan — chaque
+ * étape de chaque étage — plus les deux réponses indispensables (toiture, plancher bas) :
+ *  - complet  : part des cases où une valeur exploitable existe (lue sur le plan, saisie ou validée). Une valeur
+ *               par défaut — hauteur d'étage de 2,80 m, toiture ou plancher supposés, nord « en haut » — n'en est pas une ;
+ *  - confirmé : part des cases que l'expert a validées, ou pour lesquelles il n'y a rien à valider (grille vierge,
+ *               maquette en vraie grandeur, hauteur lue sur une coupe).
+ * « Confirmé » ne dépasse donc jamais « complet », et il ne bouge que lorsque l'expert confirme quelque chose.
  *
- * La liste des valeurs attendues est volontairement courte et lisible : celles dont dépendent les chiffres du
- * relevé (géométrie par étage, fenêtres, nord, fermetures haute et basse). Les notes de visite (année, isolation,
- * installations…) n'en font pas partie : facultatives, elles ne changent aucune valeur calculée, et les laisser
- * de côté ne doit pas faire paraître le relevé « incomplet ».
+ * Les notes de visite (année, isolation, installations…) n'en font pas partie : facultatives, elles ne changent
+ * aucune valeur calculée, et les laisser de côté ne doit pas faire paraître le relevé « incomplet ». La hauteur
+ * libre non plus : elle ne sert qu'à un Vn indicatif.
  */
-import type { Project, Provenance, Storey } from '../../core/types';
-import { storeyMetrics } from '../../engine';
+import type { Project, Provenance } from '../../core/types';
+import { allStoreysDone, storeySteps } from './checklist';
+import { findSheet } from './documents';
+import { isQuestionComplete, REQUIRED_QUESTIONS } from './questions';
+import type { LoadedDocument, Marks, Step } from './types';
+import { PLAN_STEP_KEYS } from './types';
 
 export interface MeterSlot {
   key: string;
+  /** Une valeur exploitable existe (proposée par le lecteur, saisie ou validée). */
   filled: boolean;
-  /** Provenance de la valeur si elle est renseignée. */
-  from: Provenance | null;
+  /** Validée par l'expert, ou rien à valider. */
+  confirmed: boolean;
 }
 
 export interface Meters {
@@ -28,81 +34,63 @@ export interface Meters {
   slots: MeterSlot[];
 }
 
-const RANK: Record<Provenance, number> = { estimate: 0, default: 1, plan: 2, calc: 3, user: 4 };
-
-function weakest(sources: readonly Provenance[]): Provenance {
-  let best: Provenance | null = null;
-  for (const s of sources) if (best === null || RANK[s] < RANK[best]) best = s;
-  return best ?? 'calc';
+/** Toiture ou plancher bas : supposé par défaut (rien), proposé (à confirmer), répondu par l'expert (confirmé). */
+function closureSlot(key: string, from: Provenance): MeterSlot {
+  return { key, filled: from !== 'default', confirmed: from === 'user' };
 }
 
-export function isConfirmed(from: Provenance | null): boolean {
-  return from !== null && from !== 'default' && from !== 'estimate';
-}
-
-/** Valeurs géométriques attendues pour un étage. */
-const STOREY_SLOTS = ['outline', 'scale', 'grossHeight', 'clearHeight', 'netArea'] as const;
-
-function netAreaFrom(storey: Storey): Provenance {
-  if (storey.netAreaOverride) return storey.netAreaOverride.from;
-  let source: 'override' | 'rooms' | 'estimate';
-  try {
-    source = storeyMetrics(storey).netAreaFrom;
-  } catch {
-    source = storey.rooms.some((r) => r.area.value > 0) ? 'rooms' : 'estimate';
-  }
-  if (source === 'estimate') return 'estimate';
-  const heated = storey.rooms.filter((r) => r.heated);
-  // Une pièce encore « à trancher » rend la somme provisoire.
-  if (storey.rooms.some((r) => r.needsReview)) return 'estimate';
-  return weakest(heated.map((r) => r.area.from));
-}
-
-function storeySlots(storey: Storey): MeterSlot[] {
-  const hasOutline = storey.outline.length >= 3;
-  return [
-    // Un contour, qu'il vienne du lecteur ou de l'expert, est une mesure sur le plan.
-    { key: `${storey.id}.outline`, filled: hasOutline, from: hasOutline ? 'plan' : null },
-    { key: `${storey.id}.scale`, filled: true, from: storey.metresPerUnit.from },
-    { key: `${storey.id}.grossHeight`, filled: true, from: storey.grossHeight.from },
-    { key: `${storey.id}.clearHeight`, filled: true, from: storey.clearHeight.from },
-    { key: `${storey.id}.netArea`, filled: hasOutline, from: hasOutline ? netAreaFrom(storey) : null },
-  ];
-}
-
-/** Toutes les valeurs attendues, avec leur état. */
-export function meterSlots(project: Project): MeterSlot[] {
+/** Toutes les cases attendues, avec leur état. */
+export function meterSlots(project: Project, marks: Marks, documents: readonly LoadedDocument[] = []): MeterSlot[] {
   const slots: MeterSlot[] = [];
   const { model } = project;
 
   if (model.storeys.length === 0) {
-    // Rien de tracé : les valeurs d'un premier étage sont attendues et manquent toutes.
-    for (const key of STOREY_SLOTS) slots.push({ key: `storey.${key}`, filled: false, from: null });
-    slots.push({ key: 'windows', filled: false, from: null });
-    slots.push({ key: 'north', filled: false, from: null });
-    slots.push({ key: 'top', filled: false, from: null });
-    slots.push({ key: 'bottom', filled: false, from: null });
+    // Rien de tracé : les étapes d'un premier étage sont attendues et manquent toutes.
+    for (const key of PLAN_STEP_KEYS) slots.push({ key: `storey.${key}`, filled: false, confirmed: false });
   } else {
-    for (const storey of model.storeys) slots.push(...storeySlots(storey));
-    const openings = model.storeys.flatMap((s) => s.openings);
-    slots.push({ key: 'windows', filled: openings.length > 0, from: openings.length > 0 ? weakest(openings.map((o) => o.from)) : null });
-    slots.push({ key: 'north', filled: true, from: model.northAngle.from });
-    slots.push({ key: 'top', filled: true, from: model.top.from });
-    slots.push({ key: 'bottom', filled: true, from: model.bottom.from });
+    for (const storey of model.storeys) {
+      for (const step of storeySteps(project, storey, marks, documents)) {
+        slots.push({ key: `${storey.id}.${step.key}`, filled: step.state === 'toConfirm' || step.state === 'done', confirmed: step.state === 'done' });
+      }
+    }
   }
-
+  slots.push(closureSlot('top', model.top.from));
+  slots.push(closureSlot('bottom', model.bottom.from));
   return slots;
 }
 
-export function computeMeters(project: Project): Meters {
-  const slots = meterSlots(project);
+export function computeMeters(project: Project, marks: Marks, documents: readonly LoadedDocument[] = []): Meters {
+  const slots = meterSlots(project, marks, documents);
   const total = slots.length || 1;
   const filled = slots.filter((s) => s.filled).length;
-  const confirmed = slots.filter((s) => s.filled && isConfirmed(s.from)).length;
+  const confirmed = slots.filter((s) => s.confirmed).length;
   return { complete: filled / total, confirmed: confirmed / total, slots };
 }
 
-/** Pourcentage entier pour l'affichage. */
+/**
+ * Ce qui est réellement FAIT à chaque écran du parcours. L'indicateur d'étapes de la barre du haut ne coche que
+ * cela : être passé par un écran ne suffit pas (on peut aller au résultat sans rien avoir validé sur le plan).
+ *  - home      : un plan est chargé ou un étage existe ;
+ *  - read      : la lecture d'un plan chargé a donné au moins un étage ;
+ *  - plan      : toutes les étapes de tous les étages sont faites ;
+ *  - questions : la seule question indispensable (toiture et plancher bas) est répondue ;
+ *  - result    : jamais — c'est la destination, pas un travail.
+ */
+export function stepsDone(project: Project, marks: Marks, documents: readonly LoadedDocument[] = []): Record<Step, boolean> {
+  const storeys = project.model.storeys;
+  return {
+    home: documents.length > 0 || storeys.length > 0,
+    read: storeys.some((s) => findSheet(documents, s.sheetId) !== null),
+    plan: allStoreysDone(project, marks, documents),
+    questions: REQUIRED_QUESTIONS.every((q) => isQuestionComplete(q, project)),
+    result: false,
+  };
+}
+
+/** Pourcentage entier pour l'affichage. « 100 % » n'apparaît que lorsque tout y est vraiment, « 0 % » que s'il n'y a rien. */
 export function percent(ratio: number): number {
-  return Math.max(0, Math.min(100, Math.round(ratio * 100)));
+  const rounded = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+  if (ratio < 1 && rounded === 100) return 99;
+  if (ratio > 0 && rounded === 0) return 1;
+  return rounded;
 }

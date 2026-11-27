@@ -9,9 +9,12 @@ import type { ClosedFormat } from '../../readers';
 export type Step = 'home' | 'read' | 'plan' | 'questions' | 'result';
 export const STEPS: readonly Step[] = ['home', 'read', 'plan', 'questions', 'result'];
 
-/** Étapes de la liste guidée de l'écran « Plan », dans l'ordre. */
-export type PlanStepKey = 'scale' | 'outline' | 'boundary' | 'opening' | 'north' | 'rooms';
-export const PLAN_STEP_KEYS: readonly PlanStepKey[] = ['scale', 'outline', 'boundary', 'opening', 'north', 'rooms'];
+/**
+ * Étapes de la liste guidée de l'écran « Plan », dans l'ordre. « height » (hauteur d'étage brute) est la seule
+ * qui ne se joue pas sur le plan : une vue en plan ne la donne pas, elle se choisit d'un toucher dans le guide.
+ */
+export type PlanStepKey = 'scale' | 'outline' | 'height' | 'boundary' | 'opening' | 'north' | 'rooms';
+export const PLAN_STEP_KEYS: readonly PlanStepKey[] = ['scale', 'outline', 'height', 'boundary', 'opening', 'north', 'rooms'];
 
 /** Écrans de questions, dans l'ordre. « identity » est facultatif et vient en dernier. */
 export type QuestionId =

@@ -46,6 +46,8 @@ function context(lang: Lang, sheet: PlanSheet | null, storey: Storey, size = { w
     changeNorth: () => undefined,
     coarse: false,
     aim: () => undefined,
+    cover: () => undefined,
+    reframe: () => undefined,
     controller: { current: null },
     focusSurface: () => undefined,
   };

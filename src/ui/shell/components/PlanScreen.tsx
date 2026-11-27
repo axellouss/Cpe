@@ -2,13 +2,25 @@
  * Écran « Plan » : onglets d'étages, liste guidée (qui choisit l'outil de l'éditeur), éditeur de plan, et panneau
  * latéral vivant (hauteurs avec leur provenance, mesures de l'étage, totaux du bâtiment calculés par le moteur).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { PlanSheet, Project, Sourced, Storey } from '../../../core/types';
 import { excludeRoomFromOutline, roomsOutsideOutline, unheatedRoomsInsideOutline } from '../../../engine';
 import { isOutsideEnvelopeName } from '../../../semantics/labels';
 import { PlanEditor } from '../../plan';
-import { allStoreysDone, countDone, nextOpenStep, planSteps, STEP_TOOL } from '../checklist';
+import { prefersReducedMotion } from '../browser';
+import {
+  allStoreysDone,
+  centredScrollLeft,
+  CONFIRMED_ON_PLAN,
+  countDone,
+  grossHeightUnused,
+  HEIGHT_CHOICES,
+  nextOpenStep,
+  revealScrollTop,
+  STEP_TOOL,
+  storeySteps,
+} from '../checklist';
 import type { PlanStepInfo, StepState } from '../checklist';
 import { derive, safeStoreyMetrics } from '../compute';
 import { allSheets, fileNameOfSheetId, findSheet } from '../documents';
@@ -30,6 +42,7 @@ function statusText(step: PlanStepInfo, tr: Translate): string {
   const params: Record<string, string | number> = { ...step.status.params };
   if (step.key === 'scale' && typeof params.value === 'number') params.unit = unitLength(params.value);
   if (typeof params.area === 'number') params.area = fixed(params.area, 2);
+  if (typeof params.height === 'number') params.height = fixed(params.height, 2);
   return tr(step.status.key, params);
 }
 
@@ -53,7 +66,7 @@ function StoreyTabs({ project, storey }: { project: Project; storey: Storey }) {
       <div className="tabs">
         <div className="tabs__list" role="tablist" aria-label={tr('shell.plan.storeys.label')}>
         {storeys.map((s) => {
-          const steps = planSteps(project, s, marks, findSheet(documents, s.sheetId));
+          const steps = storeySteps(project, s, marks, documents);
           const done = countDone(steps);
           const selected = s.id === storey.id;
           return (
@@ -150,8 +163,63 @@ function StoreyTabs({ project, storey }: { project: Project; storey: Storey }) {
 function confirmLabel(step: PlanStepInfo, tr: Translate): string {
   if (step.key === 'opening' && step.state === 'todo') return tr('shell.plan.confirm.noOpening');
   if (step.key === 'scale' && step.state === 'todo') return tr('shell.plan.confirm.scaleAnyway');
-  if (step.key === 'north' && step.state === 'todo') return tr('shell.plan.confirm.northAnyway');
   return tr('shell.plan.confirm');
+}
+
+/**
+ * Hauteur d'étage brute : la seule valeur géométrique qu'une vue en plan ne donne pas. Un toucher sur une pastille
+ * la choisit et fait avancer ; le champ accepte toute autre valeur.
+ */
+function HeightPicker({ storey, step }: { storey: Storey; step: PlanStepInfo }) {
+  const tr = useT();
+  const store = useShellStore();
+  const confirmed = step.state === 'done';
+  const current = storey.grossHeight.value;
+  const matches = (v: number): boolean => confirmed && Math.abs(current - v) < 0.005;
+  const pick = (value: number): void => {
+    const state = store.getState();
+    state.updateProject((p) => setStoreyHeight(p, storey.id, 'gross', value), { label: 'shell.undo.height' });
+    // La valeur est choisie par l'expert : l'étape est faite, on passe à la suivante.
+    state.confirmPlanStep('height');
+  };
+  const id = `height-exact-${storey.id}`;
+  return (
+    <div className="height-pick" data-testid="height-pick">
+      <div className="height-pick__chips" role="group" aria-label={tr('shell.plan.height.pick')}>
+        {HEIGHT_CHOICES.map((v) => (
+          <button
+            key={v}
+            type="button"
+            className={`height-pick__chip ${matches(v) ? 'is-selected' : ''}`}
+            aria-pressed={matches(v)}
+            onClick={() => pick(v)}
+            data-testid="height-chip"
+            data-value={String(v)}
+          >
+            {fixed(v, 2)}
+            <span className="visually-hidden"> m</span>
+          </button>
+        ))}
+      </div>
+      <div className="height-pick__exact">
+        <label htmlFor={id}>{tr('shell.plan.height.exact')}</label>
+        <NumberField
+          key={storey.id}
+          id={id}
+          value={confirmed && !HEIGHT_CHOICES.some(matches) ? current : null}
+          min={1}
+          max={15}
+          digits={2}
+          unit="m"
+          allowEmpty
+          onCommit={(v) => {
+            if (v !== null) pick(v);
+          }}
+          testId="height-exact"
+        />
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -219,13 +287,29 @@ function Checklist({ project, storey, steps, sheet }: { project: Project; storey
   const planStep = useShell((s) => s.planStep);
   const celebrate = useShell((s) => s.celebrate);
   const marks = useShell(selectMarks);
+  const documents = useShell((s) => s.documents);
   const done = countDone(steps);
   const storeyDone = done === steps.length;
-  const everything = allStoreysDone(project, marks);
-  const nextStorey = storeyDone ? project.model.storeys.find((s) => s.id !== storey.id && planSteps(project, s, marks, null).some((x) => x.state !== 'done')) : undefined;
+  const everything = allStoreysDone(project, marks, documents);
+  const nextStorey = storeyDone
+    ? project.model.storeys.find((s) => s.id !== storey.id && storeySteps(project, s, marks, documents).some((x) => x.state !== 'done'))
+    : undefined;
   const active = steps.find((s) => s.key === planStep) ?? null;
   const following = active ? nextOpenStep(steps, active.key) : null;
   const closureDone = REQUIRED_QUESTIONS.every((q) => isQuestionComplete(q, project));
+
+  // Une seule commande de validation par étape : là où l'éditeur porte la sienne (contour, nord), le guide y renvoie.
+  const confirmable = active !== null && active.canConfirm && active.state !== 'done';
+  const onPlanKey = active && confirmable ? CONFIRMED_ON_PLAN[active.key] : undefined;
+  const onPlanLabel = onPlanKey ? tr(onPlanKey) : '';
+  const showConfirm = confirmable && onPlanKey === undefined;
+  const next = active && following !== null && following !== active.key ? following : null;
+
+  const list = useRef<HTMLOListElement>(null);
+  const column = useRef<HTMLDivElement>(null);
+  const detail = useRef<HTMLDivElement>(null);
+  /** Vrai s'il reste du texte sous le bas de la colonne (grand écran) : on le signale, et un bouton y mène. */
+  const [more, setMore] = useState(false);
 
   useEffect(() => {
     if (!celebrate) return;
@@ -235,87 +319,156 @@ function Checklist({ project, storey, steps, sheet }: { project: Project; storey
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [celebrate?.id]);
 
+  // L'étape active reste sous les yeux : centrée dans le bandeau horizontal (écran étroit), et suivie de son
+  // explication dans la colonne (grand écran). On ne déplace que ces deux zones, jamais la page.
+  useEffect(() => {
+    const row = list.current;
+    const item = row?.querySelector<HTMLElement>('.checklist__item.is-active') ?? null;
+    if (!row || !item) return;
+    const behavior: ScrollBehavior = prefersReducedMotion() ? 'auto' : 'smooth';
+    if (row.scrollWidth > row.clientWidth + 1 && typeof row.scrollTo === 'function') {
+      const rowBox = row.getBoundingClientRect();
+      const itemBox = item.getBoundingClientRect();
+      const left = centredScrollLeft(
+        { left: itemBox.left - rowBox.left + row.scrollLeft, width: itemBox.width },
+        { width: row.clientWidth, scrollWidth: row.scrollWidth },
+      );
+      row.scrollTo({ left, behavior });
+    }
+    const col = column.current;
+    if (col && col.clientHeight > 0 && col.scrollHeight > col.clientHeight + 1 && typeof col.scrollTo === 'function') {
+      const colBox = col.getBoundingClientRect();
+      const itemBox = item.getBoundingClientRect();
+      const bottom = (detail.current ?? item).getBoundingClientRect().bottom;
+      const top = revealScrollTop(col.scrollTop, col.clientHeight, itemBox.top - colBox.top + col.scrollTop, bottom - colBox.top + col.scrollTop);
+      col.scrollTo({ top, behavior });
+    }
+  }, [planStep, storey.id]);
+
+  const measure = useCallback((): void => {
+    const col = column.current;
+    setMore(col !== null && col.clientHeight > 0 && col.scrollHeight - col.scrollTop - col.clientHeight > 6);
+  }, []);
+  // Le contenu change à chaque étape : on remesure après chaque rendu (sans effet si rien n'a bougé).
+  useLayoutEffect(measure);
+  useEffect(() => {
+    const col = column.current;
+    if (!col) return;
+    col.addEventListener('scroll', measure, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(col);
+    return () => {
+      col.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  }, [measure]);
+
   return (
     <nav className="guide" aria-label={tr('shell.plan.guide.label')}>
-      <header className="guide__head">
-        <h2 className="guide__title">{tr('shell.plan.guide.title')}</h2>
-        <span className="guide__count" aria-label={tr('shell.plan.storey.progress', { done, total: steps.length })}>
-          {done}/{steps.length}
-        </span>
-      </header>
-      <ol className="checklist">
-        {steps.map((step, i) => {
-          const isActive = step.key === planStep;
-          const justDone = celebrate?.key === `${storey.id}:${step.key}`;
-          return (
-            <li key={step.key} className={`checklist__item is-${step.state} ${isActive ? 'is-active' : ''}`} data-testid={`plan-step-${step.key}`} data-state={step.state}>
-              <button
-                type="button"
-                className="checklist__head"
-                aria-current={isActive ? 'step' : undefined}
-                onClick={() => store.getState().selectPlanStep(step.key)}
-                data-testid={`plan-step-button-${step.key}`}
-              >
-                <span className={`checklist__mark ${justDone ? 'is-pop' : ''}`} key={justDone ? celebrate?.id : 'static'} aria-hidden="true">
-                  {step.state === 'done' ? <Icon name="check" size={15} /> : i + 1}
-                </span>
-                <span className="checklist__text">
-                  <span className="checklist__title">{tr(`shell.plan.step.${step.key}`)}</span>
-                  <span className={`checklist__state checklist__state--${STATE_TONE[step.state]}`}>{tr(`shell.plan.state.${step.state}`)}</span>
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
+      <div className="guide__scroll" ref={column} data-testid="plan-guide-scroll">
+        <header className="guide__head">
+          <h2 className="guide__title">{tr('shell.plan.guide.title')}</h2>
+          <span className="guide__count" aria-label={tr('shell.plan.storey.progress', { done, total: steps.length })}>
+            {done}/{steps.length}
+          </span>
+        </header>
+        <ol className="checklist" ref={list}>
+          {steps.map((step, i) => {
+            const isActive = step.key === planStep;
+            const justDone = celebrate?.key === `${storey.id}:${step.key}`;
+            return (
+              <li key={step.key} className={`checklist__item is-${step.state} ${isActive ? 'is-active' : ''}`} data-testid={`plan-step-${step.key}`} data-state={step.state}>
+                <button
+                  type="button"
+                  className="checklist__head"
+                  aria-current={isActive ? 'step' : undefined}
+                  onClick={() => store.getState().selectPlanStep(step.key)}
+                  data-testid={`plan-step-button-${step.key}`}
+                >
+                  <span className={`checklist__mark ${justDone ? 'is-pop' : ''}`} key={justDone ? celebrate?.id : 'static'} aria-hidden="true">
+                    {step.state === 'done' ? <Icon name="check" size={15} /> : i + 1}
+                  </span>
+                  <span className="checklist__text">
+                    <span className="checklist__title">{tr(`shell.plan.step.${step.key}`)}</span>
+                    <span className={`checklist__state checklist__state--${STATE_TONE[step.state]}`}>{tr(`shell.plan.state.${step.state}`)}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
 
-      {active ? (
-        <div className={`guide__detail is-${active.state}`} data-testid="plan-step-detail">
-          <h3 className="guide__detail-title">{tr(`shell.plan.step.${active.key}`)}</h3>
-          <p className="guide__why">{tr(`shell.plan.step.${active.key}.why`)}</p>
-          <p className="guide__status">{statusText(active, tr)}</p>
-          {active.key === 'outline' || active.key === 'rooms' ? <EnvelopeNote storey={storey} sheet={sheet} /> : null}
-          <div className="guide__actions">
-            {active.canConfirm && active.state !== 'done' ? (
+        {active ? (
+          <div className={`guide__detail is-${active.state}`} ref={detail} data-testid="plan-step-detail">
+            <h3 className="guide__detail-title">{tr(`shell.plan.step.${active.key}`)}</h3>
+            <p className="guide__why">{tr(`shell.plan.step.${active.key}.why`)}</p>
+            <p className="guide__status">{statusText(active, tr)}</p>
+            {active.key === 'height' && !grossHeightUnused(project, storey) ? <HeightPicker storey={storey} step={active} /> : null}
+            {active.key === 'outline' || active.key === 'rooms' ? <EnvelopeNote storey={storey} sheet={sheet} /> : null}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Toujours visible : les commandes de l'étape active, puis la suite du parcours. */}
+      <div className={`guide__bar ${more ? 'has-more' : ''}`} data-testid="plan-guide-bar">
+        {more ? (
+          <button
+            type="button"
+            className="guide__more"
+            onClick={() => column.current?.scrollBy?.({ top: Math.round(column.current.clientHeight * 0.8), behavior: prefersReducedMotion() ? 'auto' : 'smooth' })}
+            data-testid="plan-guide-more"
+          >
+            <Icon name="arrowDown" size={14} />
+            <span>{tr('shell.plan.guide.more')}</span>
+          </button>
+        ) : null}
+        {active && (onPlanKey !== undefined || showConfirm || next !== null) ? (
+          <div className="guide__actions" data-testid="plan-step-actions">
+            {onPlanKey !== undefined ? (
+              <p className="guide__onplan" data-testid="plan-confirm-on-plan">
+                {onPlanLabel !== onPlanKey ? tr('shell.plan.onPlan', { button: onPlanLabel }) : tr('shell.plan.onPlan.generic')}
+              </p>
+            ) : null}
+            {showConfirm ? (
               <button type="button" className="btn btn--primary btn--small" onClick={() => store.getState().confirmPlanStep(active.key)} data-testid={`plan-confirm-${active.key}`}>
                 <Icon name="check" size={16} />
                 <span>{confirmLabel(active, tr)}</span>
               </button>
             ) : null}
-            {following !== null && following !== active.key ? (
-              <button type="button" className="btn btn--ghost btn--small" onClick={() => store.getState().selectPlanStep(following)} data-testid="plan-next-step">
+            {next !== null ? (
+              <button type="button" className="btn btn--ghost btn--small" onClick={() => store.getState().selectPlanStep(next)} data-testid="plan-next-step">
                 <span>{tr('shell.plan.next')}</span>
                 <Icon name="arrowRight" size={16} />
               </button>
             ) : null}
           </div>
-        </div>
-      ) : null}
-
-      <footer className="guide__foot">
-        {storeyDone ? (
-          <p className="guide__done">
-            <Icon name="check" size={18} />
-            <span>{tr('shell.plan.storeyDone', { name: storey.name })}</span>
-          </p>
         ) : null}
-        {nextStorey ? (
-          <button type="button" className="btn btn--primary" onClick={() => store.getState().selectStorey(nextStorey.id)} data-testid="next-storey">
-            <span>{tr('shell.plan.nextStorey', { name: nextStorey.name })}</span>
+
+        <footer className="guide__foot">
+          {storeyDone ? (
+            <p className="guide__done">
+              <Icon name="check" size={18} />
+              <span>{tr('shell.plan.storeyDone', { name: storey.name })}</span>
+            </p>
+          ) : null}
+          {nextStorey ? (
+            <button type="button" className="btn btn--primary" onClick={() => store.getState().selectStorey(nextStorey.id)} data-testid="next-storey">
+              <span>{tr('shell.plan.nextStorey', { name: nextStorey.name })}</span>
+              <Icon name="arrowRight" size={18} />
+            </button>
+          ) : null}
+          {/* Toiture et plancher bas déjà confirmés : plus aucune question indispensable, le résultat est prêt. */}
+          <button
+            type="button"
+            className={`btn ${everything || (storeyDone && !nextStorey) ? 'btn--primary' : 'btn--ghost'}`}
+            onClick={() => store.getState().goTo(closureDone ? 'result' : 'questions')}
+            data-testid="to-questions"
+          >
+            <span>{tr(closureDone ? 'shell.plan.toResult' : everything ? 'shell.plan.toQuestions' : 'shell.plan.toQuestions.early')}</span>
             <Icon name="arrowRight" size={18} />
           </button>
-        ) : null}
-        {/* Toiture et plancher bas déjà confirmés : plus aucune question indispensable, le résultat est prêt. */}
-        <button
-          type="button"
-          className={`btn ${everything || (storeyDone && !nextStorey) ? 'btn--primary' : 'btn--ghost'}`}
-          onClick={() => store.getState().goTo(closureDone ? 'result' : 'questions')}
-          data-testid="to-questions"
-        >
-          <span>{tr(closureDone ? 'shell.plan.toResult' : everything ? 'shell.plan.toQuestions' : 'shell.plan.toQuestions.early')}</span>
-          <Icon name="arrowRight" size={18} />
-        </button>
-      </footer>
+        </footer>
+      </div>
     </nav>
   );
 }
@@ -349,7 +502,8 @@ function HeightRow({ storey, kind, focus }: { storey: Storey; kind: HeightKind; 
           className={focus ? 'is-focus' : ''}
         />
         <ProvenanceTag from={value.from} {...(value.note ? { note: value.note } : {})} />
-        {weak ? (
+        {/* La hauteur d'étage brute se valide dans la liste guidée (une seule commande) ; ici, seule la hauteur libre, facultative. */}
+        {weak && kind === 'clear' ? (
           <button
             type="button"
             className="btn btn--ghost btn--small panel__confirm"
@@ -521,7 +675,7 @@ export function PlanScreen() {
   }, [planStep, storeyId]);
 
   const sheet = storey ? findSheet(documents, storey.sheetId) : null;
-  const steps = useMemo(() => (storey ? planSteps(project, storey, marks, sheet) : []), [project, storey, marks, sheet]);
+  const steps = useMemo(() => (storey ? storeySteps(project, storey, marks, documents) : []), [project, storey, marks, documents]);
   const ghosts = useMemo(() => {
     if (!storey) return [];
     return project.model.storeys.filter(
@@ -553,7 +707,7 @@ export function PlanScreen() {
     <section className="plan" aria-label={tr('shell.steps.plan')}>
       <h1 className="visually-hidden">{tr('shell.plan.title', { name: storey.name })}</h1>
       <StoreyTabs project={project} storey={storey} />
-      <div className="plan__body" id="plan-panel" role="tabpanel" aria-labelledby={`tab-${storey.id}`} ref={body}>
+      <div className={`plan__body is-step-${planStep}`} id="plan-panel" role="tabpanel" aria-labelledby={`tab-${storey.id}`} ref={body}>
         <div className="plan__guide">
           <Checklist project={project} storey={storey} steps={steps} sheet={sheet} />
         </div>

@@ -5,6 +5,7 @@
  * Toutes les longueurs « écran » sont en pixels CSS.
  */
 import type { BBox, Vec2 } from '../../core/types';
+import type { PlanTool } from './api';
 
 export interface View {
   /** Pixels CSS par unité de feuille. */
@@ -97,14 +98,37 @@ export function fitViewInsets(bbox: BBox, size: Size, insets: Insets, padding = 
 }
 
 /**
- * Comme `fitViewInsets`, avec en plus une marge propre à ce qui s'écrit AUTOUR du rectangle (longueurs des côtés,
- * dimensions des ouvertures) : `margin.x` px à gauche et à droite, `margin.y` px en haut et en bas.
+ * Écran étroit : marge (px) gardée autour du contour cadré, selon ce que l'outil écrit à l'extérieur de lui
+ * (pastilles des longueurs, dimensions des ouvertures sur deux rangées, secteur et azimut des façades).
  */
-export function fitViewMargins(bbox: BBox, size: Size, insets: Insets, margin: { x: number; y: number }): View {
+export const COMPACT_MARGIN: Record<PlanTool, FitMargin> = {
+  pan: { x: 12, top: 12, bottom: 12 },
+  scale: { x: 18, top: 18, bottom: 18 },
+  // Contour : la pastille du haut se touche, juste sous les boutons de l'outil — on lui laisse plus d'air qu'à
+  // celle du bas, qui ne voisine que des compteurs.
+  outline: { x: 30, top: 32, bottom: 24 },
+  boundary: { x: 46, top: 24, bottom: 24 },
+  opening: { x: 40, top: 40, bottom: 40 },
+  north: { x: 44, top: 22, bottom: 22 },
+  rooms: { x: 10, top: 10, bottom: 10 },
+};
+
+/** Marge autour d'un rectangle cadré : `x` px à gauche et à droite, `top` px au-dessus, `bottom` px en dessous. */
+export interface FitMargin {
+  x: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * Comme `fitViewInsets`, avec en plus une marge propre à ce qui s'écrit AUTOUR du rectangle (longueurs des côtés,
+ * dimensions des ouvertures).
+ */
+export function fitViewMargins(bbox: BBox, size: Size, insets: Insets, margin: FitMargin): View {
   return fitViewInsets(
     bbox,
     size,
-    { top: insets.top + margin.y, right: insets.right + margin.x, bottom: insets.bottom + margin.y, left: insets.left + margin.x },
+    { top: insets.top + margin.top, right: insets.right + margin.x, bottom: insets.bottom + margin.bottom, left: insets.left + margin.x },
     0,
   );
 }

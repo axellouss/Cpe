@@ -20,7 +20,7 @@ import type { FileLike } from '../../readers';
 import type { PlanTool } from '../plan';
 import { browserStorage, clearWorkspace, initialLang, loadEntered, loadWorkspace, parseWorkspace, saveEntered, saveLang, saveWorkspace } from './autosave';
 import type { StorageLike } from './autosave';
-import { dropStoreyMarks, firstOpenStep, markPlanStep, nextOpenStep, planSteps, stepOfTool } from './checklist';
+import { dropStoreyMarks, firstOpenStep, markPlanStep, nextOpenStep, sameScaleStoreyIds, stepOfTool, storeySteps } from './checklist';
 import {
   applyProposal,
   defaultStoreyName,
@@ -41,6 +41,7 @@ import {
   assignSheet as assignSheetOp,
   confirmNorth,
   confirmScale,
+  confirmStoreyHeight,
   duplicateStorey as duplicateStoreyOp,
   findStorey,
   moveStorey as moveStoreyOp,
@@ -349,9 +350,9 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       }, options);
     };
 
-    const stepsOf = (storey: Storey): ReturnType<typeof planSteps> => {
+    const stepsOf = (storey: Storey): ReturnType<typeof storeySteps> => {
       const state = get();
-      return planSteps(selectProject(state), storey, selectMarks(state), findSheet(state.documents, storey.sheetId));
+      return storeySteps(selectProject(state), storey, selectMarks(state), state.documents);
     };
 
     /** Après une validation : petite coche, puis on passe à la prochaine étape ouverte de l'étage. */
@@ -694,7 +695,9 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         const storeyId = storey.id;
         apply(
           (ws) => {
-            if (key === 'scale') return { ...ws, project: confirmScale(ws.project, storeyId) };
+            // Un dessin n'a qu'une unité : l'échelle confirmée ici l'est aussi pour les étages du même fichier qui la partagent.
+            if (key === 'scale') return { ...ws, project: [storeyId, ...sameScaleStoreyIds(ws.project, storeyId)].reduce(confirmScale, ws.project) };
+            if (key === 'height') return { ...ws, project: confirmStoreyHeight(ws.project, storeyId, 'gross') };
             if (key === 'north') return { ...ws, project: confirmNorth(ws.project) };
             return { ...ws, marks: markPlanStep(ws.marks, storeyId, key) };
           },

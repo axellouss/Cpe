@@ -28,6 +28,11 @@ export interface DeclaredScale {
   keyword: boolean;
   text: string;
   size: number;
+  /** Centre du texte qui porte l'échelle (uf) : sert à rattacher une échelle écrite près d'une vue à cette vue. */
+  cx: number;
+  cy: number;
+  /** Indice du texte dans la liste reçue. */
+  index: number;
 }
 
 /** Dénominateurs d'échelles de dessin courants. */
@@ -44,7 +49,8 @@ const SCALE_RE =
  */
 export function declaredScales(texts: readonly RawText[]): DeclaredScale[] {
   const out: DeclaredScale[] = [];
-  for (const t of texts) {
+  for (let index = 0; index < texts.length; index++) {
+    const t = texts[index]!;
     const folded = fold(t.s);
     SCALE_RE.lastIndex = 0;
     for (let m = SCALE_RE.exec(folded); m; m = SCALE_RE.exec(folded)) {
@@ -52,7 +58,7 @@ export function declaredScales(texts: readonly RawText[]): DeclaredScale[] {
       const keyword = m[1] !== undefined;
       if (!STANDARD_SCALES.includes(den)) continue;
       if (!keyword && den < 20) continue;
-      out.push({ den, keyword, text: t.s, size: t.size });
+      out.push({ den, keyword, text: t.s, size: t.size, cx: t.cx, cy: t.cy, index });
     }
   }
   out.sort((a, b) => Number(b.keyword) - Number(a.keyword) || b.size - a.size);
@@ -86,6 +92,8 @@ interface DimToken {
   cy: number;
   angle: number;
   size: number;
+  /** Indice du texte d'origine dans la page : dit à quelle vue la cote appartient. */
+  index: number;
 }
 
 const NUMBER_RE = /^\d{1,5}(?:[.,]\d{1,3})?$/;
@@ -105,13 +113,16 @@ function directionGap(a: number, b: number): number {
 
 /** Nombres isolés ; l'exposant « 5 » allemand (« 11⁵ », « 3,26⁵ ») est rattaché au nombre qu'il suit. */
 function dimensionTokens(texts: readonly RawText[]): DimToken[] {
-  const numeric = texts.filter((t) => NUMBER_RE.test(t.s));
+  const numeric: { t: RawText; index: number }[] = [];
+  texts.forEach((t, index) => {
+    if (NUMBER_RE.test(t.s)) numeric.push({ t, index });
+  });
   if (numeric.length === 0) return [];
-  const main = median(numeric.map((t) => t.size));
-  const raised = numeric.filter((t) => t.size < 0.8 * main && t.s === '5');
+  const main = median(numeric.map((n) => n.t.size));
+  const raised = numeric.map((n) => n.t).filter((t) => t.size < 0.8 * main && t.s === '5');
   const used = new Set<number>();
   const out: DimToken[] = [];
-  for (const t of numeric) {
+  for (const { t, index } of numeric) {
     if (t.size < 0.8 * main) continue;
     let half = false;
     for (let i = 0; i < raised.length; i++) {
@@ -139,6 +150,7 @@ function dimensionTokens(texts: readonly RawText[]): DimToken[] {
       cy: t.cy,
       angle: t.angle,
       size: t.size,
+      index,
     });
   }
   return out;
@@ -260,6 +272,8 @@ export interface DimHypothesis {
   spreadPct: number;
   /** Plus grande cote concordante, en mètres, sous cette hypothèse. */
   maxMetres: number;
+  /** Plus petite cote concordante, en mètres, sous cette hypothèse. */
+  minMetres: number;
 }
 
 export interface DimCalibration {
@@ -272,7 +286,15 @@ export interface DimCalibration {
 
 /** Associe les nombres aux intervalles des lignes de cote et évalue chaque unité possible des cotes entières. */
 export function calibrateByDimensions(page: RawPage): DimCalibration {
-  const empty: DimCalibration = { n: 0, nInteger: 0, nDecimal: 0, hypotheses: [] };
+  return calibrateObservations(dimensionObservations(page));
+}
+
+/**
+ * Couples cote ↔ intervalle de toute la page. Chaque couple garde la position de son nombre : l'appelant peut
+ * ainsi calibrer une VUE à part (un plan au 1:100 à côté d'une coupe au 1:50) avec `calibrateObservations`.
+ */
+export function dimensionObservations(page: RawPage): DimObservation[] {
+  const empty: DimObservation[] = [];
   const tokens = dimensionTokens(page.texts);
   if (tokens.length < 2) return empty;
 
@@ -358,22 +380,61 @@ export function calibrateByDimensions(page: RawPage): DimCalibration {
       }
     }
   }
-  if (observations.length === 0) return empty;
+  return observations;
+}
 
+/** Longueur réelle (m) annoncée par une cote, si ses entiers sont lus dans l'unité donnée. */
+function observedMetres(o: DimObservation, unit: DimUnit): number {
+  const t = o.token;
+  return t.decimal ? t.value + (t.half ? 0.005 : 0) : (t.value + (t.half ? 0.5 : 0)) * UNIT_METRES[unit];
+}
+
+/** Dénominateur que donne chaque cote (valeur annoncée / longueur sur la feuille). */
+function observedDens(observations: readonly DimObservation[], unit: DimUnit): number[] {
+  return observations.map((o) => observedMetres(o, unit) / (o.lengthPt * METRES_PER_POINT));
+}
+
+/**
+ * Centre du groupe de valeurs le plus fourni (fenêtre de ±2 %) : sert quand la médiane tombe ENTRE deux
+ * groupes — page portant deux vues à deux échelles, cotées à parts égales.
+ */
+function densestCentre(values: readonly number[]): number {
+  const sorted = [...values].filter((v) => v > 0).sort((a, b) => a - b);
+  let best = Number.NaN;
+  let bestCount = 0;
+  let j = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    while (sorted[j]! < sorted[i]! / 1.04) j++;
+    const count = i - j + 1;
+    if (count > bestCount) {
+      bestCount = count;
+      best = median(sorted.slice(j, i + 1));
+    }
+  }
+  return best;
+}
+
+/** Évalue, pour un lot de cotes (une page ou une vue), chaque unité possible des cotes entières. */
+export function calibrateObservations(observations: readonly DimObservation[]): DimCalibration {
+  if (observations.length === 0) return { n: 0, nInteger: 0, nDecimal: 0, hypotheses: [] };
   const hypotheses: DimHypothesis[] = [];
   for (const unit of UNIT_ORDER) {
-    const metres = observations.map((o) => {
-      const t = o.token;
-      return t.decimal ? t.value + (t.half ? 0.005 : 0) : (t.value + (t.half ? 0.5 : 0)) * UNIT_METRES[unit];
-    });
-    const dens = observations.map((o, i) => metres[i]! / (o.lengthPt * METRES_PER_POINT));
-    const med = median(dens);
+    const metres = observations.map((o) => observedMetres(o, unit));
+    const dens = observedDens(observations, unit);
+    let med = median(dens);
     if (!(med > 0)) continue;
+    const within = (centre: number): number => dens.reduce((n, d) => n + (Math.abs(d / centre - 1) < 0.02 ? 1 : 0), 0);
+    // La médiane fait foi tant qu'elle rassemble la moitié des cotes ; sinon on prend le groupe le plus fourni.
+    if (within(med) < 0.5 * dens.length) {
+      const centre = densestCentre(dens);
+      if (centre > 0 && within(centre) > within(med)) med = centre;
+    }
     let inliers = 0;
     let sum = 0;
     let lo = Infinity;
     let hi = -Infinity;
     let maxMetres = 0;
+    let minMetres = Infinity;
     dens.forEach((d, i) => {
       if (Math.abs(d / med - 1) >= 0.02) return;
       inliers++;
@@ -381,12 +442,27 @@ export function calibrateByDimensions(page: RawPage): DimCalibration {
       if (d < lo) lo = d;
       if (d > hi) hi = d;
       if (metres[i]! > maxMetres) maxMetres = metres[i]!;
+      if (metres[i]! < minMetres) minMetres = metres[i]!;
     });
     if (inliers === 0) continue;
-    hypotheses.push({ unit, den: med, inliers, meanDen: sum / inliers, spreadPct: (100 * (hi - lo)) / med, maxMetres });
+    hypotheses.push({ unit, den: med, inliers, meanDen: sum / inliers, spreadPct: (100 * (hi - lo)) / med, maxMetres, minMetres });
   }
   const nInteger = observations.filter((o) => !o.token.decimal).length;
   return { n: observations.length, nInteger, nDecimal: observations.length - nInteger, hypotheses };
+}
+
+/**
+ * Second groupe de cotes concordantes, à une AUTRE échelle que celle retenue (au moins deux cotes, à plus de
+ * 10 % de la première) : signe d'une page qui porte des vues à des échelles différentes. null s'il n'y en a pas.
+ */
+export function secondDimensionCluster(observations: readonly DimObservation[], choice: DimChoice): { den: number; inliers: number } | null {
+  const rest = observedDens(observations, choice.unit).filter((d) => d > 0 && Math.abs(d / choice.den - 1) >= 0.1);
+  if (rest.length < 2) return null;
+  const centre = densestCentre(rest);
+  if (!(centre > 0)) return null;
+  const members = rest.filter((d) => Math.abs(d / centre - 1) < 0.02);
+  if (members.length < 2) return null;
+  return { den: members.reduce((s, d) => s + d, 0) / members.length, inliers: members.length };
 }
 
 export interface DimChoice {
@@ -403,6 +479,12 @@ function closeness(den: number, refs: readonly number[]): number {
   let best = Infinity;
   for (const r of refs) best = Math.min(best, Math.abs(Math.log(den / r)));
   return best;
+}
+
+/** Rang de l'échelle de plan usuelle la plus proche (0 = 1:100, 1 = 1:50…) ; au-delà de la liste si aucune n'est à 3 %. */
+function planRank(den: number): number {
+  const i = PLAN_SCALES.findIndex((r) => Math.abs(Math.log(den / r)) < 0.03);
+  return i >= 0 ? i : PLAN_SCALES.length;
 }
 
 /**
@@ -430,8 +512,14 @@ export function chooseDimensionScale(cal: DimCalibration, anchors: readonly numb
       let pool = anchored.length > 1 ? anchored : tied;
       const sized = pool.filter((h) => h.maxMetres >= 2.5 && h.maxMetres <= 150);
       if (sized.length > 0) pool = sized;
-      const refs = anchors.length > 0 ? anchors : PLAN_SCALES;
-      pick = [...pool].sort((x, y) => closeness(x.meanDen, refs) - closeness(y.meanDen, refs))[0]!;
+      // Un plan d'étage coté porte des cotes d'ouvertures, de pièces, de trumeaux : une lecture où AUCUNE cote ne
+      // descend sous 10 m (« 10000, 8500, 1500 » lus en cm = un bâtiment de 100 m aux fenêtres de 15 m) n'en est
+      // pas un. Ces cotes sont des millimètres.
+      const detailed = pool.filter((h) => h.inliers < 3 || h.minMetres < 10);
+      if (detailed.length > 0) pool = detailed;
+      if (anchors.length > 0) pick = [...pool].sort((x, y) => closeness(x.meanDen, anchors) - closeness(y.meanDen, anchors))[0]!;
+      // Sans autre indice, l'échelle de plan la plus USUELLE l'emporte (1:50 avant 1:500), pas la première unité essayée.
+      else pick = [...pool].sort((x, y) => planRank(x.meanDen) - planRank(y.meanDen) || closeness(x.meanDen, PLAN_SCALES) - closeness(y.meanDen, PLAN_SCALES))[0]!;
       ambiguous = anchors.length === 0 && pool.some((h) => h !== pick && closeness(h.meanDen, STANDARD_SCALES) < 0.03 && h.meanDen >= 10 && h.meanDen <= 1000);
     }
   }

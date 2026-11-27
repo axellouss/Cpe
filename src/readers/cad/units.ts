@@ -3,7 +3,7 @@
  * ni par ses habitudes (mm, cm et m sont tous courants) : on fait VOTER plusieurs indices indépendants.
  */
 import type { LayerCategory } from './layers';
-import type { RawDrawing } from './load';
+import type { RawDrawing } from './raw';
 import type { Seg } from './planar';
 import { SegGrid } from './spatial';
 

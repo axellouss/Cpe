@@ -37,8 +37,15 @@ import {
 } from '@node-projects/acad-ts';
 import * as acadNamespace from '@node-projects/acad-ts';
 import type { BlockRecord, CadDocument, Entity } from '@node-projects/acad-ts';
-import type { Vec2 } from '../../core/types';
+import { DwgGuardError, armDwgGuard, disarmDwgGuard, installDwgGuard } from './guard';
+import { decodeBudgetMs } from './limits';
+import { CadReadError, SEG_CURVE, SEG_DIM, SEG_FILL, SEG_HATCH, SEG_LINE, SEG_POLY } from './raw';
+import type { RawArc, RawDrawing, RawInsert, RawText } from './raw';
 import { decodeMText, decodeText } from './text';
+
+// Les formes neutres vivent dans raw.ts (sans dépendance) ; elles restent accessibles d'ici.
+export { CadReadError, SEG_CURVE, SEG_DIM, SEG_FILL, SEG_HATCH, SEG_LINE, SEG_POLY } from './raw';
+export type { RawArc, RawDrawing, RawInsert, RawText, RawTextLine } from './raw';
 
 /**
  * acad-ts retrouve ses tables et ses descriptions DXF par le NOM des classes (`constructor.name`). Un build de
@@ -63,14 +70,8 @@ export function restoreClassNames(namespace: Record<string, unknown>): number {
 }
 
 restoreClassNames(acadNamespace as unknown as Record<string, unknown>);
-
-/** Nature d'un segment (sert à alléger l'affichage et à choisir les traits de murs). */
-export const SEG_LINE = 0;
-export const SEG_POLY = 1;
-export const SEG_CURVE = 2;
-export const SEG_HATCH = 3;
-export const SEG_DIM = 4;
-export const SEG_FILL = 5;
+// Lecteurs de flux contrôlés : un DWG tronqué ou abîmé lève une erreur au lieu de boucler sans fin (voir guard.ts).
+installDwgGuard();
 
 /** Transformation affine 2D : x' = a·x + c·y + e ; y' = b·x + d·y + f. */
 export type Mat = readonly [number, number, number, number, number, number];
@@ -86,97 +87,6 @@ function compose(m: Mat, n: Mat): Mat {
     m[0] * n[4] + m[2] * n[5] + m[4],
     m[1] * n[4] + m[3] * n[5] + m[5],
   ];
-}
-
-export interface RawTextLine {
-  text: string;
-  /** Départ de la ligne de base (repère d'analyse). */
-  x: number;
-  y: number;
-}
-
-export interface RawText {
-  /** Texte décodé ; les lignes d'un MTEXT sont séparées par « \n ». */
-  text: string;
-  /** Centre approximatif du texte. */
-  cx: number;
-  cy: number;
-  height: number;
-  layer: number;
-  /** Insertion de bloc d'où vient le texte (−1 = directement dans l'espace objet). */
-  insert: number;
-  /** Texte de cote (valeur mesurée) : ignoré pour les noms de pièces. */
-  dim: boolean;
-  /** Attribut de bloc invisible : conservé pour les dimensions d'ouvertures, jamais affiché. */
-  hidden: boolean;
-  lines: RawTextLine[];
-}
-
-export interface RawArc {
-  cx: number;
-  cy: number;
-  radius: number;
-  /** Angle balayé en degrés (0..360). */
-  sweep: number;
-  layer: number;
-  insert: number;
-}
-
-export interface RawInsert {
-  name: string;
-  layer: number;
-  /** Insertion parente (−1 = espace objet). */
-  parent: number;
-  depth: number;
-  /** Point d'insertion (repère d'analyse). */
-  x: number;
-  y: number;
-  /** Direction de l'axe +Y du bloc dans le dessin (vecteur unitaire) : sert à lire une flèche du nord. */
-  upX: number;
-  upY: number;
-  attribs: Record<string, string>;
-  /** Segments et arcs produits par ce bloc et ses sous-blocs : intervalles [start, end). */
-  segStart: number;
-  segEnd: number;
-  arcStart: number;
-  arcEnd: number;
-}
-
-export interface RawDrawing {
-  version: string;
-  /** $INSUNITS de l'en-tête (0 = sans unité). */
-  insUnits: number;
-  layers: string[];
-  segCount: number;
-  /** [x1, y1, x2, y2, …] */
-  segXY: Float64Array;
-  segLayer: Int32Array;
-  segKind: Uint8Array;
-  /** Insertion de bloc la plus profonde d'où vient le segment (−1 = espace objet). */
-  segInsert: Int32Array;
-  arcs: RawArc[];
-  texts: RawText[];
-  inserts: RawInsert[];
-  /** Décalage retiré des coordonnées CAO. */
-  origin: Vec2;
-  stats: {
-    entities: number;
-    hiddenLayerEntities: number;
-    unsupported: Record<string, number>;
-    truncated: boolean;
-    missingXrefs: string[];
-    readerNotes: number;
-  };
-}
-
-export class CadReadError extends Error {
-  constructor(
-    message: string,
-    public readonly reason: 'empty' | 'unreadable',
-  ) {
-    super(message);
-    this.name = 'CadReadError';
-  }
 }
 
 const MAX_SEGMENTS = 3_000_000;
@@ -731,9 +641,15 @@ export function dxfOffLayers(bytes: Uint8Array): Set<string> {
 
 /**
  * Lit le fichier et met l'espace objet à plat. `pause` rend la main à la boucle d'événements.
- * Lève `CadReadError` si le fichier est illisible ou vide.
+ * `budgetMs` = temps accordé au décodage d'un DWG (défaut : selon la taille du fichier, voir limits.ts).
+ * Lève `CadReadError` si le fichier est illisible, abîmé au point de ne pas pouvoir être décodé, ou vide.
  */
-export async function readDrawing(data: ArrayBuffer, kind: 'dwg' | 'dxf', pause: () => Promise<void>): Promise<RawDrawing> {
+export async function readDrawing(
+  data: ArrayBuffer,
+  kind: 'dwg' | 'dxf',
+  pause: () => Promise<void>,
+  options: { budgetMs?: number } = {},
+): Promise<RawDrawing> {
   const bytes = new Uint8Array(data);
   let readerNotes = 0;
   const notify = (): void => {
@@ -742,10 +658,23 @@ export async function readDrawing(data: ArrayBuffer, kind: 'dwg' | 'dxf', pause:
   await pause();
   let doc: CadDocument;
   let offLayers = new Set<string>();
+  let damagedObjects = 0;
   try {
-    const asDwg = kind === 'dwg' || looksLikeDwg(bytes);
-    doc = asDwg ? DwgReader.readFromStream(data, notify) : DxfReader.readFromStream(bytes, notify);
-    if (!asDwg) offLayers = dxfOffLayers(bytes);
+    if (kind === 'dwg' || looksLikeDwg(bytes)) {
+      armDwgGuard(options.budgetMs ?? decodeBudgetMs(bytes.length));
+      let guard: ReturnType<typeof disarmDwgGuard>;
+      try {
+        doc = DwgReader.readFromStream(data, notify);
+      } finally {
+        guard = disarmDwgGuard();
+      }
+      // Temps écoulé alors qu'acad-ts a rattrapé l'erreur objet par objet : ce qu'il rend n'est pas un dessin.
+      if (guard.expired) throw new DwgGuardError('budget');
+      damagedObjects = guard.overruns;
+    } else {
+      doc = DxfReader.readFromStream(bytes, notify);
+      offLayers = dxfOffLayers(bytes);
+    }
   } catch (err) {
     throw new CadReadError(err instanceof Error ? err.message : String(err), 'unreadable');
   }
@@ -832,6 +761,7 @@ export async function readDrawing(data: ArrayBuffer, kind: 'dwg' | 'dxf', pause:
       truncated: flat.truncated,
       missingXrefs: [...flat.missingXrefs],
       readerNotes,
+      damagedObjects,
     },
   };
 }

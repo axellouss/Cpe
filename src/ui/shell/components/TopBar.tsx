@@ -4,8 +4,8 @@
  */
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { Lang } from '../../../core/types';
-import { computeMeters, percent } from '../meters';
-import { selectCanRedo, selectCanUndo, selectProject, useShell, useShellStore } from '../store';
+import { computeMeters, percent, stepsDone } from '../meters';
+import { selectCanRedo, selectCanUndo, selectMarks, selectProject, useShell, useShellStore } from '../store';
 import { STEPS } from '../types';
 import type { Step } from '../types';
 import { Meter, useT } from './common';
@@ -22,10 +22,14 @@ export function TopBar() {
   const canUndo = useShell(selectCanUndo);
   const canRedo = useShell(selectCanRedo);
   const expertOpen = useShell((s) => s.expertOpen);
-  const documentCount = useShell((s) => s.documents.length);
+  const marks = useShell(selectMarks);
+  const documents = useShell((s) => s.documents);
+  const documentCount = documents.length;
   const saveState = useShell((s) => s.saveState);
 
-  const meters = useMemo(() => computeMeters(project), [project]);
+  // Jauges et coches lisent les mêmes états que la liste guidée du plan : ce que l'expert a réellement validé.
+  const meters = useMemo(() => computeMeters(project, marks, documents), [project, marks, documents]);
+  const done = useMemo(() => stepsDone(project, marks, documents), [project, marks, documents]);
   const bar = useRef<HTMLElement>(null);
 
   // La barre passe sur deux rangées sur petit écran : sa hauteur réelle cale les éléments collants placés dessous.
@@ -62,8 +66,13 @@ export function TopBar() {
           {STEPS.map((s, i) => {
             const state = i === current ? 'current' : i < current ? 'past' : 'future';
             const enabled = reachable(s);
+            // La coche dit « fait », jamais « déjà vu » : une étape traversée sans rien valider garde son numéro,
+            // et le plan ou la question indispensable laissés ouverts derrière soi sont signalés « à compléter ».
+            const work: 'done' | 'pending' | 'none' =
+              i === current ? 'none' : done[s] ? 'done' : i < current && enabled && (s === 'plan' || s === 'questions') ? 'pending' : 'none';
+            const title = enabled ? tr(`shell.steps.${s}.title`) : tr('shell.steps.locked');
             return (
-              <li key={s} className={`steps__item steps__item--${state}`}>
+              <li key={s} className={`steps__item steps__item--${state} ${work === 'none' ? '' : `is-${work}`}`} data-work={work}>
                 <button
                   type="button"
                   className="steps__button"
@@ -71,12 +80,13 @@ export function TopBar() {
                   disabled={!enabled}
                   onClick={() => store.getState().goTo(s)}
                   data-testid={`step-${s}`}
-                  title={enabled ? tr(`shell.steps.${s}.title`) : tr('shell.steps.locked')}
+                  title={work === 'none' ? title : `${title} — ${tr(`shell.steps.state.${work}`)}`}
                 >
                   <span className="steps__num" aria-hidden="true">
-                    {i < current ? <Icon name="check" size={13} /> : i + 1}
+                    {work === 'done' ? <Icon name="check" size={13} /> : i + 1}
                   </span>
                   <span className="steps__text">{tr(`shell.steps.${s}`)}</span>
+                  {work === 'none' ? null : <span className="visually-hidden"> — {tr(`shell.steps.state.${work}`)}</span>}
                 </button>
               </li>
             );

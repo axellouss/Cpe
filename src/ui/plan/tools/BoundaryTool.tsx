@@ -106,7 +106,7 @@ export function BoundaryTool({ ctx }: { ctx: ToolContext }) {
         <EdgeLengthLabels outline={storey.outline} view={view} metresPerUnit={mpu} approx={approx} />
       </Overlay>
       <TopBar>
-        <Hint>{tr(hasOutline ? 'plan.boundary.hint' : 'plan.needOutline')}</Hint>
+        <Hint>{tr(!hasOutline ? 'plan.needOutline' : ctx.compact ? 'plan.boundary.hintShort' : 'plan.boundary.hint')}</Hint>
       </TopBar>
       {current ? (
         <Popover

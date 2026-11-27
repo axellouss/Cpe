@@ -128,6 +128,8 @@ export function CounterRow(props: { ctx: ToolContext; children?: ReactNode }) {
 /**
  * Surface brute et périmètre du contour affiché (y compris pendant un glissement).
  * `secondary` : l'outil ne les modifie pas (façades, déplacement) — simple rappel, masqué sur téléphone.
+ * Le périmètre y est toujours masqué : les longueurs des côtés sont déjà écrites sur le plan, la surface tient
+ * alors sur une seule rangée.
  */
 export function AreaCounters(props: { ctx: ToolContext; storey: Storey; secondary?: boolean }) {
   const { ctx, storey } = props;
@@ -148,7 +150,7 @@ export function AreaCounters(props: { ctx: ToolContext; storey: Storey; secondar
         value={approx + formatDecimal(m.perimeter, 2)}
         unit="m"
         testId="plan-counter-perimeter"
-        secondary={props.secondary}
+        secondary
       />
     </>
   );

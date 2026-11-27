@@ -21,6 +21,12 @@
  *      boundary, opening, pan → jamais (on y enchaîne les retouches : c'est le shell qui propose de continuer).
  *
  * La prop `constructions` du contrat n'est pas utilisée ici : le choix du type de mur par façade se fait ailleurs.
+ *
+ * Cadrage : tant que l'utilisateur n'a ni zoomé ni déplacé le plan, la vue reste « automatique » — elle se recadre
+ * au changement d'outil, de taille, et après une saisie qui change la taille du contour (`reframe`). Sur un écran
+ * étroit (téléphone), le contour est cadré dans la place que l'interface de l'outil laisse RÉELLEMENT (mesurée dans
+ * le DOM), avec la marge de ce que l'outil écrit autour de lui : le plan occupe l'écran, rien ne le recouvre.
+ * Une bulle ouverte en feuille au bas de l'écran remonte le plan le temps de la saisie (`cover`).
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
@@ -44,6 +50,7 @@ import { RoomsTool } from './tools/RoomsTool';
 import { ScaleTool } from './tools/ScaleTool';
 import type { Insets, ScreenBox, Size, View, ZoomLimits } from './view';
 import {
+  COMPACT_MARGIN,
   fitViewInsets,
   fitViewMargins,
   hudInsets,
@@ -63,6 +70,11 @@ import {
 const BLANK_BOX: BBox = { minX: 0, minY: 0, maxX: 20, maxY: 14 };
 /** Largeur de la zone de plan en dessous de laquelle l'interface passe en mode téléphone. */
 const COMPACT_WIDTH = 560;
+/**
+ * Hauteur en dessous de laquelle elle y passe aussi, quelle que soit la largeur : dans 340 px de haut, l'interface
+ * de bureau (boussole en carte de 344 px, bandeaux de deux lignes) ne laisse pas de place au plan.
+ */
+const COMPACT_HEIGHT = 420;
 /** Déplacement (px) au-delà duquel un appui devient un glissement. */
 const DRAG_THRESHOLD = { mouse: 4, other: 9 };
 
@@ -111,20 +123,6 @@ function ToolView({ tool, ctx }: { tool: PlanTool; ctx: ToolContext }) {
 
 /** En dessous de cette largeur de la zone de plan (px), la vue s'ouvre de préférence sur le contour. */
 const NARROW_STAGE_PX = 640;
-
-/**
- * Écran étroit : marge (px) gardée autour du contour cadré, selon ce que l'outil écrit à l'extérieur de lui
- * (longueurs des côtés, dimensions des ouvertures sur deux rangées, secteur et azimut des façades).
- */
-const COMPACT_MARGIN: Record<PlanTool, { x: number; y: number }> = {
-  pan: { x: 12, y: 12 },
-  scale: { x: 18, y: 18 },
-  outline: { x: 30, y: 28 },
-  boundary: { x: 46, y: 24 },
-  opening: { x: 40, y: 40 },
-  north: { x: 44, y: 22 },
-  rooms: { x: 10, y: 10 },
-};
 
 /** Ce que la vue cadre tant que l'utilisateur ne l'a pas bougée : au mieux (règle d'ouverture), le contour, ou tout. */
 type AutoFit = 'auto' | 'focus' | 'all';
@@ -180,7 +178,8 @@ export function PlanEditor(props: PlanEditorProps) {
   const [loupe, setLoupe] = useState<{ finger: Vec2; point: Vec2 } | null>(null);
 
   const tr = useCallback((key: string, params?: Record<string, string | number>) => t(lang, key, params), [lang]);
-  const compact = size.width > 0 && size.width < COMPACT_WIDTH;
+  // Présentation resserrée : zone étroite (téléphone) ou basse (téléphone couché, tablette debout dans l'application).
+  const compact = size.width > 0 && (size.width < COMPACT_WIDTH || size.height < COMPACT_HEIGHT);
 
   // ───────────── Index spatial des traits ─────────────
 
@@ -255,12 +254,12 @@ export function PlanEditor(props: PlanEditorProps) {
 
   /**
    * Règle d'ouverture : si le contour n'occupe qu'un coin de la feuille (plan avec cartouche, plusieurs vues), on
-   * s'ouvre sur lui. Sur un écran étroit, on le cadre dès qu'il laisse une large marge autour de lui.
+   * s'ouvre sur lui. Sur un écran étroit ou bas, on le cadre dès qu'il laisse une large marge autour de lui.
    */
   const preferFocus = (): boolean => {
     if (!focusBox) return false;
     const allArea = (allBox.maxX - allBox.minX) * (allBox.maxY - allBox.minY);
-    const share = size.width > 0 && size.width < NARROW_STAGE_PX ? 0.6 : 0.2;
+    const share = compact || (size.width > 0 && size.width < NARROW_STAGE_PX) ? 0.6 : 0.2;
     return allArea > 0 && polygonArea(storey.outline) < share * allArea;
   };
 
@@ -360,7 +359,7 @@ export function PlanEditor(props: PlanEditorProps) {
   // qui change de hauteur en cours de geste : le plan ne doit pas bouger sous le doigt).
   const hasView = view !== null;
   const hudKey = `${tool}|${storey.id}|${sheet?.id ?? ''}`;
-  useLayoutEffect(() => {
+  const reframeNow = (): void => {
     const root = rootRef.current;
     if (!root || !hasView) return;
     const measured = compact ? measureHud(root) : null;
@@ -373,7 +372,22 @@ export function PlanEditor(props: PlanEditorProps) {
     // Une feuille ouverte en bas d'écran garde son décalage (voir `cover`).
     const target = framed ? panBy(framed, 0, -coverLift.current) : null;
     if (target && !sameView(current, target, 0.5)) setViewNow(target, kind);
-  }, [hudKey, compact, size.width, size.height, hasView, staticInsets]);
+  };
+  useLayoutEffect(reframeNow, [hudKey, compact, size.width, size.height, hasView, staticInsets]);
+
+  // Un outil vient de changer la TAILLE du contour par une saisie (longueur exacte d'un côté), pas par un geste :
+  // il le signale (`reframe`), et la vue — si elle est encore automatique — se recadre dès que le nouveau contour
+  // arrive, pour que rien ne passe sous l'interface.
+  const reframeAsked = useRef(0);
+  const reframe = useCallback(() => {
+    reframeAsked.current = Date.now();
+  }, []);
+  useLayoutEffect(() => {
+    const asked = reframeAsked.current;
+    reframeAsked.current = 0;
+    if (asked > 0 && Date.now() - asked < 1000) reframeNow();
+    // Seul un nouveau contour doit relancer cet effet.
+  }, [storey.outline]);
 
   useEffect(
     () => () => {
@@ -768,6 +782,7 @@ export function PlanEditor(props: PlanEditorProps) {
         coarse,
         aim,
         cover,
+        reframe,
         controller,
         focusSurface,
       }

@@ -182,7 +182,10 @@ export function OutlineTool({ ctx }: { ctx: ToolContext }) {
       const pill = storeyPills.find((l) => l.edge === editEdge.edge);
       const next = setEdgeLength(storey, editEdge.edge, lengthValue);
       if (next === storey) return;
-      if (!pill || Math.abs(pill.metres - lengthValue) > 1e-6) ctx.commit(next);
+      if (!pill || Math.abs(pill.metres - lengthValue) > 1e-6) {
+        ctx.reframe();
+        ctx.commit(next);
+      }
     } else if (lastPreview) {
       setTrace(lastPreview);
       show(null);

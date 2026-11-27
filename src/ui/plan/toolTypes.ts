@@ -84,6 +84,11 @@ export interface ToolContext {
    * au-dessus d'elle. `null` à la fermeture : le plan reprend sa place. Sans effet s'il n'y a pas la place.
    */
   cover(focus: Vec2 | null, height: number): void;
+  /**
+   * À appeler juste avant `commit` quand une SAISIE (pas un geste) change la taille du contour : si l'utilisateur
+   * n'a pas bougé la vue, l'éditeur la recadre sur le nouveau contour, pour que rien ne glisse sous l'interface.
+   */
+  reframe(): void;
   /** L'outil y dépose son contrôleur. */
   controller: { current: ToolController | null };
   /** Rend le clavier à la zone de plan (après un bouton, une bulle…). */

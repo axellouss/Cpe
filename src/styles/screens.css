@@ -185,10 +185,22 @@
   color: var(--ink);
 }
 
-.steps__item--past .steps__num {
+/* La coche (et le vert) disent « fait », pas « déjà vu » : une étape traversée sans rien valider garde son numéro. */
+.steps__item.is-done .steps__button {
+  color: var(--ink);
+}
+
+.steps__item.is-done .steps__num {
   background: var(--ok-bg);
   border-color: var(--ok);
   color: var(--ok);
+}
+
+/* Plan ou question indispensable laissés ouverts derrière soi : numéro sur fond ambre, comme « à confirmer ». */
+.steps__item.is-pending .steps__num {
+  background: var(--warn-bg);
+  border-color: var(--warn-line);
+  color: var(--warn);
 }
 
 .topbar__meters {
@@ -1196,10 +1208,106 @@
   font-weight: 600;
 }
 
+/* Zone qui défile (titre, étapes, explication) et barre toujours visible (commandes de l'étape, suite du parcours). */
+.guide__scroll,
+.guide__bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-content: start;
+}
+
+.guide__bar {
+  position: relative;
+}
+
 .guide__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+
+/* Étape qui se valide sur le plan (contour, nord) : le guide y renvoie au lieu de doubler le bouton. */
+.guide__onplan {
+  flex-basis: 100%;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* « Lire la suite » : posé à cheval sur le bord haut de la barre, seulement quand du texte reste dessous. */
+.guide__more {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 650;
+  white-space: nowrap;
+  box-shadow: var(--shadow-1);
+  transform: translate(-50%, -50%);
+}
+
+.guide__more:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Hauteur d'étage : cinq valeurs d'un toucher, puis un champ pour toute autre. */
+.height-pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.height-pick__chips {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.height-pick__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 4px 2px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.height-pick__chip:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Valeur retenue : cadre et trait épais en bas (pas la couleur seule), et la ligne d'état la redit en clair. */
+.height-pick__chip.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 -4px 0 var(--accent);
+}
+
+.height-pick__exact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .guide__foot {
@@ -1352,7 +1460,9 @@
  */
 @media (max-width: 999px) {
   .plan__guide,
-  .plan__guide > .guide {
+  .plan__guide > .guide,
+  .guide__scroll,
+  .guide__bar {
     display: contents;
   }
 
@@ -1368,8 +1478,15 @@
     order: 3;
   }
 
-  .guide__detail {
+  .guide__detail,
+  .guide__actions {
     order: 4;
+  }
+
+  /* La hauteur d'étage ne se joue pas sur le plan : ses pastilles passent au-dessus, sous le bandeau des étapes. */
+  .plan__body.is-step-height .guide__detail,
+  .plan__body.is-step-height .guide__actions {
+    order: 2;
   }
 
   .guide__foot {
@@ -1411,9 +1528,49 @@
     grid-template-rows: minmax(0, 1fr) auto;
   }
 
+  /*
+   * La colonne du guide tient dans la hauteur de l'écran : seule sa partie haute (étapes, explication) défile ;
+   * les commandes de l'étape active et la suite du parcours restent en bas, toujours visibles, au même endroit.
+   */
   .plan__guide {
+    display: flex;
+    flex-direction: column;
     min-height: 0;
-    overflow: auto;
+    overflow: hidden;
+  }
+
+  .guide {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 0;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .guide__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+
+  .guide__bar {
+    flex: none;
+    gap: 8px;
+    padding: 10px 12px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  /* Du texte reste sous la barre : une ombre le dit, en plus du bouton « Lire la suite ». */
+  .guide__bar.has-more {
+    padding-top: 16px;
+    border-top-color: var(--border-strong);
+    box-shadow: 0 -10px 12px -10px rgba(20, 30, 35, 0.35);
   }
 
   .plan__editor-wrap {
@@ -1427,6 +1584,7 @@
 
   .checklist {
     flex-direction: column;
+    gap: 4px;
     overflow: visible;
     padding-bottom: 0;
   }
@@ -1443,7 +1601,28 @@
   }
 
   .checklist__head {
-    min-height: 48px;
+    min-height: 44px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+
+  /* Étape faite : une seule ligne (coche, nom, « fait »), pour laisser la place à celles qui restent. */
+  .checklist__item.is-done .checklist__head {
+    min-height: 32px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+
+  .checklist__item.is-done .checklist__mark {
+    width: 22px;
+    height: 22px;
+  }
+
+  .checklist__item.is-done .checklist__text {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
   }
 }
 

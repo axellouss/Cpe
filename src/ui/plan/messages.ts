@@ -109,6 +109,7 @@ export const PLAN_MESSAGES: Dictionary = {
     'plan.outline.vertexAria': 'Sommet {n} sur {count} (flèches : déplacer, Suppr : supprimer)',
 
     'plan.boundary.hint': 'Touchez une façade pour dire ce qu’il y a derrière.',
+    'plan.boundary.hintShort': 'Touchez une façade : qu’y a-t-il derrière ?',
     'plan.boundary.title': 'Derrière cette façade',
     'plan.boundary.legend': 'Légende des façades',
     'plan.boundary.edgeAria': 'Façade {n}, {length} m : {boundary}. Entrée pour choisir.',
@@ -164,6 +165,7 @@ export const PLAN_MESSAGES: Dictionary = {
     'plan.sector.NW': 'Nord-ouest',
 
     'plan.rooms.hint': 'Touchez une pièce pour la compter ou non dans An.',
+    'plan.rooms.hintShort': 'Touchez une pièce : comptée dans An, ou non.',
     'plan.rooms.none': 'Aucune pièce n’a été lue sur ce plan.',
     'plan.rooms.unnamed': 'Pièce',
     'plan.rooms.state.heated': 'Comptée dans An',
@@ -247,7 +249,7 @@ export const PLAN_MESSAGES: Dictionary = {
     'plan.outline.traceKeysNoScale': 'Klick: Punkt setzen · Eingabe oder Klick auf den ersten Punkt: schließen · Esc: letzten Punkt entfernen.',
     'plan.outline.editKeys': 'Eckpunkt ziehen zum Korrigieren, „+“ fügt einen hinzu, Entf entfernt ihn. Klick auf eine Länge, um sie einzugeben.',
     'plan.outline.editKeysNoScale': 'Eckpunkt ziehen zum Korrigieren, „+“ fügt einen hinzu, Entf entfernt ihn.',
-    'plan.outline.lengthTap': 'Tippen Sie auf eine Länge, um den genauen Wert einzugeben.',
+    'plan.outline.lengthTap': 'Länge antippen, um den genauen Wert einzugeben.',
     'plan.outline.proposal': 'Aus dem Plan vorgeschlagener Umriss. Prüfen Sie, ob er der AUSSENKANTE der Wände folgt.',
     'plan.outline.useProposal': 'Diesen Umriss übernehmen',
     'plan.outline.traceMyself': 'Selbst zeichnen',
@@ -278,6 +280,7 @@ export const PLAN_MESSAGES: Dictionary = {
     'plan.outline.vertexAria': 'Eckpunkt {n} von {count} (Pfeiltasten: verschieben, Entf: löschen)',
 
     'plan.boundary.hint': 'Tippen Sie auf eine Fassade und sagen Sie, was dahinter liegt.',
+    'plan.boundary.hintShort': 'Fassade antippen: Was liegt dahinter?',
     'plan.boundary.title': 'Hinter dieser Fassade',
     'plan.boundary.legend': 'Legende der Fassaden',
     'plan.boundary.edgeAria': 'Fassade {n}, {length} m: {boundary}. Eingabe zum Auswählen.',
@@ -333,6 +336,7 @@ export const PLAN_MESSAGES: Dictionary = {
     'plan.sector.NW': 'Nordwesten',
 
     'plan.rooms.hint': 'Tippen Sie auf einen Raum, um ihn in An mitzuzählen oder nicht.',
+    'plan.rooms.hintShort': 'Raum antippen: in An mitzählen oder nicht.',
     'plan.rooms.none': 'In diesem Plan wurden keine Räume gelesen.',
     'plan.rooms.unnamed': 'Raum',
     'plan.rooms.state.heated': 'In An gezählt',

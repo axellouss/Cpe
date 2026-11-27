@@ -1,17 +1,21 @@
 /**
- * Liste guidée de l'écran « Plan » : pour un étage, l'état de chacune des six étapes et l'outil de l'éditeur
+ * Liste guidée de l'écran « Plan » : pour un étage, l'état de chacune des étapes et l'outil de l'éditeur
  * qui lui correspond. Fonctions pures.
  *
  * États :
  *  - todo      : rien d'exploitable, l'expert doit agir ;
  *  - toConfirm : le lecteur a proposé quelque chose (ou une hypothèse par défaut tient) → « à confirmer » ;
- *  - done      : saisi ou validé par l'expert ;
+ *  - done      : saisi ou validé par l'expert (ou rien à valider : grille vierge, maquette en vraie grandeur,
+ *                hauteur lue sur une coupe, dernier étage sous une toiture inclinée confirmée) ;
  *  - blocked   : dépend d'une étape précédente (pas de façades sans contour).
+ *
+ * Ce sont ces états, et eux seuls, qui disent « confirmé » partout dans l'application : onglets d'étages, jauges
+ * de la barre du haut, coche de l'étape « Plan », rappel des étapes non confirmées sur la page de résultat.
  */
-import type { PlanSheet, Project, Storey } from '../../core/types';
+import type { PlanSheet, Project, SourceKind, Storey } from '../../core/types';
 import type { PlanTool } from '../plan';
-import type { Marks, PlanStepKey } from './types';
-import { PLAN_STEP_KEYS } from './types';
+import { fileNameOfSheetId, findSheet } from './documents';
+import type { LoadedDocument, Marks, PlanStepKey } from './types';
 
 export type StepState = 'todo' | 'toConfirm' | 'done' | 'blocked';
 
@@ -25,7 +29,18 @@ export interface PlanStepInfo {
   canConfirm: boolean;
 }
 
+/** Outil de l'éditeur montré pendant chaque étape. La hauteur ne se joue pas sur le plan : on le laisse simplement visible. */
 export const STEP_TOOL: Record<PlanStepKey, PlanTool> = {
+  scale: 'scale',
+  outline: 'outline',
+  height: 'pan',
+  boundary: 'boundary',
+  opening: 'opening',
+  north: 'north',
+  rooms: 'rooms',
+};
+
+const TOOL_STEP: Partial<Record<PlanTool, PlanStepKey>> = {
   scale: 'scale',
   outline: 'outline',
   boundary: 'boundary',
@@ -34,19 +49,68 @@ export const STEP_TOOL: Record<PlanStepKey, PlanTool> = {
   rooms: 'rooms',
 };
 
+/** Étape que termine un outil de l'éditeur ; null pour « se déplacer », qui ne termine rien. */
 export function stepOfTool(tool: PlanTool): PlanStepKey | null {
-  return (PLAN_STEP_KEYS as readonly string[]).includes(tool) ? (tool as PlanStepKey) : null;
+  return TOOL_STEP[tool] ?? null;
 }
+
+/**
+ * Étapes dont la validation se fait SUR LE PLAN : l'éditeur y porte son propre bouton (« Le contour est bon »,
+ * « Le nord est bon »). Le guide n'en affiche pas un second ; il renvoie vers celui du plan.
+ */
+export const CONFIRMED_ON_PLAN: Partial<Record<PlanStepKey, string>> = {
+  outline: 'plan.outline.accept',
+  north: 'plan.north.confirm',
+};
+
+/** Hauteurs d'étage brutes proposées d'un toucher (m). */
+export const HEIGHT_CHOICES: readonly number[] = [2.5, 2.6, 2.7, 2.8, 3];
 
 function isWeak(from: string): boolean {
   return from === 'default' || from === 'estimate';
 }
 
 /**
- * États des six étapes pour un étage.
- * `sheet` = feuille de fond si elle est chargée (sert à savoir si une échelle a réellement été lue).
+ * Maquette en vraie grandeur (IFC) : ses coordonnées SONT des mètres, il n'y a pas d'échelle à confirmer.
+ * `kind` = nature du fichier quand il est chargé ; à défaut (projet rouvert sans ses plans), le nom du fichier
+ * gardé dans l'identifiant de la feuille en tient lieu.
  */
-export function planSteps(project: Project, storey: Storey, marks: Marks, sheet: PlanSheet | null): PlanStepInfo[] {
+export function isRealSizeModel(storey: Storey, kind: SourceKind | null = null): boolean {
+  if (storey.sheetId === null || storey.metresPerUnit.from !== 'plan') return false;
+  if (kind !== null) return kind === 'ifc';
+  return /\.ifc(?: \(\d+\))?$/i.test(fileNameOfSheetId(storey.sheetId));
+}
+
+/**
+ * Vrai si la hauteur d'étage brute de cet étage ne sert à rien : dernier étage sous une toiture inclinée CONFIRMÉE
+ * (le moteur tire alors les hauteurs de murs et le volume de la pente et de la jambette).
+ */
+export function grossHeightUnused(project: Project, storey: Storey): boolean {
+  const { top, storeys } = project.model;
+  return top.kind === 'pitched-roof' && top.from === 'user' && storeys[storeys.length - 1]?.id === storey.id;
+}
+
+/**
+ * Autres étages dont l'échelle est la même affaire que celle de `storeyId` : fond venu du même fichier, même
+ * valeur, pas encore confirmée. Confirmer l'une les confirme toutes (un dessin n'a qu'une unité).
+ */
+export function sameScaleStoreyIds(project: Project, storeyId: string): string[] {
+  const storey = project.model.storeys.find((s) => s.id === storeyId);
+  if (!storey || storey.sheetId === null) return [];
+  const file = fileNameOfSheetId(storey.sheetId);
+  const value = storey.metresPerUnit.value;
+  const same = (other: number): boolean => Number.isFinite(value) && Math.abs(other - value) <= Math.abs(value) * 1e-9;
+  return project.model.storeys
+    .filter((s) => s.id !== storeyId && s.sheetId !== null && fileNameOfSheetId(s.sheetId) === file && s.metresPerUnit.from !== 'user' && same(s.metresPerUnit.value))
+    .map((s) => s.id);
+}
+
+/**
+ * États des étapes pour un étage.
+ * `sheet` = feuille de fond si elle est chargée (sert à savoir si une échelle a réellement été lue) ;
+ * `kind`  = nature du fichier d'où elle vient, s'il est chargé.
+ */
+export function planSteps(project: Project, storey: Storey, marks: Marks, sheet: PlanSheet | null, kind: SourceKind | null = null): PlanStepInfo[] {
   const done = marks.plan[storey.id] ?? {};
   const hasOutline = storey.outline.length >= 3;
   const steps: PlanStepInfo[] = [];
@@ -60,6 +124,8 @@ export function planSteps(project: Project, storey: Storey, marks: Marks, sheet:
     add('scale', 'done', 'shell.plan.status.scale.grid');
   } else if (scale.from === 'user') {
     add('scale', 'done', 'shell.plan.status.scale.user', { value: scale.value });
+  } else if (isRealSizeModel(storey, kind)) {
+    add('scale', 'done', 'shell.plan.status.scale.model');
   } else if (!isWeak(scale.from)) {
     add('scale', 'toConfirm', 'shell.plan.status.scale.plan', { value: scale.value });
   } else {
@@ -72,7 +138,24 @@ export function planSteps(project: Project, storey: Storey, marks: Marks, sheet:
   if (!hasOutline) add('outline', 'todo', 'shell.plan.status.outline.none');
   else add('outline', done.outline ? 'done' : 'toConfirm', 'shell.plan.status.outline.some', { points: storey.outline.length });
 
-  // 3. Ce qu'il y a derrière chaque façade
+  // 3. Hauteur d'étage brute : la seule valeur géométrique qu'une vue en plan ne donne pas.
+  const gross = storey.grossHeight;
+  if (grossHeightUnused(project, storey)) {
+    add('height', 'done', 'shell.plan.status.height.roof');
+  } else if (gross.from === 'user') {
+    add('height', 'done', 'shell.plan.status.height.user', { height: gross.value });
+  } else if (gross.from === 'estimate') {
+    // Lue, mais pas comme une hauteur de dalle à dalle (sommet des murs d'une maquette) : à valider.
+    add('height', 'toConfirm', 'shell.plan.status.height.read', { height: gross.value });
+  } else if (gross.from === 'default') {
+    // Une valeur par défaut ne se « confirme » pas : l'expert choisit la hauteur (une pastille ou le champ).
+    add('height', 'todo', 'shell.plan.status.height.default', { height: gross.value }, false);
+  } else {
+    // Lue sur le plan (maquette, coupe) : rien à valider.
+    add('height', 'done', 'shell.plan.status.height.plan', { height: gross.value });
+  }
+
+  // 4. Ce qu'il y a derrière chaque façade
   if (!hasOutline) {
     add('boundary', 'blocked', 'shell.plan.status.needOutline');
   } else {
@@ -85,7 +168,7 @@ export function planSteps(project: Project, storey: Storey, marks: Marks, sheet:
     );
   }
 
-  // 4. Fenêtres et portes
+  // 5. Fenêtres et portes
   if (!hasOutline) {
     add('opening', 'blocked', 'shell.plan.status.needOutline');
   } else {
@@ -95,14 +178,14 @@ export function planSteps(project: Project, storey: Storey, marks: Marks, sheet:
     else add('opening', done.opening ? 'done' : 'toConfirm', 'shell.plan.status.opening.some', { windows, doors });
   }
 
-  // 5. Nord (commun à tout le bâtiment)
+  // 6. Nord (commun à tout le bâtiment)
   const north = project.model.northAngle;
   const northParams = { angle: Math.round(north.value) };
   if (north.from === 'user') add('north', 'done', 'shell.plan.status.north.user', northParams);
   else if (!isWeak(north.from)) add('north', 'toConfirm', 'shell.plan.status.north.plan', northParams);
   else add('north', 'todo', north.from === 'estimate' ? 'shell.plan.status.north.weak' : 'shell.plan.status.north.default', northParams, true);
 
-  // 6. Pièces chauffées (An)
+  // 7. Pièces chauffées (An)
   const toDecide = storey.rooms.filter((r) => r.needsReview).length;
   if (storey.netAreaOverride) {
     add('rooms', 'done', 'shell.plan.status.rooms.override', { area: storey.netAreaOverride.value });
@@ -118,19 +201,35 @@ export function planSteps(project: Project, storey: Storey, marks: Marks, sheet:
   return steps;
 }
 
+/** Nature du fichier d'où vient une feuille, s'il est chargé. */
+function kindOfSheet(documents: readonly LoadedDocument[], sheetId: string | null): SourceKind | null {
+  if (sheetId === null) return null;
+  return documents.find((d) => d.doc.sheets.some((s) => s.id === sheetId))?.doc.kind ?? null;
+}
+
+/** États des étapes d'un étage, le fond de plan étant cherché parmi les documents chargés. */
+export function storeySteps(project: Project, storey: Storey, marks: Marks, documents: readonly LoadedDocument[]): PlanStepInfo[] {
+  return planSteps(project, storey, marks, findSheet(documents, storey.sheetId), kindOfSheet(documents, storey.sheetId));
+}
+
+/** Vrai si l'étape reste à faire ou à confirmer (une étape bloquée attend, elle, une étape précédente). */
+function isOpen(step: PlanStepInfo): boolean {
+  return step.state === 'todo' || step.state === 'toConfirm';
+}
+
 /** Première étape encore ouverte après `current` (en bouclant) ; null si tout est fait. */
 export function nextOpenStep(steps: readonly PlanStepInfo[], current: PlanStepKey | null): PlanStepKey | null {
   const start = current === null ? -1 : steps.findIndex((s) => s.key === current);
   for (let k = 1; k <= steps.length; k++) {
     const step = steps[(start + k + steps.length) % steps.length];
-    if (step && (step.state === 'todo' || step.state === 'toConfirm')) return step.key;
+    if (step && isOpen(step)) return step.key;
   }
   return null;
 }
 
 /** Première étape ouverte en partant du début ; à défaut la première étape. */
 export function firstOpenStep(steps: readonly PlanStepInfo[]): PlanStepKey {
-  return steps.find((s) => s.state === 'todo' || s.state === 'toConfirm')?.key ?? 'scale';
+  return steps.find(isOpen)?.key ?? 'scale';
 }
 
 export function countDone(steps: readonly PlanStepInfo[]): number {
@@ -138,11 +237,27 @@ export function countDone(steps: readonly PlanStepInfo[]): number {
 }
 
 /** Vrai si toutes les étapes de tous les étages sont faites. */
-export function allStoreysDone(project: Project, marks: Marks): boolean {
+export function allStoreysDone(project: Project, marks: Marks, documents: readonly LoadedDocument[] = []): boolean {
   return (
     project.model.storeys.length > 0 &&
-    project.model.storeys.every((s) => planSteps(project, s, marks, null).every((step) => step.state === 'done'))
+    project.model.storeys.every((s) => storeySteps(project, s, marks, documents).every((step) => step.state === 'done'))
   );
+}
+
+export interface UnconfirmedStorey {
+  storey: Storey;
+  /** Étapes qui ne sont pas « faites », dans l'ordre de la liste. */
+  steps: PlanStepInfo[];
+}
+
+/**
+ * Ce que l'expert n'a jamais validé sur le plan, étage par étage (aucun étage en règle n'y figure).
+ * La page de résultat le rappelle : des valeurs proposées par le lecteur n'y passent pas pour confirmées.
+ */
+export function unconfirmedSteps(project: Project, marks: Marks, documents: readonly LoadedDocument[] = []): UnconfirmedStorey[] {
+  return project.model.storeys
+    .map((storey) => ({ storey, steps: storeySteps(project, storey, marks, documents).filter((s) => s.state !== 'done') }))
+    .filter((entry) => entry.steps.length > 0);
 }
 
 /** Marque une étape comme validée pour un étage. */
@@ -157,4 +272,26 @@ export function dropStoreyMarks(marks: Marks, storeyId: string): Marks {
   const plan = { ...marks.plan };
   delete plan[storeyId];
   return { ...marks, plan };
+}
+
+// ───────────────────────────── Défilement du guide ─────────────────────────────
+
+/**
+ * Bandeau horizontal des étapes (écran étroit) : position de défilement qui centre l'étape active.
+ * Positions mesurées dans le contenu du bandeau (px).
+ */
+export function centredScrollLeft(item: { left: number; width: number }, view: { width: number; scrollWidth: number }): number {
+  const max = Math.max(0, view.scrollWidth - view.width);
+  return Math.max(0, Math.min(max, item.left + item.width / 2 - view.width / 2));
+}
+
+/**
+ * Colonne du guide (grand écran) : position de défilement qui montre le détail de l'étape active jusqu'en bas,
+ * sans jamais faire sortir l'étape active elle-même par le haut. Positions mesurées dans le contenu (px).
+ */
+export function revealScrollTop(current: number, viewHeight: number, itemTop: number, detailBottom: number, margin = 8): number {
+  let target = current;
+  if (detailBottom + margin > target + viewHeight) target = detailBottom + margin - viewHeight;
+  if (itemTop - margin < target) target = itemTop - margin;
+  return Math.max(0, Math.round(target));
 }
