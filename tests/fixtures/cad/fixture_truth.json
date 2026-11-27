@@ -1,0 +1,1007 @@
+{
+ "north_bearing_deg_clockwise_from_plusY": 20.0,
+ "files": {
+  "fixture_rdc_cm.dxf": {
+   "unit": "cm",
+   "units_per_m": 100,
+   "origin": [
+    12500.0,
+    8300.0
+   ],
+   "rooms": [
+    {
+     "floor": "RDC",
+     "key": "sejour",
+     "name": "Séjour",
+     "area_m2": 37.08,
+     "stated_m2": 37.08,
+     "heated": true,
+     "centroid_cm": [
+      297.5,
+      400.0
+     ]
+    },
+    {
+     "floor": "RDC",
+     "key": "cuisine",
+     "name": "Cuisine",
+     "area_m2": 11.31,
+     "stated_m2": 12.16,
+     "heated": true,
+     "centroid_cm": [
+      765.0,
+      185.0
+     ]
+    },
+    {
+     "floor": "RDC",
+     "key": "hall",
+     "name": "Hall",
+     "area_m2": 8.385,
+     "stated_m2": 8.38,
+     "heated": true,
+     "centroid_cm": [
+      765.0,
+      452.5
+     ]
+    },
+    {
+     "floor": "RDC",
+     "key": "wc",
+     "name": "WC",
+     "area_m2": 2.405,
+     "stated_m2": 2.4,
+     "heated": true,
+     "centroid_cm": [
+      635.0,
+      667.5
+     ]
+    },
+    {
+     "floor": "RDC",
+     "key": "buanderie",
+     "name": "Buanderie",
+     "area_m2": 4.5325,
+     "stated_m2": 4.53,
+     "heated": true,
+     "centroid_cm": [
+      837.5,
+      667.5
+     ]
+    },
+    {
+     "floor": "RDC",
+     "key": "garage",
+     "name": "Garage",
+     "area_m2": 13.2352,
+     "stated_m2": 13.24,
+     "heated": false,
+     "centroid_cm": [
+      1188.0,
+      200.0
+     ]
+    }
+   ],
+   "windows": [
+    {
+     "floor": "RDC",
+     "id": "F1",
+     "width_cm": 240,
+     "height_cm": 215,
+     "centre_cm": [
+      300,
+      20
+     ],
+     "azimuth_deg": 160.0,
+     "exterior": true
+    },
+    {
+     "floor": "RDC",
+     "id": "F2",
+     "width_cm": 120,
+     "height_cm": 135,
+     "centre_cm": [
+      765,
+      20
+     ],
+     "azimuth_deg": 160.0,
+     "exterior": true
+    },
+    {
+     "floor": "RDC",
+     "id": "F3",
+     "width_cm": 160,
+     "height_cm": 135,
+     "centre_cm": [
+      20,
+      400
+     ],
+     "azimuth_deg": 250.0,
+     "exterior": true
+    },
+    {
+     "floor": "RDC",
+     "id": "F4",
+     "width_cm": 120,
+     "height_cm": 135,
+     "centre_cm": [
+      300,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    },
+    {
+     "floor": "RDC",
+     "id": "F5",
+     "width_cm": 60,
+     "height_cm": 75,
+     "centre_cm": [
+      635,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    },
+    {
+     "floor": "RDC",
+     "id": "F6",
+     "width_cm": 80,
+     "height_cm": 135,
+     "centre_cm": [
+      837,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    }
+   ],
+   "doors": [
+    {
+     "floor": "RDC",
+     "id": "P1",
+     "width_cm": 100,
+     "centre_cm": [
+      980,
+      480
+     ],
+     "exterior": true,
+     "kind": "entree",
+     "azimuth_deg": 70.0
+    },
+    {
+     "floor": "RDC",
+     "id": "P2",
+     "width_cm": 90,
+     "centre_cm": [
+      562.5,
+      450
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "RDC",
+     "id": "P3",
+     "width_cm": 90,
+     "centre_cm": [
+      562.5,
+      185
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "RDC",
+     "id": "P4",
+     "width_cm": 80,
+     "centre_cm": [
+      800,
+      337.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "RDC",
+     "id": "P5",
+     "width_cm": 70,
+     "centre_cm": [
+      635,
+      567.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "RDC",
+     "id": "P6",
+     "width_cm": 80,
+     "centre_cm": [
+      840,
+      567.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "RDC",
+     "id": "P7",
+     "width_cm": 90,
+     "centre_cm": [
+      980,
+      200
+     ],
+     "exterior": false,
+     "kind": "int"
+    }
+   ],
+   "floors": [
+    {
+     "floor": "RDC",
+     "footprint_all_m2": 96.0,
+     "footprint_all_perimeter_m": 44.0,
+     "heated_gross_m2": 80.0,
+     "heated_gross_perimeter_m": 36.0,
+     "heated_net_m2": 63.7125,
+     "wall_segments": 87,
+     "defects": [
+      [
+       "gap_0.3cm",
+       5
+      ],
+      [
+       "overshoot_0.5cm",
+       11
+      ],
+      [
+       "duplicate",
+       17
+      ],
+      [
+       "split_collinear",
+       23
+      ],
+      [
+       "wrong_layer_0",
+       29
+      ]
+     ]
+    }
+   ]
+  },
+  "fixture_etage_mm.dxf": {
+   "unit": "mm",
+   "units_per_m": 1000,
+   "origin": [
+    -35000.0,
+    120000.0
+   ],
+   "rooms": [
+    {
+     "floor": "ETAGE",
+     "key": "chambre1",
+     "name": "Schlafzimmer 1",
+     "area_m2": 15.84,
+     "stated_m2": 15.84,
+     "heated": true,
+     "centroid_cm": [
+      260.0,
+      220.0
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "chambre2",
+     "name": "Schlafzimmer 2",
+     "area_m2": 16.74,
+     "stated_m2": 16.74,
+     "heated": true,
+     "centroid_cm": [
+      727.5,
+      220.0
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "couloir",
+     "name": "Flur",
+     "area_m2": 11.5,
+     "stated_m2": 11.5,
+     "heated": true,
+     "centroid_cm": [
+      500.0,
+      477.5
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "chambre3",
+     "name": "Kinderzimmer",
+     "area_m2": 7.79,
+     "stated_m2": 7.79,
+     "heated": true,
+     "centroid_cm": [
+      230.0,
+      657.5
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "bain",
+     "name": "Bad",
+     "area_m2": 5.4325,
+     "stated_m2": 5.43,
+     "heated": true,
+     "centroid_cm": [
+      567.5,
+      657.5
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "bureau",
+     "name": "Büro",
+     "area_m2": 5.0225,
+     "stated_m2": null,
+     "heated": true,
+     "centroid_cm": [
+      837.5,
+      657.5
+     ]
+    }
+   ],
+   "windows": [
+    {
+     "floor": "ETAGE",
+     "id": "F1",
+     "width_cm": 140,
+     "height_cm": 135,
+     "centre_cm": [
+      260,
+      20
+     ],
+     "azimuth_deg": 160.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F2",
+     "width_cm": 140,
+     "height_cm": 135,
+     "centre_cm": [
+      727,
+      20
+     ],
+     "azimuth_deg": 160.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F3",
+     "width_cm": 100,
+     "height_cm": 135,
+     "centre_cm": [
+      980,
+      220
+     ],
+     "azimuth_deg": 70.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F4",
+     "width_cm": 80,
+     "height_cm": 135,
+     "centre_cm": [
+      20,
+      477
+     ],
+     "azimuth_deg": 250.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F5",
+     "width_cm": 120,
+     "height_cm": 135,
+     "centre_cm": [
+      230,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F6",
+     "width_cm": 80,
+     "height_cm": 100,
+     "centre_cm": [
+      567,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F7",
+     "width_cm": 100,
+     "height_cm": 135,
+     "centre_cm": [
+      837,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    }
+   ],
+   "doors": [
+    {
+     "floor": "ETAGE",
+     "id": "P1",
+     "width_cm": 80,
+     "centre_cm": [
+      260,
+      407.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "ETAGE",
+     "id": "P2",
+     "width_cm": 80,
+     "centre_cm": [
+      727,
+      407.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "ETAGE",
+     "id": "P3",
+     "width_cm": 80,
+     "centre_cm": [
+      230,
+      547.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "ETAGE",
+     "id": "P4",
+     "width_cm": 70,
+     "centre_cm": [
+      567,
+      547.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "ETAGE",
+     "id": "P5",
+     "width_cm": 80,
+     "centre_cm": [
+      837,
+      547.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    }
+   ],
+   "floors": [
+    {
+     "floor": "ETAGE",
+     "footprint_all_m2": 80.0,
+     "footprint_all_perimeter_m": 36.0,
+     "heated_gross_m2": 80.0,
+     "heated_gross_perimeter_m": 36.0,
+     "heated_net_m2": 62.325,
+     "wall_segments": 77,
+     "defects": [
+      [
+       "gap_0.3cm",
+       5
+      ],
+      [
+       "overshoot_0.5cm",
+       11
+      ],
+      [
+       "duplicate",
+       17
+      ],
+      [
+       "split_collinear",
+       23
+      ],
+      [
+       "wrong_layer_0",
+       29
+      ]
+     ]
+    }
+   ]
+  },
+  "fixture_2storeys_aia.dxf": {
+   "unit": "cm (header says unitless)",
+   "units_per_m": 100,
+   "origins": {
+    "RDC": [
+     0,
+     0
+    ],
+    "ETAGE": [
+     2200,
+     0
+    ]
+   },
+   "rooms": [
+    {
+     "floor": "RDC",
+     "key": "sejour",
+     "name": "Séjour",
+     "area_m2": 37.08,
+     "stated_m2": 37.08,
+     "heated": true,
+     "centroid_cm": [
+      297.5,
+      400.0
+     ]
+    },
+    {
+     "floor": "RDC",
+     "key": "cuisine",
+     "name": "Cuisine",
+     "area_m2": 11.31,
+     "stated_m2": 12.16,
+     "heated": true,
+     "centroid_cm": [
+      765.0,
+      185.0
+     ]
+    },
+    {
+     "floor": "RDC",
+     "key": "hall",
+     "name": "Hall",
+     "area_m2": 8.385,
+     "stated_m2": 8.38,
+     "heated": true,
+     "centroid_cm": [
+      765.0,
+      452.5
+     ]
+    },
+    {
+     "floor": "RDC",
+     "key": "wc",
+     "name": "WC",
+     "area_m2": 2.405,
+     "stated_m2": 2.4,
+     "heated": true,
+     "centroid_cm": [
+      635.0,
+      667.5
+     ]
+    },
+    {
+     "floor": "RDC",
+     "key": "buanderie",
+     "name": "Buanderie",
+     "area_m2": 4.5325,
+     "stated_m2": 4.53,
+     "heated": true,
+     "centroid_cm": [
+      837.5,
+      667.5
+     ]
+    },
+    {
+     "floor": "RDC",
+     "key": "garage",
+     "name": "Garage",
+     "area_m2": 13.2352,
+     "stated_m2": 13.24,
+     "heated": false,
+     "centroid_cm": [
+      1188.0,
+      200.0
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "chambre1",
+     "name": "Chambre 1",
+     "area_m2": 15.84,
+     "stated_m2": 15.84,
+     "heated": true,
+     "centroid_cm": [
+      260.0,
+      220.0
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "chambre2",
+     "name": "Chambre 2",
+     "area_m2": 16.74,
+     "stated_m2": 16.74,
+     "heated": true,
+     "centroid_cm": [
+      727.5,
+      220.0
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "couloir",
+     "name": "Dégagement",
+     "area_m2": 11.5,
+     "stated_m2": 11.5,
+     "heated": true,
+     "centroid_cm": [
+      500.0,
+      477.5
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "chambre3",
+     "name": "Chambre 3",
+     "area_m2": 7.79,
+     "stated_m2": 7.79,
+     "heated": true,
+     "centroid_cm": [
+      230.0,
+      657.5
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "bain",
+     "name": "Salle de bain",
+     "area_m2": 5.4325,
+     "stated_m2": 5.43,
+     "heated": true,
+     "centroid_cm": [
+      567.5,
+      657.5
+     ]
+    },
+    {
+     "floor": "ETAGE",
+     "key": "bureau",
+     "name": "Bureau",
+     "area_m2": 5.0225,
+     "stated_m2": 5.02,
+     "heated": true,
+     "centroid_cm": [
+      837.5,
+      657.5
+     ]
+    }
+   ],
+   "windows": [
+    {
+     "floor": "RDC",
+     "id": "F1",
+     "width_cm": 240,
+     "height_cm": 215,
+     "centre_cm": [
+      300,
+      20
+     ],
+     "azimuth_deg": 160.0,
+     "exterior": true
+    },
+    {
+     "floor": "RDC",
+     "id": "F2",
+     "width_cm": 120,
+     "height_cm": 135,
+     "centre_cm": [
+      765,
+      20
+     ],
+     "azimuth_deg": 160.0,
+     "exterior": true
+    },
+    {
+     "floor": "RDC",
+     "id": "F3",
+     "width_cm": 160,
+     "height_cm": 135,
+     "centre_cm": [
+      20,
+      400
+     ],
+     "azimuth_deg": 250.0,
+     "exterior": true
+    },
+    {
+     "floor": "RDC",
+     "id": "F4",
+     "width_cm": 120,
+     "height_cm": 135,
+     "centre_cm": [
+      300,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    },
+    {
+     "floor": "RDC",
+     "id": "F5",
+     "width_cm": 60,
+     "height_cm": 75,
+     "centre_cm": [
+      635,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    },
+    {
+     "floor": "RDC",
+     "id": "F6",
+     "width_cm": 80,
+     "height_cm": 135,
+     "centre_cm": [
+      837,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F1",
+     "width_cm": 140,
+     "height_cm": 135,
+     "centre_cm": [
+      260,
+      20
+     ],
+     "azimuth_deg": 160.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F2",
+     "width_cm": 140,
+     "height_cm": 135,
+     "centre_cm": [
+      727,
+      20
+     ],
+     "azimuth_deg": 160.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F3",
+     "width_cm": 100,
+     "height_cm": 135,
+     "centre_cm": [
+      980,
+      220
+     ],
+     "azimuth_deg": 70.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F4",
+     "width_cm": 80,
+     "height_cm": 135,
+     "centre_cm": [
+      20,
+      477
+     ],
+     "azimuth_deg": 250.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F5",
+     "width_cm": 120,
+     "height_cm": 135,
+     "centre_cm": [
+      230,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F6",
+     "width_cm": 80,
+     "height_cm": 100,
+     "centre_cm": [
+      567,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    },
+    {
+     "floor": "ETAGE",
+     "id": "F7",
+     "width_cm": 100,
+     "height_cm": 135,
+     "centre_cm": [
+      837,
+      780
+     ],
+     "azimuth_deg": 340.0,
+     "exterior": true
+    }
+   ],
+   "doors": [
+    {
+     "floor": "RDC",
+     "id": "P1",
+     "width_cm": 100,
+     "centre_cm": [
+      980,
+      480
+     ],
+     "exterior": true,
+     "kind": "entree",
+     "azimuth_deg": 70.0
+    },
+    {
+     "floor": "RDC",
+     "id": "P2",
+     "width_cm": 90,
+     "centre_cm": [
+      562.5,
+      450
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "RDC",
+     "id": "P3",
+     "width_cm": 90,
+     "centre_cm": [
+      562.5,
+      185
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "RDC",
+     "id": "P4",
+     "width_cm": 80,
+     "centre_cm": [
+      800,
+      337.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "RDC",
+     "id": "P5",
+     "width_cm": 70,
+     "centre_cm": [
+      635,
+      567.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "RDC",
+     "id": "P6",
+     "width_cm": 80,
+     "centre_cm": [
+      840,
+      567.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "RDC",
+     "id": "P7",
+     "width_cm": 90,
+     "centre_cm": [
+      980,
+      200
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "ETAGE",
+     "id": "P1",
+     "width_cm": 80,
+     "centre_cm": [
+      260,
+      407.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "ETAGE",
+     "id": "P2",
+     "width_cm": 80,
+     "centre_cm": [
+      727,
+      407.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "ETAGE",
+     "id": "P3",
+     "width_cm": 80,
+     "centre_cm": [
+      230,
+      547.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "ETAGE",
+     "id": "P4",
+     "width_cm": 70,
+     "centre_cm": [
+      567,
+      547.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    },
+    {
+     "floor": "ETAGE",
+     "id": "P5",
+     "width_cm": 80,
+     "centre_cm": [
+      837,
+      547.5
+     ],
+     "exterior": false,
+     "kind": "int"
+    }
+   ],
+   "floors": [
+    {
+     "floor": "RDC",
+     "footprint_all_m2": 96.0,
+     "footprint_all_perimeter_m": 44.0,
+     "heated_gross_m2": 80.0,
+     "heated_gross_perimeter_m": 36.0,
+     "heated_net_m2": 63.7125,
+     "wall_segments": 86,
+     "defects": []
+    },
+    {
+     "floor": "ETAGE",
+     "footprint_all_m2": 80.0,
+     "footprint_all_perimeter_m": 36.0,
+     "heated_gross_m2": 80.0,
+     "heated_gross_perimeter_m": 36.0,
+     "heated_net_m2": 62.325,
+     "wall_segments": 76,
+     "defects": []
+    }
+   ]
+  }
+ }
+}

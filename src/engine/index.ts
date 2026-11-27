@@ -1,6 +1,8 @@
 /**
  * Moteur : du bâtiment confirmé par l'expert aux tableaux de saisie de LuxEeB-Tool.
  * API PUBLIQUE (contrat) — l'implémentation vit dans les autres fichiers de src/engine/.
+ *
+ * Importer ce module enregistre aussi les textes du moteur (« finding.<code> », noms par défaut) dans src/i18n.
  */
 import type {
   BuildingModel,
@@ -14,6 +16,10 @@ import type {
   Storey,
   WindowType,
 } from '../core/types';
+import * as defaults from './defaults';
+import * as derive from './derive';
+import './messages';
+import * as storeys from './storey';
 
 /** Mesures instantanées d'un étage, pour l'affichage en direct pendant le tracé. */
 export interface StoreyMetrics {
@@ -32,21 +38,21 @@ export interface StoreyMetrics {
 
 /** Réponses vides. */
 export function emptyAnswers(): ProjectAnswers {
-  throw new Error('engine.emptyAnswers: pas encore implémenté');
+  return defaults.emptyAnswers();
 }
 
 /** Types d'éléments par défaut (un par catégorie et condition aux limites usuelle), noms dans la langue donnée. */
-export function defaultConstructions(_lang: Lang): Construction[] {
-  throw new Error('engine.defaultConstructions: pas encore implémenté');
+export function defaultConstructions(lang: Lang): Construction[] {
+  return defaults.defaultConstructions(lang);
 }
 
-export function defaultWindowTypes(_lang: Lang): WindowType[] {
-  throw new Error('engine.defaultWindowTypes: pas encore implémenté');
+export function defaultWindowTypes(lang: Lang): WindowType[] {
+  return defaults.defaultWindowTypes(lang);
 }
 
 /** Projet vide : aucun étage, toiture/plancher par défaut (marqués 'default'), types par défaut. */
-export function createEmptyProject(_lang: Lang): Project {
-  throw new Error('engine.createEmptyProject: pas encore implémenté');
+export function createEmptyProject(lang: Lang): Project {
+  return defaults.createEmptyProject(lang);
 }
 
 /**
@@ -54,23 +60,30 @@ export function createEmptyProject(_lang: Lang): Project {
  * (provenance 'plan'), l'échelle de la feuille, et met des hauteurs par défaut (provenance 'default') si le plan
  * n'en donne pas. `sheet` null = étage vide sans plan (1 uf = 1 m).
  */
-export function createStorey(_sheet: PlanSheet | null, _name: string, _model: BuildingModel): Storey {
-  throw new Error('engine.createStorey: pas encore implémenté');
+export function createStorey(sheet: PlanSheet | null, name: string, model: BuildingModel): Storey {
+  return storeys.createStorey(sheet, name, model);
 }
 
 /**
  * Premier jet complet à partir d'un document lu : un étage par feuille qui a un contour proposé
  * (triés du bas vers le haut quand les noms/altitudes le permettent), nord du document s'il existe.
  */
-export function modelFromDocument(_doc: PlanDocument, _lang: Lang): BuildingModel {
-  throw new Error('engine.modelFromDocument: pas encore implémenté');
+export function modelFromDocument(doc: PlanDocument, lang: Lang): BuildingModel {
+  return storeys.modelFromDocument(doc, lang);
 }
 
-export function storeyMetrics(_storey: Storey): StoreyMetrics {
-  throw new Error('engine.storeyMetrics: pas encore implémenté');
+export function storeyMetrics(storey: Storey): StoreyMetrics {
+  return storeys.storeyMetrics(storey);
 }
 
 /** Calcule tous les tableaux LuxEeB-Tool, les totaux et les contrôles de plausibilité. Fonction pure. */
-export function deriveSheets(_project: Project, _lang: Lang): LuxeebSheets {
-  throw new Error('engine.deriveSheets: pas encore implémenté');
+export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
+  return derive.deriveSheets(project, lang);
 }
+
+// ───────────────────────────── Compléments (hors contrat initial) ─────────────────────────────
+
+export { rescaleStorey } from './storey';
+export { DEFAULT_CONSTRUCTION_IDS, DEFAULT_WINDOW_TYPE_ID } from './defaults';
+export { FINDING_CODES, findingText, type FindingCode } from './messages';
+export { weakest } from './provenance';

@@ -5,7 +5,8 @@
  * Règle d'écriture des contrôles : court, concret, et dire à l'expert QUOI FAIRE.
  * Aucune valeur réglementaire n'est citée ici : les bornes sont de simples seuils de plausibilité de l'outil.
  */
-import { registerMessages, type Dictionary } from '../i18n';
+import type { Finding, Lang } from '../core/types';
+import { registerMessages, t, type Dictionary } from '../i18n';
 
 /** Tous les codes de contrôle que le moteur peut émettre. */
 export const FINDING_CODES = [
@@ -68,7 +69,7 @@ export const ENGINE_MESSAGES: Dictionary = {
       "An = {an} m², soit seulement {ratio} % de la surface brute ({gross} m²). Vérifiez qu'aucune pièce chauffée ne manque.",
     'finding.rooms.needReview': '{count} pièce(s) à trancher : comptée(s) dans An ou non ? Touchez-les sur le plan.',
     'finding.north.default':
-      'Nord non confirmé (haut du plan supposé à {angle}°). Tournez la boussole : les orientations des façades en dépendent.',
+      'Nord non confirmé : le haut du plan est supposé pointer vers l’azimut {angle}° (0 = nord). Tournez la boussole, les orientations des façades en dépendent.',
     'finding.orientation.borderline':
       "Façade de {length} m à l'azimut {azimuth}° : classée {orientation}, à moins de 5° de la limite avec {other}. Vérifiez le nord.",
     'finding.windows.none': 'Aucune fenêtre saisie. Touchez les façades pour y poser les fenêtres.',
@@ -180,7 +181,7 @@ export const ENGINE_MESSAGES: Dictionary = {
       'An = {an} m², das sind nur {ratio} % der Bruttofläche ({gross} m²). Prüfen Sie, ob beheizte Räume fehlen.',
     'finding.rooms.needReview': '{count} Raum/Räume noch zu entscheiden: Teil von An oder nicht? Tippen Sie sie im Plan an.',
     'finding.north.default':
-      'Norden nicht bestätigt (Planoberseite angenommen bei {angle}°). Drehen Sie den Kompass: Davon hängen die Orientierungen der Fassaden ab.',
+      'Norden nicht bestätigt: Es wird angenommen, dass die Planoberseite nach Azimut {angle}° zeigt (0 = Norden). Drehen Sie den Kompass, davon hängen die Orientierungen der Fassaden ab.',
     'finding.orientation.borderline':
       'Fassade von {length} m mit Azimut {azimuth}°: als {orientation} eingestuft, weniger als 5° von der Grenze zu {other}. Prüfen Sie die Nordrichtung.',
     'finding.windows.none': 'Keine Fenster erfasst. Tippen Sie die Fassaden an, um Fenster zu setzen.',
@@ -272,3 +273,8 @@ export const ENGINE_MESSAGES: Dictionary = {
 };
 
 registerMessages(ENGINE_MESSAGES);
+
+/** Texte d'un contrôle dans la langue voulue (les variables de `params` sont déjà mises en forme : virgule décimale). */
+export function findingText(finding: Finding, lang: Lang): string {
+  return t(lang, `finding.${finding.code}`, finding.params);
+}

@@ -4,63 +4,85 @@
  *
  * LuxEeB-Tool est un classeur Excel (interface en allemand) sans fonction d'import connue : on fournit donc
  * les valeurs dans l'ORDRE et le FORMAT de ses tableaux, prêtes à être copiées-collées, avec virgule décimale.
+ *
+ * Ce que l'interface doit savoir :
+ *  - Rien n'est transmis à LuxEeB-Tool : l'expert copie, colle et relit. Ne jamais écrire le contraire.
+ *  - Les blocs à coller n'ont PAS été essayés sur le classeur protégé : les présenter comme « à essayer »
+ *    (c'est ce que dit `GuideTable.pasteHint`) et garder la recopie ligne par ligne comme voie sûre.
+ *  - `GuideItem.copy` vide = rien à coller (liste déroulante de l'outil, ou valeur non renseignée).
+ *  - `GuideTable.pasteBlock` vide = pas de bloc pour ce tableau.
+ *  - Les cellules des tableaux sont prêtes à copier : nombres sans unité, virgule décimale, textes sûrs pour Excel.
+ *  - `serializeProject` et `parseProject` lèvent une `ProjectFileError` : à attraper autour de l'enregistrement
+ *    (y compris automatique) et de l'ouverture ; `projectFileErrorMessage(err, lang)` donne le texte à afficher.
  */
 import type { EnvelopeRow, Lang, LuxeebSheets, OrientationOrHorizontal, Project, VolumeRow, ZoneRow } from '../core/types';
+import * as csv from './csv';
+import * as format from './format';
+import * as guide from './guide';
+import './messages';
+import * as paste from './paste';
+import * as projectFile from './project-file';
+import * as report from './report';
 
 /** Libellé d'orientation tel qu'il apparaît dans la liste « Orientierung » de LuxEeB-Tool (allemand). */
-export function luxeebOrientation(_o: OrientationOrHorizontal): string {
-  throw new Error('export.luxeebOrientation: pas encore implémenté');
+export function luxeebOrientation(o: OrientationOrHorizontal): string {
+  return format.luxeebOrientation(o);
 }
 
 /** Libellé d'orientation pour l'utilisateur, avec l'azimut pour lever l'ambiguïté O = Ouest (FR) / Ost (DE). */
-export function orientationLabel(_o: OrientationOrHorizontal, _lang: Lang): string {
-  throw new Error('export.orientationLabel: pas encore implémenté');
+export function orientationLabel(o: OrientationOrHorizontal, lang: Lang): string {
+  return format.orientationLabel(o, lang);
 }
 
 /**
  * Bloc tabulé à coller dans « Flächeneingabe der Gebäudehülle », à partir de la colonne « Anzahl » :
  * Anzahl ⇥ Länge ⇥ Breite ⇥ Orientierung, une ligne par élément, virgule décimale, sans en-tête.
+ * Les lignes à déduire sont incluses à leur place ; voir `envelopeDeductLines` pour les « x » à poser.
  */
-export function envelopePasteBlock(_rows: readonly EnvelopeRow[]): string {
-  throw new Error('export.envelopePasteBlock: pas encore implémenté');
+export function envelopePasteBlock(rows: readonly EnvelopeRow[]): string {
+  return paste.envelopePasteBlock(rows);
 }
 
 /** Bloc tabulé pour « Energiebezugsflächen / Zonen » : Raumbezeichnung ⇥ Anzahl ⇥ Breite ⇥ Länge (surface portée par Länge). */
-export function zonesPasteBlock(_rows: readonly ZoneRow[]): string {
-  throw new Error('export.zonesPasteBlock: pas encore implémenté');
+export function zonesPasteBlock(rows: readonly ZoneRow[]): string {
+  return paste.zonesPasteBlock(rows);
 }
 
 /** Bloc tabulé pour « Gebäudevolumen Ve » : Bezeichnung ⇥ Anzahl ⇥ Breite ⇥ Länge ⇥ Höhe (surface portée par Länge). */
-export function volumesPasteBlock(_rows: readonly VolumeRow[]): string {
-  throw new Error('export.volumesPasteBlock: pas encore implémenté');
+export function volumesPasteBlock(rows: readonly VolumeRow[]): string {
+  return paste.volumesPasteBlock(rows);
 }
 
-/** Une valeur seule au format LuxEeB (virgule décimale, 2 décimales par défaut). */
-export function luxeebNumber(_value: number, _digits?: number): string {
-  throw new Error('export.luxeebNumber: pas encore implémenté');
+/** Une valeur seule au format LuxEeB (virgule décimale, 2 décimales par défaut). Valeur non finie → chaîne vide. */
+export function luxeebNumber(value: number, digits?: number): string {
+  return format.luxeebNumber(value, digits);
 }
 
 /** Tout le relevé en CSV (séparateur « ; », virgule décimale, UTF-8 avec BOM pour Excel). */
-export function sheetsToCsv(_sheets: LuxeebSheets, _project: Project, _lang: Lang): string {
-  throw new Error('export.sheetsToCsv: pas encore implémenté');
+export function sheetsToCsv(sheets: LuxeebSheets, project: Project, lang: Lang): string {
+  return csv.sheetsToCsv(sheets, project, lang);
 }
 
-/** Projet → JSON (sauvegarde). */
-export function serializeProject(_project: Project): string {
-  throw new Error('export.serializeProject: pas encore implémenté');
+/**
+ * Projet → JSON (sauvegarde). Lève une `ProjectFileError` si le projet contient une valeur que la relecture
+ * refuserait (nombre non fini, champ obligatoire manquant) : le fichier écrit est toujours relisible.
+ */
+export function serializeProject(project: Project): string {
+  return projectFile.serializeProject(project);
 }
 
 /** JSON → projet, avec validation ; lève une Error au message clair (français) si le fichier n'est pas un projet valide. */
-export function parseProject(_json: string): Project {
-  throw new Error('export.parseProject: pas encore implémenté');
+export function parseProject(json: string): Project {
+  return projectFile.parseProject(json);
 }
 
 /**
  * Dossier de relevé autonome en HTML (imprimable en PDF depuis le navigateur) : hypothèses, tableaux, provenance de
  * chaque valeur, contrôles — la trace que l'expert garde pour un contrôle du ministère.
+ * Sans date ; pour en mettre une, voir `buildReportHtml`.
  */
-export function reportHtml(_sheets: LuxeebSheets, _project: Project, _lang: Lang): string {
-  throw new Error('export.reportHtml: pas encore implémenté');
+export function reportHtml(sheets: LuxeebSheets, project: Project, lang: Lang): string {
+  return report.reportHtml(sheets, project, lang);
 }
 
 // ───────────────────────────── Guide de saisie LuxEeB-Tool ─────────────────────────────
@@ -102,6 +124,18 @@ export interface GuideSection {
 }
 
 /** Tout ce qu'il faut saisir dans LuxEeB-Tool, dans l'ordre de sa procédure de saisie. */
-export function buildGuide(_sheets: LuxeebSheets, _project: Project, _lang: Lang): GuideSection[] {
-  throw new Error('export.buildGuide: pas encore implémenté');
+export function buildGuide(sheets: LuxeebSheets, project: Project, lang: Lang): GuideSection[] {
+  return guide.buildGuide(sheets, project, lang);
 }
+
+// ───────────────────────────── Compléments (hors contrat initial) ─────────────────────────────
+
+export { GUIDE_SECTION_KEYS, guideDisclaimer } from './guide';
+export type { GuideSectionKey } from './guide';
+export { envelopeDeductLines, luxeebEnvelopeRows, PASTE_EOL } from './paste';
+export { buildReportHtml } from './report';
+export type { ReportOptions } from './report';
+export { PROJECT_FILE_APP, PROJECT_FILE_VERSION, ProjectFileError, projectFileErrorMessage } from './project-file';
+export { excelSafeText, provenanceLabel, provenanceTag } from './format';
+export { exportFileName, EXPORT_MIME } from './files';
+export type { ExportFileKind } from './files';

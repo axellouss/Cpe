@@ -1,0 +1,26 @@
+maison-exemple.dxf
+==================
+
+Plan d'exemple pour le bouton « Essayer avec un exemple » de Plan2CPE.
+
+C'est un plan SYNTHÉTIQUE, dessiné par un script pour ce projet : il ne représente aucun bâtiment réel
+et ne provient d'aucun bureau d'architecture. Il peut être copié et modifié librement.
+
+Contenu (unité du dessin : centimètre, DXF version 2010) :
+  - une maison unifamiliale fictive de 10,00 m x 8,00 m, murs extérieurs de 40 cm, cloisons de 15 cm ;
+  - deux niveaux dessinés côte à côte dans le même espace objet : rez-de-chaussée (avec un garage accolé,
+    non chauffé) et étage ;
+  - calques en français : MUR, FENETRE, PORTE, TEXTE, COTATION, MOBILIER, ESCALIER, AXES, CARTOUCHE, SYMBOLES ;
+  - noms de pièces avec leur surface (« Séjour 37,08 m² »), écrits de plusieurs façons (TEXT, MTEXT, deux textes) ;
+  - fenêtres en blocs avec attributs (REF, LARG, HAUT, ALLEGE), portes en blocs avec débattement ;
+  - cotes, mobilier, escalier, axes, cadre et cartouche ;
+  - flèche du nord tournée de 20° vers la droite.
+
+Il a été produit avec le générateur de plans d'essai décrit dans docs/recherche/dwg-dxf/ (py/make_fixture.py),
+sans les défauts de dessin volontaires des fichiers de test.
+
+---
+
+Beispielplan für die Schaltfläche „Mit einem Beispiel ausprobieren“ von Plan2CPE.
+Es handelt sich um einen SYNTHETISCHEN, per Skript für dieses Projekt gezeichneten Plan: Er stellt kein
+wirkliches Gebäude dar und stammt aus keinem Architekturbüro.

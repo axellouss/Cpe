@@ -36,7 +36,7 @@ import {
   emptyModel,
 } from './defaults';
 import type { StoreyMetrics } from './index';
-import { weakest } from './provenance';
+import { isUnconfirmed, weakest } from './provenance';
 
 /** Part de la surface brute retenue quand la surface nette est inconnue (estimation grossière, à remplacer). */
 export const NET_AREA_ESTIMATE_RATIO = 0.8;
@@ -121,9 +121,10 @@ function hostEdge(d: DetectedOpening, outline: readonly Vec2[]): { index: number
 function openingsFromDetection(
   detected: readonly DetectedOpening[],
   outline: readonly Vec2[],
-  scale: number,
+  metresPerUnit: Sourced<number>,
   storeyId: string,
 ): Opening[] {
+  const scale = metresPerUnit.value;
   const openings: Opening[] = [];
   if (outline.length < 3) return openings;
   for (const d of detected) {
@@ -136,6 +137,8 @@ function openingsFromDetection(
     const width = round(d.width ?? distance(d.a, d.b) * scale, 3);
     if (!(width > 0)) continue;
     const height = d.height ?? (kind === 'door' ? DEFAULT_DOOR_HEIGHT : DEFAULT_WINDOW_HEIGHT);
+    // Largeur mesurée sur la feuille avec une échelle non confirmée : simple estimation, que `rescaleStorey` corrigera.
+    const widthIsGuess = d.width === undefined && isUnconfirmed(metresPerUnit.from);
     openings.push({
       id: `${storeyId}-o${openings.length + 1}`,
       edgeIndex: host.index,
@@ -146,7 +149,7 @@ function openingsFromDetection(
       position: host.t,
       windowTypeId: null,
       // La hauteur se lit rarement sur un plan : sans elle, l'ouverture reste « à confirmer ».
-      from: d.height === undefined ? 'default' : 'plan',
+      from: widthIsGuess ? 'estimate' : d.height === undefined ? 'default' : 'plan',
     });
   }
   return openings;
@@ -204,16 +207,16 @@ export function createStorey(sheet: PlanSheet | null, name: string, model: Build
       detected.clearHeight !== undefined
         ? { value: detected.clearHeight, from: 'plan' }
         : { value: DEFAULT_CLEAR_HEIGHT, from: 'default' },
-    openings: openingsFromDetection(detected.openings, outline, metresPerUnit.value, id),
+    openings: openingsFromDetection(detected.openings, outline, metresPerUnit, id),
     rooms,
     netAreaOverride: null,
   };
 }
 
 /**
- * Applique une nouvelle échelle à un étage (« poser la règle »). Les largeurs d'ouvertures qui viennent du plan
- * ont été converties avec l'ancienne échelle : elles suivent la nouvelle. Celles saisies par l'expert ne bougent pas.
- * Renvoie un nouvel étage.
+ * Applique une nouvelle échelle à un étage (« poser la règle »). Les largeurs d'ouvertures mesurées sur la feuille
+ * avec l'ancienne échelle NON CONFIRMÉE (marquées 'estimate' par `createStorey`) suivent la nouvelle et deviennent
+ * « à confirmer ». Les autres (lues dans un texte, saisies par l'expert) ne bougent pas. Renvoie un nouvel étage.
  */
 export function rescaleStorey(storey: Storey, metresPerUnit: Sourced<number>): Storey {
   const old = storey.metresPerUnit.value;
@@ -221,7 +224,9 @@ export function rescaleStorey(storey: Storey, metresPerUnit: Sourced<number>): S
   return {
     ...storey,
     metresPerUnit: { ...metresPerUnit },
-    openings: storey.openings.map((o) => (o.from === 'user' ? { ...o } : { ...o, width: round(o.width * ratio, 3) })),
+    openings: storey.openings.map((o): Opening =>
+      o.from === 'estimate' ? { ...o, width: round(o.width * ratio, 3), from: isUnconfirmed(metresPerUnit.from) ? 'estimate' : 'default' } : { ...o },
+    ),
   };
 }
 
@@ -271,12 +276,17 @@ export function modelFromDocument(doc: PlanDocument, lang: Lang): BuildingModel 
     candidates.push({ sheet, docIndex, elevation: sheet.detected.elevation, guess });
   });
 
+  // Nom du niveau dans la langue demandée quand il est reconnu ; si deux feuilles donnent le même niveau
+  // (« Étage aile A », « Étage aile B »), leurs propres noms sont plus parlants.
+  const sorted = sortBottomUp(candidates);
+  const proposed = sorted.map((c) => (c.guess ? c.guess[lang] : c.sheet.name));
   const taken = new Set<string>();
-  for (const c of sortBottomUp(candidates)) {
-    const name = uniqueName(c.guess ? c.guess[lang] : c.sheet.name, taken);
+  sorted.forEach((c, i) => {
+    const shared = proposed.filter((n) => n === proposed[i]).length > 1;
+    const name = uniqueName(shared ? c.sheet.name : proposed[i]!, taken);
     taken.add(name);
     model.storeys.push(createStorey(c.sheet, name, model));
-  }
+  });
   if (hasBasement) model.bottom = defaultBottom('above-unheated');
   return model;
 }

@@ -1,0 +1,34 @@
+Plans d'essai du lecteur PDF et du lecteur d'images
+===================================================
+
+Tous ces fichiers ont été dessinés par nos propres scripts (aucun plan de tiers) : ils peuvent être diffusés
+avec le dépôt. Ce sont des plans SYNTHÉTIQUES ; ils mesurent ce que le lecteur sait faire sur un PDF propre,
+pas sa fiabilité sur les plans réels des bureaux d'architecture.
+
+Repère des fichiers *.truth.json : points PDF, origine en haut à gauche de la page, y vers le bas — le même
+que celui des feuilles rendues par le lecteur.
+
+fr_A3_1-100.pdf          A3 paysage, 1:100, français, style « AutoCAD » : chaque face de mur est un trait séparé,
+                         une ligne par chaîne de cotes, cotes en cm, police Type1 non incorporée.
+                         Une seule page : rez-de-chaussée, étage, coupe A-A, flèche du nord, cartouche.
+fr_A3_1-100.truth.json   pièces, surfaces, contours, cotes, niveaux, nord de ce plan.
+de_A3_1-50.pdf           A3 paysage, 1:50, allemand, style « Archicad » : murs en polygones remplis, une ligne
+                         par cote, cotes allemandes mêlant m et cm avec demi-centimètre en exposant (3,26⁵ ; 11⁵),
+                         police TrueType incorporée. Trois pages : Erdgeschoss, Obergeschoss, Schnitt A-A.
+de_A3_1-50.truth.json    vérité terrain correspondante.
+fr_A4_fit.pdf            fr_A3_1-100 « ajusté à la page » sur un A4 (× 0,7067) : le cartouche dit toujours 1:100,
+                         l'échelle réelle est 1:141,5. La page y devient un Form XObject.
+fr_A3_rot90.pdf          fr_A3_1-100 avec /Rotate 90 (page couchée, comme le font les pilotes de traceur).
+cad_plot_ezdxf.pdf       tracé DXF → PDF par ezdxf : AUCUN texte, chaque lettre est un contour rempli.
+layers_ocg.pdf           minuscule PDF à deux calques (groupes de contenu optionnel).
+scan_fr_100dpi_bilevel.png   scan synthétique de fr_A3_1-100 (biais de 0,6°, flou, bruit), 1654 × 1170 px,
+                         noir et blanc 1 bit, 100 dpi déclarés (bloc pHYs).
+scan_fr_100dpi.jpg       le même scan en JPEG (gris), 100 dpi déclarés (en-tête JFIF).
+scan_only_A3.pdf         page A3 ne contenant QUE ce scan : ni trait ni texte.
+layers_ocg_hidden.pdf    le même, calque « A-DIMS (Cotes) » masqué par défaut (PyMuPDF : set_layer(-1, off=[…])).
+protected.pdf            une page protégée par mot de passe (AES-256, mot de passe « secret »), produite avec PyMuPDF.
+make_scan_variants.py    script qui a produit les trois fichiers « scan » (à relancer seulement pour les régénérer).
+
+Les quatre premiers PDF et leurs vérités viennent des scripts make_fixtures.py / make_variants.py /
+make_cad_plot.py des notes de recherche (dossier research/pdf-vision, hors dépôt).
+Ouvertures attendues dans les tests : lues dans make_fixtures.py (fonctions make_fr et make_de).

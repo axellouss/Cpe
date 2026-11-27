@@ -1,0 +1,26 @@
+Plans d'essai du lecteur DWG / DXF (src/readers/cad)
+====================================================
+
+Tous ces fichiers sont SYNTHÉTIQUES : ils ont été produits par nos propres scripts
+(docs/recherche/dwg-dxf/py/make_fixture.py et test_variants.py, bibliothèque ezdxf) et ne viennent d'aucun tiers.
+
+  fixture_rdc_cm.dxf        rez-de-chaussée, unité cm ($INSUNITS = 5), calques français, DXF R2010
+  fixture_etage_mm.dxf      étage, unité mm ($INSUNITS = 4), calques allemands, DXF R2000 (cp1252), hachures
+  fixture_2storeys_aia.dxf  les deux niveaux côte à côte, $INSUNITS = 0, calques AIA, DXF R2013
+  fixture_truth.json        vérité terrain (pièces, surfaces, ouvertures, azimuts, emprises)
+  fixture_rdc_cm.dwg        le rez-de-chaussée converti en DWG 2018 (AC1032) avec @node-projects/acad-ts
+  fixture_etage_mm.dwg      l'étage converti en DWG 2000 (AC1015)
+
+  variants/                 versions dégradées des deux premiers fichiers (rdc = rez-de-chaussée, etage = étage) :
+     no_jambs       rdc + etage   murs dessinés sans tableaux (les traits s'arrêtent aux ouvertures)
+     rotated17      rdc + etage   tout le dessin tourné de 17°
+     anon_layers    rdc + etage   calques renommés « Calque1 … n »
+     walls_through  rdc + etage   murs dessinés à travers les fenêtres
+     gaps_3cm       rdc + etage   30 % des extrémités de murs reculées de 3 cm
+     exploded       rdc           blocs décomposés en traits (plus d'INSERT ni d'attributs)
+     one_block      rdc           tout le plan dans UN bloc (xref lié)
+     no_units       rdc           $INSUNITS = 0
+
+Défauts volontaires des fichiers de base : extrémité trop courte de 0,3 cm, dépassement de 0,5 cm, trait en double,
+trait coupé en deux avec 0,05 cm de décalage, un trait de mur sur le calque « 0 », surface de la cuisine fausse
+de 0,85 m² sur l'étiquette.

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Plan2CPE — banc d'essai de l'éditeur de plan</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        font: 14px/1.35 system-ui, sans-serif;
+        background: #f4f2ec;
+        color: #1f2a30;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #0f1214;
+          color: #e8ecee;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Page de développement uniquement : elle n'est pas référencée par index.html et n'entre pas dans le build. -->
+    <div id="root"></div>
+    <script type="module" src="./harness.tsx"></script>
+  </body>
+</html>

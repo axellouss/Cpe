@@ -1,0 +1,138 @@
+/**
+ * Textes du lecteur DWG / DXF (FR + DE). Les avertissements du lecteur sont rendus en français
+ * (contrat de PlanDocument.warnings) ; le dictionnaire allemand est prêt pour le jour où l'interface les traduira.
+ */
+import type { Dictionary } from '../../i18n';
+import { registerMessages, t } from '../../i18n';
+
+export const CAD_MESSAGES: Dictionary = {
+  fr: {
+    'cad.error.unreadable.dwg': 'Ce fichier DWG est illisible ({detail}). Essayez de l’enregistrer en DXF depuis votre logiciel de dessin.',
+    'cad.error.unreadable.dxf': 'Ce fichier DXF est illisible ({detail}). Réenregistrez-le depuis votre logiciel de dessin (DXF ASCII, version 2000 ou plus récente).',
+    'cad.error.empty': 'Ce fichier {kind} ne contient aucun dessin dans l’espace objet.',
+
+    'cad.unit.mm': 'millimètres',
+    'cad.unit.cm': 'centimètres',
+    'cad.unit.dm': 'décimètres',
+    'cad.unit.m': 'mètres',
+    'cad.unit.inch': 'pouces',
+    'cad.unit.foot': 'pieds',
+    'cad.unit.source.header': 'en-tête du fichier',
+    'cad.unit.source.doors': 'rayon des portes',
+    'cad.unit.source.imperial': 'cotes en pieds-pouces',
+    'cad.unit.source.areas': 'surfaces écrites dans les pièces',
+    'cad.unit.source.walls': 'épaisseur des murs',
+    'cad.unit.note.agreed': 'Unité du dessin : {unit} ({sources}).',
+    'cad.unit.note.conflict': 'Indices contradictoires sur l’unité du dessin ({details}) : {unit} retenus. À confirmer en posant la règle.',
+    'cad.unit.note.weak': 'Unité du dessin supposée : {unit}. À confirmer en posant la règle.',
+    'cad.unit.note.single': 'Unité du dessin : {unit}, d’après un seul indice ({source}). À confirmer en posant la règle.',
+    'cad.warn.unit.unknown': 'Unité du dessin inconnue : posez la règle sur une longueur connue pour fixer l’échelle.',
+    'cad.warn.unit.corrected': 'Unité corrigée d’après les surfaces écrites dans les pièces : {unit}.',
+    'cad.warn.unit.areas': 'Les surfaces écrites ne correspondent pas à la géométrie (rapport {ratio}) : vérifiez l’échelle.',
+
+    'cad.warn.analysis': 'L’analyse automatique du dessin a échoué : le plan est affiché, le contour est à tracer à la main.',
+    'cad.warn.heavy': 'Dessin très chargé ({count} traits de murs) : pas d’analyse automatique, le contour est à tracer à la main.',
+    'cad.warn.walls.guessed': 'Aucun calque ne porte un nom de mur : « {layers} » a été choisi d’après ses doubles traits parallèles. À vérifier.',
+    'cad.warn.walls.none': 'Calque des murs introuvable : le contour est à tracer à la main sur le plan.',
+    'cad.warn.plans.none': 'Aucun contour de bâtiment n’a pu être proposé : tracez-le à la main sur le plan.',
+    'cad.warn.plans.several': '{count} plans trouvés dans le même dessin : une feuille par plan.',
+    'cad.warn.plans.dropped': '{count} petits plans supplémentaires ont été ignorés.',
+    'cad.warn.rooms.none': 'Aucun nom de pièce reconnu : les surfaces nettes seront à saisir.',
+    'cad.warn.north.none': 'Pas de flèche du nord trouvée : indiquez l’orientation.',
+    'cad.warn.xrefs': 'Le dessin renvoie à des fichiers externes absents ({names}) : leur contenu manque.',
+    'cad.warn.hidden': '{count} objets sur des calques éteints ou gelés ont été ignorés.',
+    'cad.warn.truncated': 'Dessin très lourd : seule une partie des objets a été lue.',
+    'cad.warn.unsupported': 'Objets non lus : {list}.',
+    'cad.warn.display': '« {sheet} » : {total} traits, affichage allégé ({dropped} hachures et petits traits masqués).',
+    'cad.warn.outline.approx': '« {sheet} » : murs non refermés, contour approché en comblant les ouvertures. À vérifier.',
+    'cad.warn.outline.none': '« {sheet} » : pas de contour fiable, à tracer à la main.',
+
+    'cad.north.note': 'Flèche du nord « {block} » lue sur le plan. À confirmer.',
+    'cad.north.note.several': 'Flèche du nord « {block} » lue sur le plan ({count} flèches trouvées). À confirmer.',
+
+    'cad.sheet.plan': 'Plan {n}',
+    'cad.sheet.all': 'Dessin',
+    'cad.note.walls': 'Calque des murs : {layers}.',
+    'cad.note.outline.exact': 'Contour extérieur lu sur les murs ({area} m²).',
+    'cad.note.outline.stable': 'Contour extérieur obtenu en refermant les ouvertures jusqu’à {gap} m ({area} m²).',
+    'cad.note.outline.approx': 'Murs non refermés ({count} bouts de mur sans vis-à-vis) : contour approché en comblant les ouvertures jusqu’à {gap} m ({area} m²). À vérifier.',
+    'cad.note.outline.none': 'Pas de contour fiable sur cette feuille : à tracer à la main.',
+    'cad.note.outline.unheated': 'Le contour englobe {rooms} (probablement non chauffé) : à retirer du contour si hors volume chauffé.',
+    'cad.note.view': '« {title} » : vue reconnue comme coupe, façade ou détail — pas de contour proposé.',
+    'cad.note.rooms.merged': 'Pièces non séparées par le dessin (ouverture restée ouverte) : {rooms}. Pas de surface mesurée pour elles.',
+    'cad.note.rooms.mismatch': '« {room} » : {stated} m² écrits, {measured} m² mesurés.',
+    'cad.note.openings.rejected': '{count} ouvertures peu plausibles n’ont pas été proposées.',
+    'cad.note.openings.unknown': '{count} ouvertures sans symbole de porte ou de fenêtre : type à préciser.',
+    'cad.note.healed': 'Dessin réparé : {count} bouts de traits de murs prolongés ou raccordés.',
+    'cad.note.jambs': '{count} bouts de murs sans tableau dessiné ont été refermés.',
+    'cad.note.layer0': '{count} traits du calque « 0 » adoptés comme murs.',
+  },
+  de: {
+    'cad.error.unreadable.dwg': 'Diese DWG-Datei ist nicht lesbar ({detail}). Speichern Sie sie in Ihrem CAD-Programm als DXF.',
+    'cad.error.unreadable.dxf': 'Diese DXF-Datei ist nicht lesbar ({detail}). Speichern Sie sie in Ihrem CAD-Programm erneut (DXF ASCII, Version 2000 oder neuer).',
+    'cad.error.empty': 'Diese {kind}-Datei enthält keine Zeichnung im Modellbereich.',
+
+    'cad.unit.mm': 'Millimeter',
+    'cad.unit.cm': 'Zentimeter',
+    'cad.unit.dm': 'Dezimeter',
+    'cad.unit.m': 'Meter',
+    'cad.unit.inch': 'Zoll',
+    'cad.unit.foot': 'Fuß',
+    'cad.unit.source.header': 'Dateikopf',
+    'cad.unit.source.doors': 'Türradien',
+    'cad.unit.source.imperial': 'Maße in Fuß und Zoll',
+    'cad.unit.source.areas': 'eingetragene Raumflächen',
+    'cad.unit.source.walls': 'Wandstärke',
+    'cad.unit.note.agreed': 'Zeichnungseinheit: {unit} ({sources}).',
+    'cad.unit.note.conflict': 'Widersprüchliche Hinweise zur Zeichnungseinheit ({details}): {unit} angenommen. Bitte mit dem Maßband bestätigen.',
+    'cad.unit.note.weak': 'Angenommene Zeichnungseinheit: {unit}. Bitte mit dem Maßband bestätigen.',
+    'cad.unit.note.single': 'Zeichnungseinheit: {unit}, nur ein Hinweis ({source}). Bitte mit dem Maßband bestätigen.',
+    'cad.warn.unit.unknown': 'Zeichnungseinheit unbekannt: Legen Sie das Maßband an eine bekannte Länge, um den Maßstab festzulegen.',
+    'cad.warn.unit.corrected': 'Einheit anhand der eingetragenen Raumflächen korrigiert: {unit}.',
+    'cad.warn.unit.areas': 'Die eingetragenen Flächen passen nicht zur Geometrie (Verhältnis {ratio}): Maßstab prüfen.',
+
+    'cad.warn.analysis': 'Die automatische Auswertung der Zeichnung ist fehlgeschlagen: Der Plan wird angezeigt, der Umriss ist von Hand zu zeichnen.',
+    'cad.warn.heavy': 'Sehr umfangreiche Zeichnung ({count} Wandlinien): keine automatische Auswertung, der Umriss ist von Hand zu zeichnen.',
+    'cad.warn.walls.guessed': 'Kein Layer trägt einen Wandnamen: „{layers}“ wurde anhand paralleler Doppellinien gewählt. Bitte prüfen.',
+    'cad.warn.walls.none': 'Wandlayer nicht gefunden: Der Umriss ist von Hand auf dem Plan zu zeichnen.',
+    'cad.warn.plans.none': 'Es konnte kein Gebäudeumriss vorgeschlagen werden: Zeichnen Sie ihn von Hand auf dem Plan.',
+    'cad.warn.plans.several': '{count} Grundrisse in derselben Zeichnung gefunden: ein Blatt je Grundriss.',
+    'cad.warn.plans.dropped': '{count} weitere kleine Grundrisse wurden ignoriert.',
+    'cad.warn.rooms.none': 'Keine Raumnamen erkannt: Die Nettoflächen sind einzugeben.',
+    'cad.warn.north.none': 'Kein Nordpfeil gefunden: Geben Sie die Ausrichtung an.',
+    'cad.warn.xrefs': 'Die Zeichnung verweist auf fehlende externe Dateien ({names}): Deren Inhalt fehlt.',
+    'cad.warn.hidden': '{count} Objekte auf ausgeschalteten oder gefrorenen Layern wurden ignoriert.',
+    'cad.warn.truncated': 'Sehr große Zeichnung: Nur ein Teil der Objekte wurde gelesen.',
+    'cad.warn.unsupported': 'Nicht gelesene Objekte: {list}.',
+    'cad.warn.display': '„{sheet}“: {total} Linien, vereinfachte Anzeige ({dropped} Schraffuren und kurze Linien ausgeblendet).',
+    'cad.warn.outline.approx': '„{sheet}“: Wände nicht geschlossen, Umriss durch Schließen der Öffnungen angenähert. Bitte prüfen.',
+    'cad.warn.outline.none': '„{sheet}“: kein verlässlicher Umriss, von Hand zu zeichnen.',
+
+    'cad.north.note': 'Nordpfeil „{block}“ aus dem Plan gelesen. Bitte bestätigen.',
+    'cad.north.note.several': 'Nordpfeil „{block}“ aus dem Plan gelesen ({count} Pfeile gefunden). Bitte bestätigen.',
+
+    'cad.sheet.plan': 'Plan {n}',
+    'cad.sheet.all': 'Zeichnung',
+    'cad.note.walls': 'Wandlayer: {layers}.',
+    'cad.note.outline.exact': 'Außenumriss aus den Wänden gelesen ({area} m²).',
+    'cad.note.outline.stable': 'Außenumriss durch Schließen der Öffnungen bis {gap} m ermittelt ({area} m²).',
+    'cad.note.outline.approx': 'Wände nicht geschlossen ({count} Wandenden ohne Gegenstück): Umriss durch Schließen der Öffnungen bis {gap} m angenähert ({area} m²). Bitte prüfen.',
+    'cad.note.outline.none': 'Kein verlässlicher Umriss auf diesem Blatt: von Hand zu zeichnen.',
+    'cad.note.outline.unheated': 'Der Umriss schließt {rooms} ein (vermutlich unbeheizt): aus dem Umriss entfernen, falls außerhalb des beheizten Volumens.',
+    'cad.note.view': '„{title}“: als Schnitt, Ansicht oder Detail erkannt – kein Umriss vorgeschlagen.',
+    'cad.note.rooms.merged': 'Räume in der Zeichnung nicht getrennt (offen gebliebene Öffnung): {rooms}. Keine gemessene Fläche für sie.',
+    'cad.note.rooms.mismatch': '„{room}“: {stated} m² eingetragen, {measured} m² gemessen.',
+    'cad.note.openings.rejected': '{count} wenig plausible Öffnungen wurden nicht vorgeschlagen.',
+    'cad.note.openings.unknown': '{count} Öffnungen ohne Tür- oder Fenstersymbol: Art angeben.',
+    'cad.note.healed': 'Zeichnung repariert: {count} Wandlinienenden verlängert oder verbunden.',
+    'cad.note.jambs': '{count} Wandenden ohne gezeichnete Laibung wurden geschlossen.',
+    'cad.note.layer0': '{count} Linien des Layers „0“ als Wände übernommen.',
+  },
+};
+
+registerMessages(CAD_MESSAGES);
+
+/** Message du lecteur en français (langue des avertissements du contrat). */
+export function msg(key: string, params?: Record<string, string | number>): string {
+  return t('fr', key, params);
+}

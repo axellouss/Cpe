@@ -1,0 +1,313 @@
+/**
+ * Du plan lu au premier jet de bâtiment : createStorey (une feuille → un étage) et modelFromDocument
+ * (un document → tous les étages chauffés, dans l'ordre, avec les hypothèses de départ marquées « par défaut »).
+ */
+import { describe, expect, it } from 'vitest';
+import type { PlanDocument, PlanSheet } from '../../src/core/types';
+import { createEmptyProject, createStorey, deriveSheets, modelFromDocument, rescaleStorey } from '../../src/engine';
+import { brief, codes, rect, sheet } from './helpers';
+
+const emptyModel = () => createEmptyProject('fr').model;
+
+/** Rez-de-chaussée de 10 × 8 m dessiné en CENTIMÈTRES (1 unité = 1 cm), tel qu'un lecteur DXF le rendrait. */
+function groundFloorSheet(): PlanSheet {
+  return sheet('s1', 'Plan RDC', {
+    metresPerUnit: { value: 0.01, from: 'plan', note: 'Unités du dessin : centimètres' },
+    detected: {
+      // Contour refermé par un point doublon, comme le font souvent les polylignes CAO
+      outline: [...rect(1000, 800), { x: 0, y: 0 }],
+      openings: [
+        // Fenêtre dessinée dans l'épaisseur du mur nord (15 cm sous le nu extérieur), de x = 200 à 320 → 1,20 m
+        { kind: 'window', a: { x: 200, y: 15 }, b: { x: 320, y: 15 } },
+        // Porte dans le mur est, dimensions lues dans le nom du bloc
+        { kind: 'door', a: { x: 980, y: 300 }, b: { x: 980, y: 390 }, width: 0.9, height: 2.1, exterior: true },
+        // Symbole non reconnu dans le mur sud, de x = 400 à 600 → traité comme une fenêtre de 2,00 m
+        { kind: 'unknown', a: { x: 400, y: 790 }, b: { x: 600, y: 790 } },
+        // Porte intérieure : ignorée
+        { kind: 'door', a: { x: 500, y: 300 }, b: { x: 500, y: 380 }, exterior: false },
+        // Trait pris pour une fenêtre au milieu du séjour, à 4 m de toute façade : rejeté
+        { kind: 'window', a: { x: 450, y: 400 }, b: { x: 550, y: 400 } },
+      ],
+      rooms: [
+        { name: 'Séjour', statedArea: 32.45, measuredArea: 32.9, heatedGuess: 'yes', at: { x: 300, y: 300 } },
+        { name: 'Cuisine', measuredArea: 11.2, heatedGuess: 'yes', polygon: rect(400, 280, 550, 30) },
+        { name: 'Buanderie', statedArea: 6.5, heatedGuess: 'ask' },
+        { name: 'Garage', heatedGuess: 'no' },
+        { name: 'Hall', heatedGuess: 'yes' },
+      ],
+      storeyHeight: 2.95,
+      notes: [],
+    },
+  });
+}
+
+describe('createStorey : une feuille → un étage proposé', () => {
+  const source = groundFloorSheet();
+  const s = createStorey(source, 'Rez-de-chaussée', emptyModel());
+
+  it('reprend contour (sans le point doublon), échelle, et met toutes les façades « contre extérieur »', () => {
+    expect(s).toMatchObject({ id: 'storey-1', name: 'Rez-de-chaussée', sheetId: 's1', netAreaOverride: null });
+    expect(s.outline).toEqual(rect(1000, 800));
+    expect(s.edges).toEqual(Array(4).fill({ boundary: 'outside', constructionId: null }));
+    expect(s.metresPerUnit).toEqual({ value: 0.01, from: 'plan', note: 'Unités du dessin : centimètres' });
+  });
+
+  it('prend les hauteurs du plan quand elles existent, sinon 2,80 / 2,50 m « par défaut »', () => {
+    expect(s.grossHeight).toEqual({ value: 2.95, from: 'plan' });
+    expect(s.clearHeight).toEqual({ value: 2.5, from: 'default' });
+    const bare = createStorey(sheet('x', 'Plan', { detected: { outline: rect(10, 8), rooms: [], openings: [], clearHeight: 2.42, notes: [] } }), 'Niveau', emptyModel());
+    expect(bare.grossHeight).toEqual({ value: 2.8, from: 'default' });
+    expect(bare.clearHeight).toEqual({ value: 2.42, from: 'plan' });
+  });
+
+  it('rattache les ouvertures extérieures à la façade la plus proche', () => {
+    expect(s.openings.map((o) => [o.kind, o.edgeIndex, o.width, o.height, o.from])).toEqual([
+      ['window', 0, 1.2, 1.35, 'default'], // largeur mesurée 120 cm ; hauteur inconnue → 1,35 m par défaut
+      ['door', 1, 0.9, 2.1, 'plan'], // dimensions lues
+      ['window', 2, 2, 1.35, 'default'], // genre inconnu → fenêtre
+    ]);
+    // Position du centre le long de l'arête : fenêtre nord à x = 260 sur 1000 ; porte est à y = 345 sur 800
+    expect(s.openings[0]!.position).toBeCloseTo(0.26);
+    expect(s.openings[1]!.position).toBeCloseTo(0.43125);
+    expect(s.openings.every((o) => o.count === 1 && o.windowTypeId === null)).toBe(true);
+    expect(new Set(s.openings.map((o) => o.id)).size).toBe(3);
+  });
+
+  it('une porte sans hauteur lue prend 2,10 m par défaut', () => {
+    const src = groundFloorSheet();
+    src.detected.openings = [{ kind: 'door', a: { x: 980, y: 300 }, b: { x: 980, y: 390 } }];
+    expect(createStorey(src, 'RDC', emptyModel()).openings.map((o) => [o.kind, o.width, o.height, o.from])).toEqual([['door', 0.9, 2.1, 'default']]);
+  });
+
+  it('tolère 0,60 m d’écart au contour, ou 5 % de la longueur de la façade si elle est longue', () => {
+    const at = (offsetCm: number, widthCm = 1000) => {
+      const src = sheet('s', 'Plan', {
+        metresPerUnit: { value: 0.01, from: 'plan' },
+        detected: {
+          outline: rect(widthCm, 800),
+          rooms: [],
+          notes: [],
+          openings: [{ kind: 'window', a: { x: 200, y: offsetCm }, b: { x: 320, y: offsetCm } }],
+        },
+      });
+      return createStorey(src, 'RDC', emptyModel()).openings.length;
+    };
+    expect(at(55)).toBe(1); // 0,55 m du nu extérieur : mur épais, accepté
+    expect(at(70)).toBe(0); // 0,70 m > max(0,60 ; 5 % × 10 m = 0,50)
+    expect(at(70, 3000)).toBe(1); // façade de 30 m : 5 % = 1,50 m
+  });
+
+  it('prend la surface écrite, sinon la surface mesurée ; propose le classement des pièces', () => {
+    expect(s.rooms.map((r) => [r.name, r.area.value, r.area.from, r.heated, r.needsReview])).toEqual([
+      ['Séjour', 32.45, 'plan', true, false], // la surface écrite prime sur la surface mesurée
+      ['Cuisine', 11.2, 'plan', true, false],
+      ['Buanderie', 6.5, 'plan', false, true], // ambiguë → à trancher, non comptée d'ici là
+      ['Garage', 0, 'default', false, true], // surface inconnue → à revoir
+      ['Hall', 0, 'default', true, true],
+    ]);
+    expect(s.rooms[0]!.at).toEqual({ x: 300, y: 300 });
+    expect(s.rooms[1]!.polygon).toEqual(rect(400, 280, 550, 30));
+  });
+
+  it('donne un étage directement calculable', () => {
+    const model = { ...emptyModel(), storeys: [s] };
+    const d = deriveSheets({ version: 1, model, answers: createEmptyProject('fr').answers }, 'fr');
+    expect(d.envelope.map(brief)).toEqual([
+      'window N 1 × 1.20 × 1.35 Abzug',
+      'wall N 1 × 10.00 × 2.95',
+      'door E 1 × 0.90 × 2.10 Abzug',
+      'wall E 1 × 8.00 × 2.95',
+      'window S 1 × 2.00 × 1.35 Abzug',
+      'wall S 1 × 10.00 × 2.95',
+      'wall W 1 × 8.00 × 2.95',
+      'ceiling H 1 × 10.00 × 8.00',
+      'floor H 1 × 10.00 × 8.00',
+    ]);
+    // An provisoire = Séjour 32,45 + Cuisine 11,2 + Hall 0 = 43,65 m² ; 3 pièces restent à trancher
+    expect(d.totals.an).toBe(43.65);
+    expect(d.findings.find((f) => f.code === 'rooms.needReview')!.params.count).toBe(3);
+    // Tout ce qui est « par défaut » est signalé : nord, toiture, plancher bas, hauteur libre
+    expect(codes(d)).toEqual(expect.arrayContaining(['north.default', 'top.default', 'bottom.default', 'clearHeight.default']));
+    expect(codes(d)).not.toContain('height.default'); // la hauteur d'étage vient du plan
+    // Une fenêtre à hauteur par défaut rend sa ligne « à confirmer »
+    expect(d.envelope[0]!.from).toBe('default');
+  });
+
+  it('feuille sans échelle : 1 unité = 1 m en « estimation », ce qui bloquera le calcul', () => {
+    const src = groundFloorSheet();
+    src.metresPerUnit = null;
+    const unscaled = createStorey(src, 'RDC', emptyModel());
+    expect(unscaled.metresPerUnit).toEqual({ value: 1, from: 'estimate' });
+    const d = deriveSheets({ version: 1, model: { ...emptyModel(), storeys: [unscaled] }, answers: createEmptyProject('fr').answers }, 'fr');
+    expect(d.findings.find((f) => f.code === 'scale.unconfirmed')!.severity).toBe('block');
+  });
+
+  it('feuille sans contour détecté, ou pas de feuille du tout : étage vide', () => {
+    const noOutline = createStorey(sheet('s9', 'Scan'), 'Niveau', emptyModel());
+    expect(noOutline).toMatchObject({ sheetId: 's9', outline: [], edges: [], openings: [], rooms: [] });
+    const blank = createStorey(null, 'Étage', emptyModel());
+    expect(blank).toMatchObject({ sheetId: null, name: 'Étage', outline: [], edges: [], openings: [], rooms: [], netAreaOverride: null });
+    // Sans plan, l'expert trace directement en mètres : l'échelle est la sienne
+    expect(blank.metresPerUnit).toEqual({ value: 1, from: 'user' });
+    expect(blank.grossHeight).toEqual({ value: 2.8, from: 'default' });
+    expect(blank.clearHeight).toEqual({ value: 2.5, from: 'default' });
+  });
+
+  it('donne un identifiant qui ne heurte aucun étage existant', () => {
+    const model = emptyModel();
+    model.storeys.push(createStorey(null, 'A', model));
+    model.storeys.push(createStorey(null, 'B', model));
+    model.storeys.shift(); // l'expert supprime le premier
+    model.storeys.push(createStorey(null, 'C', model));
+    expect(model.storeys.map((x) => x.id)).toEqual(['storey-2', 'storey-3']);
+  });
+});
+
+describe('rescaleStorey : poser la règle après coup', () => {
+  it('les largeurs mesurées avec une échelle inconnue suivent la nouvelle échelle ; les largeurs lues ou saisies ne bougent pas', () => {
+    const src = groundFloorSheet();
+    src.metresPerUnit = null; // échelle inconnue à la lecture : les 120 unités de la fenêtre deviennent « 120 m »
+    const raw = createStorey(src, 'RDC', emptyModel());
+    expect(raw.openings.map((o) => [o.width, o.from])).toEqual([
+      [120, 'estimate'], // mesurée sur la feuille sans échelle : à remplacer
+      [0.9, 'plan'], // lue dans le nom du bloc : indépendante de l'échelle
+      [200, 'estimate'],
+    ]);
+    raw.openings[2] = { ...raw.openings[2]!, width: 1.8, from: 'user' }; // l'expert corrige la baie du sud à la main
+    const fixed = rescaleStorey(raw, { value: 0.01, from: 'user' });
+    expect(fixed.metresPerUnit).toEqual({ value: 0.01, from: 'user' });
+    expect(fixed.openings.map((o) => [o.width, o.from])).toEqual([
+      [1.2, 'default'], // 120 unités × 0,01 ; reste « à confirmer » (hauteur par défaut)
+      [0.9, 'plan'],
+      [1.8, 'user'],
+    ]);
+    expect(raw.openings[0]!.width).toBe(120); // l'étage d'origine n'est pas modifié
+    expect(raw.metresPerUnit).toEqual({ value: 1, from: 'estimate' });
+  });
+});
+
+describe('modelFromDocument : un document → premier jet de bâtiment', () => {
+  const withOutline = (id: string, name: string, w: number, d: number, elevation?: number): PlanSheet =>
+    sheet(id, name, {
+      detected: elevation === undefined ? { outline: rect(w, d), rooms: [], openings: [], notes: [] } : { outline: rect(w, d), rooms: [], openings: [], notes: [], elevation },
+    });
+  const doc = (sheets: PlanSheet[], patch: Partial<PlanDocument> = {}): PlanDocument => ({
+    fileName: 'maison.dxf',
+    kind: 'dxf',
+    sheets,
+    storeysAligned: false,
+    warnings: [],
+    ...patch,
+  });
+
+  it('trie les niveaux reconnus du bas vers le haut, ignore les feuilles sans contour et sort le sous-sol du volume chauffé', () => {
+    const model = modelFromDocument(
+      doc([
+        withOutline('a', 'Plan 1er étage', 10, 8),
+        sheet('b', 'Coupe A-A'), // pas de contour
+        withOutline('c', 'Plan sous-sol', 10, 8),
+        withOutline('d', 'Combles aménagés', 10, 6),
+        withOutline('e', 'Plan RDC 1:100', 10, 8),
+      ]),
+      'fr',
+    );
+    expect(model.storeys.map((s) => [s.id, s.name, s.sheetId])).toEqual([
+      ['storey-1', 'Rez-de-chaussée', 'e'],
+      ['storey-2', '1er étage', 'a'],
+      ['storey-3', 'Combles', 'd'],
+    ]);
+    // Un sous-sol reconnu n'est pas compté chauffé : le RDC repose sur un local non chauffé (hypothèse à confirmer)
+    expect(model.bottom).toEqual({ kind: 'above-unheated', constructionId: null, from: 'default' });
+  });
+
+  it('nomme les niveaux dans la langue demandée', () => {
+    const sheets = [withOutline('a', 'Grundriss 1. OG', 10, 8), withOutline('e', 'Grundriss EG', 10, 8), withOutline('k', 'Kellergeschoss', 10, 8)];
+    expect(modelFromDocument(doc(sheets), 'de').storeys.map((s) => s.name)).toEqual(['Erdgeschoss', '1. Obergeschoss']);
+    expect(modelFromDocument(doc(sheets), 'fr').storeys.map((s) => s.name)).toEqual(['Rez-de-chaussée', '1er étage']);
+    expect(modelFromDocument(doc(sheets), 'de').constructions[0]!.name).toBe('Außenwand');
+  });
+
+  it('préfère les altitudes quand toutes les feuilles en ont (IFC)', () => {
+    const model = modelFromDocument(
+      doc([withOutline('h', 'Niveau haut', 10, 8, 5.6), withOutline('b', 'Niveau bas', 10, 8, 0), withOutline('m', 'Niveau milieu', 10, 8, 2.8)], {
+        kind: 'ifc',
+        storeysAligned: true,
+        northAngle: { value: 50, from: 'plan', note: 'IFC TrueNorth' },
+      }),
+      'fr',
+    );
+    // Noms non reconnus → on garde ceux des feuilles
+    expect(model.storeys.map((s) => s.name)).toEqual(['Niveau bas', 'Niveau milieu', 'Niveau haut']);
+    expect(model.storeysAligned).toBe(true);
+    expect(model.northAngle).toEqual({ value: 50, from: 'plan', note: 'IFC TrueNorth' });
+    // Pas de sous-sol reconnu → dalle sur terre-plein par défaut
+    expect(model.bottom).toEqual({ kind: 'slab-on-ground', constructionId: null, from: 'default' });
+  });
+
+  it("garde l'ordre du document dès qu'une feuille n'a ni altitude ni nom reconnu", () => {
+    const model = modelFromDocument(doc([withOutline('a', '1er étage', 10, 8), withOutline('x', 'Feuille 3', 10, 8), withOutline('e', 'RDC', 10, 8)]), 'fr');
+    expect(model.storeys.map((s) => s.name)).toEqual(['1er étage', 'Feuille 3', 'Rez-de-chaussée']);
+  });
+
+  it('distingue deux feuilles qui porteraient le même nom de niveau', () => {
+    // Deux feuilles reconnues comme « Étage » : on garde leurs propres noms, plus parlants
+    const wings = modelFromDocument(doc([withOutline('a', 'Étage aile A', 10, 8), withOutline('b', 'Étage aile B', 10, 8)]), 'fr');
+    expect(wings.storeys.map((s) => s.name)).toEqual(['Étage aile A', 'Étage aile B']);
+    // Deux feuilles de même nom : numérotées
+    const twins = modelFromDocument(doc([withOutline('a', 'Plan', 10, 8), withOutline('b', 'Plan', 10, 8)]), 'fr');
+    expect(twins.storeys.map((s) => s.name)).toEqual(['Plan', 'Plan (2)']);
+  });
+
+  it('RÈGLE ACTUELLE : tout niveau reconnu sous le rez-de-chaussée (sous-sol, mais aussi rez-de-jardin) est proposé NON chauffé', () => {
+    // Un rez-de-jardin est souvent habité : l'expert doit alors l'ajouter lui-même comme étage chauffé.
+    const model = modelFromDocument(doc([withOutline('j', 'Rez-de-jardin', 10, 8), withOutline('e', 'Rez-de-chaussée', 10, 8)]), 'fr');
+    expect(model.storeys.map((s) => s.name)).toEqual(['Rez-de-chaussée']);
+    expect(model.bottom.kind).toBe('above-unheated');
+  });
+
+  it('pose les hypothèses de départ, toutes marquées « par défaut »', () => {
+    const model = modelFromDocument(doc([withOutline('e', 'RDC', 10, 8)]), 'fr');
+    expect(model.top).toEqual({
+      kind: 'attic-ceiling',
+      pitchDeg: 35,
+      shape: 'gable',
+      ridgeAngle: null,
+      kneeWallHeight: 0,
+      constructionId: null,
+      from: 'default',
+    });
+    expect(model.northAngle).toEqual({ value: 0, from: 'default' });
+    expect(model.storeysAligned).toBe(false);
+    expect(model.manualRows).toEqual([]);
+    expect(model.constructions.map((c) => [c.id, c.name, c.category, c.u])).toEqual([
+      ['wall-outside', 'Mur extérieur', 'wall', null],
+      ['wall-ground', 'Mur contre terre', 'wall', null],
+      ['wall-unheated', 'Mur contre local non chauffé', 'wall', null],
+      ['roof', 'Toiture', 'roof', null],
+      ['ceiling-attic', 'Plancher haut sous grenier non chauffé', 'ceiling', null],
+      ['floor-ground', 'Dalle sur terre-plein', 'floor', null],
+      ['floor-unheated', 'Plancher sur cave non chauffée', 'floor', null],
+      ['floor-outside', 'Plancher sur extérieur', 'floor', null],
+      ['door', 'Porte opaque', 'door', null],
+    ]);
+    expect(model.windowTypes).toEqual([{ id: 'window-default', name: 'Fenêtre', uw: null, g: null }]);
+  });
+
+  it('document sans aucun contour exploitable : bâtiment sans étage (le calcul dira « tracez un étage »)', () => {
+    const model = modelFromDocument(doc([sheet('a', 'Scan 1'), sheet('b', 'Scan 2')]), 'fr');
+    expect(model.storeys).toEqual([]);
+    const d = deriveSheets({ version: 1, model, answers: createEmptyProject('fr').answers }, 'fr');
+    expect(d.findings).toEqual([{ code: 'model.noStorey', severity: 'block', params: {} }]);
+  });
+});
+
+describe('projet vide', () => {
+  it('createEmptyProject : aucun étage, réponses vides', () => {
+    const p = createEmptyProject('de');
+    expect(p.version).toBe(1);
+    expect(p.model.storeys).toEqual([]);
+    expect(p.model.windowTypes[0]!.name).toBe('Fenster');
+    expect(p.answers).toMatchObject({ projectName: '', street: '', postcode: '', locality: '', buildingType: null, yearBuilt: null, n50: null });
+    expect(Object.values(p.answers).every((v) => v === '' || v === null)).toBe(true);
+  });
+});

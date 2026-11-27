@@ -1,0 +1,1028 @@
+{
+ "file": "de_A3_1-50.pdf",
+ "scale_den": 50,
+ "unit_dims": "de-mixed",
+ "pages": [
+  {
+   "views": [
+    {
+     "view": "Grundriss Erdgeschoss",
+     "outline_area_m2": 107.9856,
+     "outline_pt": [
+      [
+       113.39,
+       260.22
+      ],
+      [
+       113.39,
+       246.61
+      ],
+      [
+       126.99,
+       246.61
+      ],
+      [
+       311.81,
+       246.61
+      ],
+      [
+       311.81,
+       109.42
+      ],
+      [
+       311.81,
+       85.61
+      ],
+      [
+       335.62,
+       85.61
+      ],
+      [
+       845.86,
+       85.61
+      ],
+      [
+       869.67,
+       85.61
+      ],
+      [
+       869.67,
+       109.42
+      ],
+      [
+       869.67,
+       562.96
+      ],
+      [
+       869.67,
+       586.77
+      ],
+      [
+       845.86,
+       586.77
+      ],
+      [
+       335.62,
+       586.77
+      ],
+      [
+       311.81,
+       586.77
+      ],
+      [
+       126.99,
+       586.77
+      ],
+      [
+       113.39,
+       586.77
+      ],
+      [
+       113.39,
+       573.17
+      ],
+      [
+       113.39,
+       260.22
+      ]
+     ],
+     "rooms": [
+      {
+       "name": "Wohnzimmer",
+       "area_true_m2": 28.1,
+       "area_label": "28.10 m2",
+       "heated_true": true,
+       "label_pt": [
+        493.23,
+        405.35
+       ],
+       "poly_pt": [
+        [
+         335.62,
+         279.5
+        ],
+        [
+         335.62,
+         562.96
+        ],
+        [
+         654.24,
+         562.96
+        ],
+        [
+         654.24,
+         279.5
+        ],
+        [
+         335.62,
+         279.5
+        ]
+       ]
+      },
+      {
+       "name": "Küche",
+       "area_true_m2": 16.2137,
+       "area_label": "16,21 m²",
+       "heated_true": true,
+       "label_pt": [
+        493.23,
+        178.58
+       ],
+       "poly_pt": [
+        [
+         335.62,
+         272.98
+        ],
+        [
+         654.24,
+         272.98
+        ],
+        [
+         654.24,
+         109.42
+        ],
+        [
+         335.62,
+         109.42
+        ],
+        [
+         335.62,
+         272.98
+        ]
+       ]
+      },
+      {
+       "name": "Flur",
+       "area_true_m2": 13.713,
+       "area_label": "13,71 qm",
+       "heated_true": true,
+       "label_pt": [
+        759.69,
+        394.02
+       ],
+       "poly_pt": [
+        [
+         845.86,
+         562.96
+        ],
+        [
+         845.86,
+         324.85
+        ],
+        [
+         660.76,
+         324.85
+        ],
+        [
+         660.76,
+         562.96
+        ],
+        [
+         845.86,
+         562.96
+        ]
+       ]
+      },
+      {
+       "name": "WC",
+       "area_true_m2": 3.918,
+       "area_label": "A: 3,92 m²",
+       "heated_true": true,
+       "label_pt": [
+        782.36,
+        277.8
+       ],
+       "poly_pt": [
+        [
+         845.86,
+         318.33
+        ],
+        [
+         845.86,
+         250.3
+        ],
+        [
+         660.76,
+         250.3
+        ],
+        [
+         660.76,
+         318.33
+        ],
+        [
+         845.86,
+         318.33
+        ]
+       ]
+      },
+      {
+       "name": "Technik",
+       "area_true_m2": 7.738,
+       "area_label": "NGF 7,74 m²",
+       "heated_true": false,
+       "label_pt": [
+        754.02,
+        167.24
+       ],
+       "poly_pt": [
+        [
+         845.86,
+         243.78
+        ],
+        [
+         845.86,
+         109.42
+        ],
+        [
+         660.76,
+         109.42
+        ],
+        [
+         660.76,
+         243.78
+        ],
+        [
+         845.86,
+         243.78
+        ]
+       ]
+      },
+      {
+       "name": "Garage",
+       "area_true_m2": 17.9952,
+       "area_label": "18.00 m2",
+       "heated_true": false,
+       "label_pt": [
+        219.4,
+        405.35
+       ],
+       "poly_pt": [
+        [
+         126.99,
+         573.17
+        ],
+        [
+         311.81,
+         573.17
+        ],
+        [
+         311.81,
+         562.96
+        ],
+        [
+         311.81,
+         260.22
+        ],
+        [
+         126.99,
+         260.22
+        ],
+        [
+         126.99,
+         573.17
+        ]
+       ]
+      }
+     ],
+     "heated_outline_area_m2": 86.9856,
+     "dims": [
+      {
+       "text": "50",
+       "true_m": 0.5,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        127.56,
+        626.46
+       ]
+      },
+      {
+       "text": "2,50",
+       "true_m": 2.5,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        212.6,
+        626.46
+       ]
+      },
+      {
+       "text": "50",
+       "true_m": 0.5,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        297.64,
+        626.46
+       ]
+      },
+      {
+       "text": "1,60",
+       "true_m": 1.6,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        357.17,
+        626.46
+       ]
+      },
+      {
+       "text": "2,50",
+       "true_m": 2.5,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        473.39,
+        626.46
+       ]
+      },
+      {
+       "text": "3,30",
+       "true_m": 3.3,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        637.8,
+        626.46
+       ]
+      },
+      {
+       "text": "1,01",
+       "true_m": 1.01,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        759.97,
+        626.46
+       ]
+      },
+      {
+       "text": "1,43",
+       "true_m": 1.43,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        829.13,
+        626.46
+       ]
+      },
+      {
+       "text": "3,50",
+       "true_m": 3.5,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        212.6,
+        654.8
+       ]
+      },
+      {
+       "text": "9,84",
+       "true_m": 9.84,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        590.74,
+        654.8
+       ]
+      },
+      {
+       "text": "13,34",
+       "true_m": 13.34,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        491.53,
+        683.15
+       ]
+      },
+      {
+       "text": "1,50",
+       "true_m": 1.5,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        909.35,
+        544.25
+       ]
+      },
+      {
+       "text": "1,26",
+       "true_m": 1.26,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        909.35,
+        466.02
+       ]
+      },
+      {
+       "text": "6,08",
+       "true_m": 6.08,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        909.35,
+        257.95
+       ]
+      },
+      {
+       "text": "8,84",
+       "true_m": 8.84,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        937.7,
+        336.19
+       ]
+      },
+      {
+       "text": "42",
+       "true_m": 0.42,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        323.72,
+        45.92
+       ]
+      },
+      {
+       "text": "5,62",
+       "true_m": 5.62,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        494.93,
+        45.92
+       ]
+      },
+      {
+       "text": "11^5",
+       "true_m": 0.115,
+       "axis": "x",
+       "displaced": true,
+       "mid_pt": [
+        657.5,
+        45.92
+       ]
+      },
+      {
+       "text": "3,26^5",
+       "true_m": 3.265,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        753.31,
+        45.92
+       ]
+      },
+      {
+       "text": "42",
+       "true_m": 0.42,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        857.76,
+        45.92
+       ]
+      },
+      {
+       "text": "4,20",
+       "true_m": 4.2,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        822.05,
+        443.91
+       ]
+      },
+      {
+       "text": "11^5",
+       "true_m": 0.115,
+       "axis": "y",
+       "displaced": true,
+       "mid_pt": [
+        822.05,
+        321.59
+       ]
+      },
+      {
+       "text": "1,20",
+       "true_m": 1.2,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        822.05,
+        284.31
+       ]
+      },
+      {
+       "text": "11^5",
+       "true_m": 0.115,
+       "axis": "y",
+       "displaced": true,
+       "mid_pt": [
+        822.05,
+        247.04
+       ]
+      },
+      {
+       "text": "2,37",
+       "true_m": 2.37,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        822.05,
+        176.6
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "views": [
+    {
+     "view": "Grundriss Obergeschoss",
+     "outline_area_m2": 86.9856,
+     "outline_pt": [
+      [
+       704.13,
+       586.77
+      ],
+      [
+       193.89,
+       586.77
+      ],
+      [
+       170.08,
+       586.77
+      ],
+      [
+       170.08,
+       562.96
+      ],
+      [
+       170.08,
+       109.42
+      ],
+      [
+       170.08,
+       85.61
+      ],
+      [
+       193.89,
+       85.61
+      ],
+      [
+       704.13,
+       85.61
+      ],
+      [
+       727.94,
+       85.61
+      ],
+      [
+       727.94,
+       109.42
+      ],
+      [
+       727.94,
+       562.96
+      ],
+      [
+       727.94,
+       586.77
+      ],
+      [
+       704.13,
+       586.77
+      ]
+     ],
+     "rooms": [
+      {
+       "name": "Schlafzimmer",
+       "area_true_m2": 18.0,
+       "area_label": "18,00 m²",
+       "heated_true": true,
+       "label_pt": [
+        317.48,
+        445.04
+       ],
+       "poly_pt": [
+        [
+         193.89,
+         562.96
+        ],
+        [
+         449.01,
+         562.96
+        ],
+        [
+         449.01,
+         336.19
+        ],
+        [
+         193.89,
+         336.19
+        ],
+        [
+         193.89,
+         562.96
+        ]
+       ]
+      },
+      {
+       "name": "Kinderzimmer 1",
+       "area_true_m2": 17.54,
+       "area_label": "17,54 m²",
+       "heated_true": true,
+       "label_pt": [
+        583.94,
+        445.04
+       ],
+       "poly_pt": [
+        [
+         455.53,
+         562.96
+        ],
+        [
+         704.13,
+         562.96
+        ],
+        [
+         704.13,
+         336.19
+        ],
+        [
+         455.53,
+         336.19
+        ],
+        [
+         455.53,
+         562.96
+        ]
+       ]
+      },
+      {
+       "name": "Kinderzimmer 2",
+       "area_true_m2": 13.5975,
+       "area_label": "13.60 m2",
+       "heated_true": true,
+       "label_pt": [
+        289.13,
+        212.6
+       ],
+       "poly_pt": [
+        [
+         193.89,
+         329.67
+        ],
+        [
+         392.31,
+         329.67
+        ],
+        [
+         392.31,
+         109.42
+        ],
+        [
+         193.89,
+         109.42
+        ],
+        [
+         193.89,
+         329.67
+        ]
+       ]
+      },
+      {
+       "name": "Flur",
+       "area_true_m2": 9.2657,
+       "area_label": "9,27 qm",
+       "heated_true": true,
+       "label_pt": [
+        467.72,
+        172.91
+       ],
+       "poly_pt": [
+        [
+         534.05,
+         329.67
+        ],
+        [
+         534.05,
+         109.42
+        ],
+        [
+         398.83,
+         109.42
+        ],
+        [
+         398.83,
+         329.67
+        ],
+        [
+         534.05,
+         329.67
+        ]
+       ]
+      },
+      {
+       "name": "Bad",
+       "area_true_m2": 11.2082,
+       "area_label": "A: 11,21 m²",
+       "heated_true": true,
+       "label_pt": [
+        623.62,
+        212.6
+       ],
+       "poly_pt": [
+        [
+         704.13,
+         109.42
+        ],
+        [
+         540.57,
+         109.42
+        ],
+        [
+         540.57,
+         329.67
+        ],
+        [
+         704.13,
+         329.67
+        ],
+        [
+         704.13,
+         109.42
+        ]
+       ]
+      }
+     ],
+     "heated_outline_area_m2": 86.9856,
+     "dims": [
+      {
+       "text": "1,60",
+       "true_m": 1.6,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        215.43,
+        626.46
+       ]
+      },
+      {
+       "text": "1,50",
+       "true_m": 1.5,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        303.31,
+        626.46
+       ]
+      },
+      {
+       "text": "3,30",
+       "true_m": 3.3,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        439.37,
+        626.46
+       ]
+      },
+      {
+       "text": "1,50",
+       "true_m": 1.5,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        575.43,
+        626.46
+       ]
+      },
+      {
+       "text": "1,94",
+       "true_m": 1.94,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        672.94,
+        626.46
+       ]
+      },
+      {
+       "text": "9,84",
+       "true_m": 9.84,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        449.01,
+        654.8
+       ]
+      },
+      {
+       "text": "1,50",
+       "true_m": 1.5,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        767.62,
+        544.25
+       ]
+      },
+      {
+       "text": "1,26",
+       "true_m": 1.26,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        767.62,
+        466.02
+       ]
+      },
+      {
+       "text": "6,08",
+       "true_m": 6.08,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        767.62,
+        257.95
+       ]
+      },
+      {
+       "text": "8,84",
+       "true_m": 8.84,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        795.97,
+        336.19
+       ]
+      },
+      {
+       "text": "42",
+       "true_m": 0.42,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        181.98,
+        45.92
+       ]
+      },
+      {
+       "text": "4,50",
+       "true_m": 4.5,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        321.45,
+        45.92
+       ]
+      },
+      {
+       "text": "11^5",
+       "true_m": 0.115,
+       "axis": "x",
+       "displaced": true,
+       "mid_pt": [
+        452.27,
+        45.92
+       ]
+      },
+      {
+       "text": "4,38^5",
+       "true_m": 4.385,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        579.83,
+        45.92
+       ]
+      },
+      {
+       "text": "42",
+       "true_m": 0.42,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        716.03,
+        45.92
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "views": [
+    {
+     "levels_m": [
+      0.0,
+      2.8,
+      5.6
+     ],
+     "storey_height_m": 2.8,
+     "clear_height_m": 2.5,
+     "view": "Schnitt A-A",
+     "dims": [
+      {
+       "text": "2,50",
+       "true_m": 2.5,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        187.09,
+        558.43
+       ]
+      },
+      {
+       "text": "30",
+       "true_m": 0.3,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        187.09,
+        479.06
+       ]
+      },
+      {
+       "text": "2,50",
+       "true_m": 2.5,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        187.09,
+        399.69
+       ]
+      },
+      {
+       "text": "30",
+       "true_m": 0.3,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        187.09,
+        320.31
+       ]
+      },
+      {
+       "text": "2,80",
+       "true_m": 2.8,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        141.73,
+        549.92
+       ]
+      },
+      {
+       "text": "2,80",
+       "true_m": 2.8,
+       "axis": "y",
+       "displaced": false,
+       "mid_pt": [
+        141.73,
+        391.18
+       ]
+      },
+      {
+       "text": "42",
+       "true_m": 0.42,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        267.02,
+        685.98
+       ]
+      },
+      {
+       "text": "8,00",
+       "true_m": 8.0,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        505.7,
+        685.98
+       ]
+      },
+      {
+       "text": "42",
+       "true_m": 0.42,
+       "axis": "x",
+       "displaced": false,
+       "mid_pt": [
+        744.38,
+        685.98
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "north_cw_from_up_deg": -40.0
+}
