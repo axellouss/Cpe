@@ -113,6 +113,10 @@ Elles suivent le règlement grand-ducal du 9 juin 2021 et le manuel de LuxEeB-To
 - **PDF à plusieurs échelles** : l'échelle est décidée vue par vue ; une vue sans intitulé ni cote propre reçoit
   l'échelle de la page en « estimation ». Sur une page « tout en trait fin » qui ne montre qu'un plan, l'échelle reste
   décidée pour la page entière.
+- **Plusieurs plans sur une même page de PDF** : dessinés à moins de trois mètres (à l'échelle) l'un de l'autre, ils
+  peuvent être lus comme un seul contour ; sur une page « tout en trait fin », des plans reliés par un trait ne sont
+  pas séparés — la page le dit et la liste des pièces couvre alors tous les niveaux. Un mot du cartouche qui ressemble
+  à un nom de pièce (« Atelier A ») peut y être pris pour une pièce.
 - **Gros fichiers** : la lecture d'un DWG/DXF ne bloque pas la page. Celle d'une grosse maquette IFC peut encore la
   figer une à deux secondes à la fois ; un PDF très chargé se lit en plusieurs secondes.
 - **Fichiers abîmés** : un DWG endommagé est refusé ou signalé (« objets manquants »), un IFC tronqué est refusé, une
@@ -129,7 +133,10 @@ Elles suivent le règlement grand-ducal du 9 juin 2021 et le manuel de LuxEeB-To
   différence de surfaces.
 - **Textes allemands** : rédigés avec soin, pas encore relus par un expert germanophone.
 - **Langue** : les remarques d'un lecteur sont rédigées dans la langue choisie au moment de la lecture ; un bouton
-  relit le fichier dans la langue actuelle.
+  relit le fichier dans la langue actuelle. La langue des noms par défaut est enregistrée avec le projet : rouvert
+  dans l'autre langue, il prend ses noms par défaut, et les noms saisis par l'expert ne bougent pas.
+- **Étiquette d'une ligne de tableau** : elle donne la provenance la plus faible de ses valeurs. Une valeur U saisie
+  par l'expert ne change donc pas l'étiquette d'une ligne dont la surface vient du plan.
 - Vérifié dans Chromium (bureau et émulation mobile). Safari, Firefox et de vrais écrans tactiles restent à essayer.
 - **Page hébergée dans un cadre** (page d'essai) : l'enregistrement des fichiers passe par la page hôte quand elle le
   propose ; sinon le contenu est copié. Voir `tools/page-essai/`.
