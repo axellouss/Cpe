@@ -41,33 +41,57 @@ function outlineAreas(doc: PlanDocument): number[] {
 
 describe('A — tous les traits de la même épaisseur (export « tout en trait fin »)', () => {
   it('garde l’échelle des cotes mais ne propose aucun contour', async () => {
-    for (const [name, den] of [
-      ['fr_A3_1-100.pdf', 100],
-      ['de_A3_1-50.pdf', 50],
+    for (const [name, den, sheets] of [
+      ['fr_A3_1-100.pdf', 100, 2],
+      ['de_A3_1-50.pdf', 50, 1],
     ] as const) {
       const doc = analyse(hairline(await firstPage(name)));
-      expect(doc.sheets).toHaveLength(1);
-      const sheet = doc.sheets[0]!;
-      expect(Math.abs(scaleDen(sheet) / den - 1)).toBeLessThan(0.005);
-      expect(sheet.metresPerUnit!.from).toBe('plan');
-      expect(sheet.detected.outline).toBeUndefined();
-      expect(sheet.detected.openings).toEqual([]);
-      expect(sheet.detected.notes.join('\n')).toMatch(/pas de contour proposé/);
+      expect(doc.sheets).toHaveLength(sheets);
+      for (const sheet of doc.sheets) {
+        expect(Math.abs(scaleDen(sheet) / den - 1)).toBeLessThan(0.005);
+        expect(sheet.metresPerUnit!.from).toBe('plan');
+        expect(sheet.detected.outline).toBeUndefined();
+        expect(sheet.detected.openings).toEqual([]);
+        expect(sheet.detected.notes.join('\n')).toMatch(/pas de contour proposé/);
+        // Les pièces restent lues dans le texte (noms et surfaces écrites), sans polygone.
+        expect(sheet.detected.rooms.length).toBeGreaterThanOrEqual(5);
+        expect(sheet.detected.rooms.every((r) => r.polygon === undefined && r.measuredArea === undefined)).toBe(true);
+        expect(sheet.detected.rooms.some((r) => r.statedArea !== undefined)).toBe(true);
+        // Les phrases du cartouche ne deviennent pas des pièces.
+        expect(sheet.detected.rooms.some((r) => /Strassen|Mersch/.test(r.name))).toBe(false);
+        // Les traits restent là pour l'accrochage.
+        expect(sheet.segments!.length).toBeGreaterThan(300);
+      }
       expect(doc.warnings.some((w) => /même épaisseur/.test(w))).toBe(true);
-      // Les pièces restent lues dans le texte (noms et surfaces écrites), sans polygone.
-      expect(sheet.detected.rooms.length).toBeGreaterThanOrEqual(6);
-      expect(sheet.detected.rooms.every((r) => r.polygon === undefined && r.measuredArea === undefined)).toBe(true);
-      expect(sheet.detected.rooms.some((r) => r.statedArea !== undefined)).toBe(true);
-      // Les phrases du cartouche ne deviennent pas des pièces.
-      expect(sheet.detected.rooms.some((r) => /Strassen|Mersch/.test(r.name))).toBe(false);
-      // Les traits restent là pour l'accrochage.
-      expect(sheet.segments!.length).toBeGreaterThan(1000);
     }
   });
 
-  it('ne nomme pas d’après un seul niveau une page qui en montre plusieurs', async () => {
+  it('sépare les plans d’une page qui en montre plusieurs : une feuille par niveau, sans les étiquettes de la coupe', async () => {
     const doc = analyse(hairline(await firstPage('fr_A3_1-100.pdf')));
+    expect(doc.sheets.map((s) => s.name)).toEqual(['Rez-de-chaussée', 'Étage']);
+    const [rdc, etage] = doc.sheets as [PlanSheet, PlanSheet];
+    expect(rdc.detected.rooms.map((r) => r.name)).toEqual(['Séjour', 'Cuisine', 'Hall', 'WC', 'Buanderie', 'Garage', 'Cave / Keller']);
+    expect(etage.detected.rooms.map((r) => r.name).sort()).toEqual(['Chambre 1', 'Chambre 2', 'Chambre 3', 'Palier', 'SdB']);
+    // « Grenier (non chauffé) » est écrit dans la coupe A-A : ce n'est une pièce d'aucun des deux plans.
+    expect(doc.sheets.some((s) => s.detected.rooms.some((r) => /Grenier/.test(r.name)))).toBe(false);
+    expect(rdc.detected.notes.join('\n')).toMatch(/Étiquettes écartées.*Grenier/);
+    expect(rdc.detected.notes.join('\n')).toMatch(/d’après leur place sur la page/);
+    // Chaque feuille ne garde que les traits de son plan.
+    expect(rdc.segments!.length).toBeLessThan(hairline(await firstPage('fr_A3_1-100.pdf')).segs.length * 4 * 0.7);
+  });
+
+  it('plusieurs niveaux qu’on ne sait pas séparer : la feuille couvre la page et le dit', async () => {
+    // Les deux plans reliés par un long trait fin : une seule région de dessin.
+    const p = hairline(await firstPage('fr_A3_1-100.pdf'));
+    const rooms = analyse(p).sheets.flatMap((s) => s.detected.rooms);
+    const xs = rooms.map((r) => r.at!.x);
+    const ys = rooms.map((r) => r.at!.y);
+    const link = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys), w: 0.5, curve: false, stroke: true, fill: false, dash: false, pid: 0 };
+    const doc = analyse({ ...p, segs: [...p.segs, link] });
+    expect(doc.sheets).toHaveLength(1);
     expect(doc.sheets[0]!.name).toBe('Page 1');
+    expect(doc.warnings.some((w) => /plusieurs niveaux sur cette page n’ont pas pu être séparés/i.test(w))).toBe(true);
+    expect(doc.sheets[0]!.detected.notes.join('\n')).toMatch(/La liste des pièces couvre toute la page/);
   });
 
   it.fails('LIMITE CONNUE : sans hiérarchie d’épaisseurs, pas de contour ni de découpage en vues', async () => {

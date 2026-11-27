@@ -15,7 +15,7 @@
 import { cleanPolygon, isSelfIntersecting, normDeg, round } from '../../core/geometry';
 import type { BBox, DetectedOpening, DetectedRoom, Lang, PlanDocument, PlanSheet, PlanText, Sourced, Vec2 } from '../../core/types';
 import { formatNumber } from '../../i18n';
-import { fold, guessStorey, parseClearHeight, roomsFromTexts } from '../../semantics/labels';
+import { fold, guessStorey, looksLikeRoomName, parseClearHeight, roomsFromTexts } from '../../semantics/labels';
 import { msg } from './messages';
 import { detectOpenings } from './openings';
 import { pointInPoly, pointInRing, pointRingDistance, polyArea, ringArea, simplifyRing } from './planar';
@@ -25,6 +25,7 @@ import type { RawPage, RawSeg, RawText } from './raw';
 import { freeRoomName, isTotalLabel, roomAreaOf, roomyPoint } from './rooms';
 import { STANDARD_SCALES, calibrateObservations, chooseDimensionScale, declaredScales, dimensionObservations, dimensionUnitHint, secondDimensionCluster } from './scale';
 import type { DeclaredScale, DimChoice, DimObservation, DimUnit } from './scale';
+import { drawingRegions } from './regions';
 import { TITLE_BLOCK_RE, frameBox, inFrameCorner, isTitleBlockText } from './titleblock';
 import { buildFaces, calibrateByAreas, closedOutlines, faceAt, findWallClass, wallGaps } from './walls';
 import type { AreaCalibration, Faces, WallClass, WallGap } from './walls';
@@ -660,7 +661,7 @@ function observationsOfView(view: View, views: readonly View[], observations: re
 function scaleOfView(
   page: RawPage,
   view: View,
-  walls: WallClass,
+  walls: WallClass | null,
   own: readonly DimObservation[],
   captions: number[],
   hint: DimUnit | null,
@@ -668,7 +669,7 @@ function scaleOfView(
   where: string,
 ): ScaleDecision {
   const labels = areaLabels(view.texts.map((i) => page.texts[i]!)).filter((l) => pointInRing(l.x, l.y, view.ring));
-  return decideScale({ declared: captions, source: 'caption', observations: own, hint, labels, walls: wallsOfView(walls, view) }, lang, where);
+  return decideScale({ declared: captions, source: 'caption', observations: own, hint, labels, walls: walls ? wallsOfView(walls, view) : null }, lang, where);
 }
 
 /**
@@ -1130,6 +1131,74 @@ function detectPlan(page: RawPage, view: View, faces: Faces | null, gaps: readon
   return result;
 }
 
+/** Vues d'une page sans classe de murs, et pièces de chacune. */
+interface HairlineSplit {
+  /** Toutes les régions de dessin, comme des vues rectangulaires (même rôle que celles de `findViews`). */
+  views: View[];
+  /** Régions reconnues comme plans, avec leurs pièces et les étiquettes écartées. */
+  plans: { view: View; rooms: DetectedRoom[]; dropped: string[] }[];
+  /** Pièces de la page qui ne sont pas écrites dans une coupe ou une façade. */
+  kept: DetectedRoom[];
+  /** Noms des étiquettes écartées parce qu'écrites dans une coupe ou une façade. */
+  dropped: string[];
+}
+
+/**
+ * Découpe une page « tout en trait fin » en vues d'après les régions de dessin (traits qui se touchent) et leurs
+ * titres ; rattache chaque pièce à la région où elle est écrite. Une région titrée « Coupe », « Façade »… ou qui
+ * ne porte que des niveaux cotés est une coupe : ses étiquettes (« Grenier ») ne sont pas des pièces d'un plan.
+ */
+function hairlineViews(page: RawPage, rooms: readonly DetectedRoom[], den: number | null): HairlineSplit {
+  const regions = drawingRegions(page) ?? [];
+  const empty: HairlineSplit = { views: [], plans: [], kept: [...rooms], dropped: [] };
+  if (regions.length === 0) return empty;
+  const rings = regions.map((b) => [
+    { x: b.minX, y: b.minY },
+    { x: b.maxX, y: b.minY },
+    { x: b.maxX, y: b.maxY },
+    { x: b.minX, y: b.maxY },
+  ]);
+  const mpp = (den ?? 100) * METRES_PER_POINT;
+  const titles = matchTitles(page, regions, rings, mpp, (t) => isTitleBlockText(t.s));
+  const margins = regions.map((b) => 0.2 * Math.max(b.maxX - b.minX, b.maxY - b.minY));
+  const owned = assignToViews(page, regions, margins);
+  const views: View[] = regions.map((b, i) => {
+    const title = titles.get(i) ?? null;
+    const titleFold = title ? fold(title.s) : '';
+    const storey = title && !SECTION_RE.test(titleFold) ? guessStorey(title.s) : null;
+    const inside = (p: Vec2): boolean => rectDistance(p.x, p.y, b) === 0;
+    const mine = rooms.filter((r) => r.at && inside(r.at));
+    const texts = owned[i]!.texts.map((k) => page.texts[k]!);
+    const levelMarks = texts.filter((t) => LEVEL_RE.test(t.s)).length;
+    let kind: View['kind'] = 'other';
+    if (title && SITE_RE.test(titleFold)) kind = 'other';
+    else if (title && SECTION_RE.test(titleFold)) kind = 'section';
+    else if (storey !== null || (title !== null && PLAN_RE.test(titleFold))) kind = 'plan';
+    else if (levelMarks >= 2 && !mine.some((r) => r.statedArea !== undefined)) kind = 'section';
+    else if (mine.length > 0) kind = 'plan';
+    const textIdx = [...owned[i]!.texts];
+    if (title) {
+      const k = page.texts.indexOf(title);
+      if (k >= 0 && !textIdx.includes(k)) textIdx.push(k);
+    }
+    const areaM2 = (b.maxX - b.minX) * (b.maxY - b.minY) * mpp * mpp;
+    return { ring: rings[i]!, bbox: b, areaM2, kind, title, titleNearby: title !== null, storey, texts: textIdx, segs: owned[i]!.segs, unsupportedM: 0 };
+  });
+  const inRegion = (r: DetectedRoom, v: View): boolean => !!r.at && rectDistance(r.at.x, r.at.y, v.bbox) === 0;
+  // Étiquettes écrites dans une coupe, une façade ou un plan de situation : pas des pièces d'un étage.
+  const notPlan = views.filter((v) => v.kind !== 'plan' && (v.kind === 'section' || v.title !== null));
+  const droppedRooms = rooms.filter((r) => notPlan.some((v) => inRegion(r, v)));
+  const kept = rooms.filter((r) => !droppedRooms.includes(r));
+  const dropped = droppedRooms.map((r) => r.name);
+  const planViews = views.filter((v) => v.kind === 'plan');
+  // Les pièces écrites hors de toute région ne peuvent pas être rattachées : sans elles, le découpage n'est pas sûr.
+  const orphans = kept.filter((r) => !planViews.some((v) => inRegion(r, v)));
+  if (planViews.length < 2 || orphans.length > 0) return { views, plans: [], kept, dropped };
+  planViews.sort((a, b) => (a.storey?.rank ?? 99) - (b.storey?.rank ?? 99) || a.bbox.minX - b.bbox.minX);
+  const plans = planViews.map((v) => ({ view: v, rooms: kept.filter((r) => inRegion(r, v)), dropped: [] as string[] }));
+  if (plans.length > 0 && dropped.length > 0) plans[0]!.dropped = dropped;
+  return { views, plans, kept, dropped };
+}
 function pageKind(page: RawPage): PageKind {
   if (page.segs.length < MIN_VECTOR_SEGMENTS) {
     // Pas de dessin vectoriel : un scan si une image occupe la page, sinon une page (presque) vide.
@@ -1231,7 +1300,11 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
       return r.statedArea !== undefined || (r.name.length <= 28 && r.name.trim().split(/\s+/).length <= 3);
     });
   const pageTitles = page.texts.filter((t) => Math.abs(t.angle) < 1 && SECTION_RE.test(fold(t.s)));
-  const pageStoreys = page.texts.filter((t) => Math.abs(t.angle) < 1 && t.s.length <= 40 && !SECTION_RE.test(fold(t.s)) && guessStorey(t.s) !== null);
+  // Noms de niveaux écrits sur la page ; une étiquette de pièce (« Garage », « Cave ») n'en est pas un, sauf dans un
+  // titre de plan (« Grundriss Keller »).
+  const pageStoreys = page.texts.filter(
+    (t) => Math.abs(t.angle) < 1 && t.s.length <= 40 && !SECTION_RE.test(fold(t.s)) && guessStorey(t.s) !== null && (!looksLikeRoomName(t.s) || PLAN_RE.test(fold(t.s))),
+  );
 
   if (scale.den === null || !walls) {
     // Pas d'échelle, ou pas de murs reconnaissables : la page entière, avec ce que le texte donne.
@@ -1246,6 +1319,7 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
     }
     if (scale.den === null) warnings.push(say('pdf.warn.scale.none'));
     const notes: string[] = [];
+    let kept = rooms;
     if (!walls && page.imageCoverage > 0.5) {
       // Un scan habillé de quelques traits vectoriels (cadre, cartouche) : le plan lui-même est une image.
       warnings.push(say('pdf.warn.scan'));
@@ -1253,11 +1327,68 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
     } else if (!walls) {
       warnings.push(say('pdf.warn.hairline'));
       notes.push(msg(lang, 'pdf.note.outline.noWalls'));
+      // Sans murs, pas de contour pour trier les pièces : on découpe la page en régions de dessin.
+      const split = hairlineViews(page, rooms, scale.den);
+      if (split.plans.length >= 2) {
+        // Plusieurs plans séparés : une feuille par plan, avec ses seules pièces.
+        const captions = mixed.length > 0 ? captionsByView(page, split.views, declaredAll, []) : [];
+        split.plans.forEach((p, k) => {
+          const view = p.view;
+          const name = view.storey ? view.storey[lang] : view.title ? view.title.s : msg(lang, 'pdf.sheet.pagePlan', { page: page.number, n: k + 1 });
+          let viewScale: Sourced<number> | null = pageScale ? { ...pageScale } : null;
+          if (mixed.length > 0 && scale.den !== null) {
+            const size = Math.max(view.bbox.maxX - view.bbox.minX, view.bbox.maxY - view.bbox.minY);
+            const ownDims = observationsOfView(view, split.views, observations, Math.max(4 / (scale.den * METRES_PER_POINT), 0.5 * size));
+            const own = scaleOfView(page, view, null, ownDims, captions[split.views.indexOf(view)] ?? [], hint, lang, `${where}${msg(lang, 'pdf.view', { view: name })}`);
+            if (own.den !== null && own.sourced) {
+              viewScale = own.sourced;
+              if (own.sourced.from !== 'plan') warnings.push(say('pdf.warn.scale.mixed', { scale: scaleLabel(own.den), list: scaleList(mixed), view: name }));
+              else warnings.push(...own.warnings);
+            } else warnings.push(say('pdf.warn.scale.mixed', { scale: scaleLabel(scale.den), list: scaleList(mixed), view: name }));
+          }
+          const sheetNotes = [...notes, msg(lang, 'pdf.note.rooms.byView')];
+          if (p.dropped.length > 0) sheetNotes.push(msg(lang, 'pdf.note.rooms.section', { rooms: p.dropped.join(', ') }));
+          if (view.title) sheetNotes.push(msg(lang, 'pdf.note.title', { title: view.title.s }));
+          const sheet: PlanSheet = {
+            id: `p${page.number}-v${k + 1}`,
+            name,
+            bbox: pad(contentBBox(page, view), 6, page),
+            metresPerUnit: viewScale,
+            detected: { rooms: p.rooms, openings: [], notes: sheetNotes },
+          };
+          const segments = displaySegments(page, view.segs).data;
+          if (segments.length > 0) sheet.segments = segments;
+          const texts = view.texts.map((i) => page.texts[i]!);
+          if (texts.length > 0) sheet.texts = sheetTexts(texts);
+          if (p.rooms.length === 0) warnings.push(say('pdf.warn.noRooms'));
+          result.drafts.push({ sheet, placement: wholePagePlacement(page, kind), rank: view.storey?.rank ?? null });
+        });
+        mixedPageWarning();
+        return result;
+      }
+      const sectionView = split.views.find((v) => v.kind === 'section');
+      if (sectionView && split.views.every((v) => v.kind !== 'plan') && split.kept.length === 0) {
+        // Rien que des coupes ou façades, reconnues à leur titre : pas un plan.
+        result.sections.push(readSection(page.texts, scale.den !== null ? scale.den * METRES_PER_POINT : null));
+        result.sectionOnly = true;
+        warnings.push(say('pdf.warn.section', { title: sectionView.title?.s ?? '?' }));
+        return result;
+      }
+      // Un seul plan (ou aucun) séparé : la feuille couvre la page, sans les étiquettes des coupes et façades.
+      kept = split.kept;
+      if (split.dropped.length > 0) notes.push(msg(lang, 'pdf.note.rooms.section', { rooms: split.dropped.join(', ') }));
+      // Plusieurs niveaux titrés sur la page (titres des régions, ou à défaut textes hors cartouche) : la liste les mêle.
+      const titled = split.views.filter((v) => v.storey !== null).map((v) => v.storey!.rank);
+      const levels = new Set([...titled, ...pageStoreys.filter((t) => !isTitleBlockText(t.s)).map((t) => guessStorey(t.s)!.rank)]);
+      if (levels.size > 1 && kept.length > 0) {
+        warnings.push(say('pdf.warn.views.wholePage'));
+        notes.push(msg(lang, 'pdf.note.rooms.wholePage'));
+      }
     } else {
       notes.push(msg(lang, 'pdf.note.outline.none'));
     }
     mixedPageWarning();
-    const draft = wholeSheet(pageScale, rooms, notes);
+    const draft = wholeSheet(pageScale, kept, notes);
     // La page n'est nommée d'après un niveau que si elle n'en cite qu'un (sinon elle en montre sans doute plusieurs).
     const ranks = new Set(pageStoreys.map((t) => guessStorey(t.s)!.rank));
     const storey = ranks.size === 1 ? guessStorey(pageStoreys[0]!.s) : null;
@@ -1318,7 +1449,9 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
       if (own.den !== null && own.sourced) {
         viewDen = own.den;
         viewScale = own.sourced;
-        warnings.push(...own.warnings);
+        // Une estimation de la vue sur une page à plusieurs échelles : l'avertissement nomme les candidates.
+        if (own.sourced.from !== 'plan') warnings.push(say('pdf.warn.scale.mixed', { scale: scaleLabel(own.den), list: scaleList(mixed), view: name }));
+        else warnings.push(...own.warnings);
         if (Math.abs(own.den / den - 1) > 0.01) {
           // Le tracé de la vue a été cherché à l'échelle de la page : on le refait à la sienne (rayon de fermeture,
           // ouvertures), avec ses seuls murs.

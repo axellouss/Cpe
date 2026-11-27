@@ -124,6 +124,14 @@ describe('échelle décidée par vue sur une page qui en porte plusieurs', () =>
     expect(doc.warnings.join('\n')).toMatch(/plusieurs échelles/i);
   });
 
+  it('plan sans intitulé avec trois cotes à lui : 1:100 retenu, mais en estimation, et l’avertissement nomme les échelles de la page', () => {
+    const { doc } = analysePdf([mixedPage({ planCaption: false, planDims: true, roomAreas: false })], 'mixte.pdf');
+    const sheet = planSheet(doc.sheets);
+    expect(scaleDen(sheet)).toBeCloseTo(100, 6);
+    expect(sheet.metresPerUnit!.from).toBe('estimate');
+    expect(doc.warnings.some((w) => /plusieurs échelles/i.test(w) && /1:50/.test(w) && /1:100/.test(w))).toBe(true);
+  });
+
   it('en allemand, l’avertissement est en allemand', () => {
     const { doc } = analysePdf([mixedPage({ planCaption: false, planDims: false, roomAreas: false })], 'mixte.pdf', { lang: 'de' });
     expect(doc.warnings.some((w) => /mehrere Maßstäbe/i.test(w) && /1:50/.test(w) && /1:100/.test(w))).toBe(true);
