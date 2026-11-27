@@ -17,6 +17,11 @@ describe('forme STEP vue aux deux bouts du fichier', () => {
     expect(stepShape(bytes(maisonText))).toEqual({ header: true, trailer: true });
     expect(stepShape(bytes('﻿ISO-10303-21;\r\nDATA;\r\nENDSEC;\r\nEND-ISO-10303-21;\r\n\r\n  \t'))).toEqual({ header: true, trailer: true });
     expect(stepShape(new Uint8Array([...bytes('ISO-10303-21;\nend-iso-10303-21;'), 0, 0, 0x1a]))).toEqual({ header: true, trailer: true });
+    // Un commentaire ajouté après la fin par le logiciel d'export ne fait pas un fichier tronqué.
+    expect(stepShape(bytes(`${maisonText.trimEnd()}\n/* exporté par l'outil X */\n`))).toEqual({ header: true, trailer: true });
+    expect(stepShape(bytes(`${maisonText.trimEnd()}\n/* un */\r\n/* deux */  `))).toEqual({ header: true, trailer: true });
+    // … mais un commentaire au bout d'un fichier coupé ne le rend pas complet.
+    expect(stepShape(bytes(`${maisonText.slice(0, Math.floor(maisonText.length / 2))}\n/* fin */`))).toEqual({ header: true, trailer: false });
   });
 
   it('un fichier coupé a l’en-tête sans la fin ; un fichier quelconque n’a ni l’un ni l’autre', () => {

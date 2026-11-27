@@ -108,7 +108,17 @@ export function stepShape(data: Uint8Array): { header: boolean; trailer: boolean
   if (data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) start = 3;
   while (start < data.length && start < 4096 && isPadding(data[start]!)) start++;
   let end = data.length;
-  while (end > 0 && isPadding(data[end - 1]!)) end--;
+  // Blancs de fin, et commentaires « /* … */ » qu'un logiciel d'export ajoute parfois après la fin du fichier :
+  // ils ne font pas d'un fichier complet un fichier tronqué.
+  for (;;) {
+    while (end > 0 && isPadding(data[end - 1]!)) end--;
+    if (!(end >= 4 && data[end - 1] === 0x2f && data[end - 2] === 0x2a)) break; // ne finit pas par « */ »
+    let open = end - 4;
+    const floor = Math.max(start, end - 4096);
+    while (open >= floor && !(data[open] === 0x2f && data[open + 1] === 0x2a)) open--;
+    if (open < floor) break; // pas de « /* » à portée : on ne devine pas
+    end = open;
+  }
   return { header: matchesAt(data, start, STEP_HEADER), trailer: end > start && matchesAt(data, end - STEP_TRAILER.length, STEP_TRAILER) };
 }
 
