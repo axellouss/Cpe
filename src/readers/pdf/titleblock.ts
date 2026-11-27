@@ -14,8 +14,13 @@ export const TITLE_BLOCK_RE =
 /** Intitulés de case d'un cartouche : le mot SEUL (« Plan », « Date », « Objet »), suivi au plus d'un deux-points. */
 const TITLE_BLOCK_KEY_RE =
   /^(plan|date|objet|objekt|projekt|bauteil|format|blatt|blatt-nr\.?|feuille|dossier|affaire|adresse|lieu|commune|gemeinde|parcelle|parzelle|client|auftraggeber|bauort|planer|planverfasser|gepruft|verifie|controle|visa|freigabe|dessinateur|zeichner|n°|nr\.?)\s*[:.]?$/;
-/** Date écrite en chiffres (« 12.03.2024 », « 3/7/24 ») : il n'y en a guère que dans un cartouche. */
-const DATE_RE = /(?<!\d)\d{1,2}[./]\d{1,2}[./](?:\d{4}|\d{2})(?!\d)/;
+/**
+ * Date écrite en chiffres (« 12.03.2024 », « 3/7/24 ») : il n'y en a guère que dans un cartouche.
+ * Trois groupes séparés par le MÊME signe, sans autre chiffre ni séparateur autour : une étiquette de fenêtre
+ * (« 1.20/1.35 », « 0.90/2.10 ») mêle point et barre et n'est pas une date — prise pour telle, elle faisait
+ * passer un plan entier pour un cartouche.
+ */
+const DATE_RE = /(?<![\d.,/])\d{1,2}([./])\d{1,2}\1(?:\d{4}|\d{2})(?![\d.,/])/;
 
 /** Vrai si le texte appartient au vocabulaire d'un cartouche (mot-clé, intitulé de case ou date). */
 export function isTitleBlockText(text: string): boolean {

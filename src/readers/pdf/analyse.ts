@@ -1159,7 +1159,9 @@ function hairlineViews(page: RawPage, rooms: readonly DetectedRoom[], den: numbe
     { x: b.minX, y: b.maxY },
   ]);
   const mpp = (den ?? 100) * METRES_PER_POINT;
-  const titles = matchTitles(page, regions, rings, mpp, (t) => isTitleBlockText(t.s));
+  // Ni un intitulé de cartouche, ni un morceau de tableau ou de phrase (crochets, signes, plus de six mots).
+  const notATitle = (t: RawText): boolean => isTitleBlockText(t.s) || /[[\]{}<>=;|]/.test(t.s) || t.s.trim().split(/\s+/).length > 6;
+  const titles = matchTitles(page, regions, rings, mpp, notATitle);
   const margins = regions.map((b) => 0.2 * Math.max(b.maxX - b.minX, b.maxY - b.minY));
   const owned = assignToViews(page, regions, margins);
   const views: View[] = regions.map((b, i) => {
@@ -1170,12 +1172,18 @@ function hairlineViews(page: RawPage, rooms: readonly DetectedRoom[], den: numbe
     const mine = rooms.filter((r) => r.at && inside(r.at));
     const texts = owned[i]!.texts.map((k) => page.texts[k]!);
     const levelMarks = texts.filter((t) => LEVEL_RE.test(t.s)).length;
+    const buildingSized = Math.min(b.maxX - b.minX, b.maxY - b.minY) * mpp >= 2.5 && (b.maxX - b.minX) * (b.maxY - b.minY) * mpp * mpp >= 12;
     let kind: View['kind'] = 'other';
     if (title && SITE_RE.test(titleFold)) kind = 'other';
     else if (title && SECTION_RE.test(titleFold)) kind = 'section';
-    else if (storey !== null || (title !== null && PLAN_RE.test(titleFold))) kind = 'plan';
-    else if (levelMarks >= 2 && !mine.some((r) => r.statedArea !== undefined)) kind = 'section';
+    // Un nom de niveau fait un plan si la région a des pièces ou la taille d'un bâtiment : une case de tableau
+    // intitulée « Rez-de-chaussée » n'en est pas un. Un titre qui ne contient que le mot « plan » (légende) ne
+    // fait un plan que s'il a des pièces.
+    else if ((storey !== null && (mine.length > 0 || buildingSized)) || (title !== null && PLAN_RE.test(titleFold) && mine.length > 0)) kind = 'plan';
+    // Des cotes de niveau sans aucune étiquette de pièce : une coupe. Avec des pièces, c'est un plan qui porte ses
+    // niveaux finis (même règle que pour les vues à murs épais) — le prendre pour une coupe lui ôtait ses pièces.
     else if (mine.length > 0) kind = 'plan';
+    else if (levelMarks >= 2) kind = 'section';
     const textIdx = [...owned[i]!.texts];
     if (title) {
       const k = page.texts.indexOf(title);
@@ -1371,7 +1379,7 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
         // Rien que des coupes ou façades, reconnues à leur titre : pas un plan.
         result.sections.push(readSection(page.texts, scale.den !== null ? scale.den * METRES_PER_POINT : null));
         result.sectionOnly = true;
-        warnings.push(say('pdf.warn.section', { title: sectionView.title?.s ?? '?' }));
+        warnings.push(sectionView.title ? say('pdf.warn.section', { title: sectionView.title.s }) : say('pdf.warn.section.untitled'));
         return result;
       }
       // Un seul plan (ou aucun) séparé : la feuille couvre la page, sans les étiquettes des coupes et façades.
@@ -1379,7 +1387,7 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
       if (split.dropped.length > 0) notes.push(msg(lang, 'pdf.note.rooms.section', { rooms: split.dropped.join(', ') }));
       // Plusieurs niveaux titrés sur la page (titres des régions, ou à défaut textes hors cartouche) : la liste les mêle.
       const titled = split.views.filter((v) => v.storey !== null).map((v) => v.storey!.rank);
-      const levels = new Set([...titled, ...pageStoreys.filter((t) => !isTitleBlockText(t.s)).map((t) => guessStorey(t.s)!.rank)]);
+      const levels = new Set([...titled, ...pageStoreys.filter((t) => !isTitleBlockText(t.s) && !LEVEL_RE.test(t.s)).map((t) => guessStorey(t.s)!.rank)]);
       if (levels.size > 1 && kept.length > 0) {
         warnings.push(say('pdf.warn.views.wholePage'));
         notes.push(msg(lang, 'pdf.note.rooms.wholePage'));
@@ -1420,7 +1428,7 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
   if (plans.length === 0) {
     if (sections.length > 0) {
       result.sectionOnly = true;
-      warnings.push(say('pdf.warn.section', { title: sections[0]!.title?.s ?? '?' }));
+      warnings.push(sections[0]!.title ? say('pdf.warn.section', { title: sections[0]!.title.s }) : say('pdf.warn.section.untitled'));
       return result;
     }
     warnings.push(say('pdf.warn.noOutline'));
@@ -1569,7 +1577,7 @@ export function analysePdf(pages: readonly RawPage[], fileName: string, options:
       if (display.data.length > 0) sheet.segments = display.data;
       if (page.texts.length > 0) sheet.texts = sheetTexts(page.texts);
       const report = reports.find((r) => r.page === page.number);
-      if (report?.scaleDen) sheet.metresPerUnit = { value: report.scaleDen * METRES_PER_POINT, from: 'estimate', note: msg(lang, 'pdf.scale.title', { scale: scaleLabel(report.scaleDen) }) };
+      if (report?.scaleDen) sheet.metresPerUnit = { value: report.scaleDen * METRES_PER_POINT, from: 'estimate', note: msg(lang, 'pdf.scale.title', { scale: scaleLabel(report.scaleDen), sourceFrom: msg(lang, 'pdf.source.block.from') }) };
       if (report) report.sheets = 1;
       drafts.push({ sheet, placement: wholePagePlacement(page, pageKind(page)), rank: null });
     }

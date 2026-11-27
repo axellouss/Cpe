@@ -310,6 +310,8 @@ const UPPER_STOREY_RE = /\b(\d{1,2})\s*(?:e|eme|ieme)\s*etage\b|\betage\s*(\d{1,
 
 export function guessStorey(text: string): { fr: string; de: string; rank: number } | null {
   const f = fold(text);
+  // Une cote de niveau (« ±0,00 », « -0,02 », « +2,80 m ») n'est pas un nom d'étage : « -0,02 » passait pour un sous-sol.
+  if (/^\s*[+\-±−]?\s?\d{1,2}[.,]\d{1,3}\s*m?\s*$/.test(text)) return null;
   // Étages 3 et plus (« 3e étage », « 4. Obergeschoss », « R+5 ») : une seule règle, le rang est le numéro.
   if (isBasementText(f)) return { fr: 'Sous-sol', de: 'Kellergeschoss', rank: -1 };
   const upper = UPPER_STOREY_RE.exec(f);

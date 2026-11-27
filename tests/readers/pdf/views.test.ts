@@ -12,6 +12,8 @@ import { analysePdf, METRES_PER_POINT } from '../../../src/readers/pdf';
 import type { RawSeg, RawText } from '../../../src/readers/pdf';
 import { closeOutline, ringArea } from '../../../src/readers/pdf/planar';
 import { calibrateByDimensions, chooseDimensionScale } from '../../../src/readers/pdf/scale';
+import { isTitleBlockText } from '../../../src/readers/pdf/titleblock';
+import { guessStorey } from '../../../src/semantics/labels';
 import { areaM2, dimensionChain, page, rect, scaleDen, seg, text } from './helpers';
 
 const WALL = 1.4;
@@ -318,3 +320,100 @@ describe('fermeture du contour (tampon jsts)', () => {
   });
 });
 
+
+// ───────────────────────────── Régressions relevées à la contre-vérification ─────────────────────────────
+
+describe('étiquettes de fenêtres et dates de cartouche', () => {
+  it('« 1.20/1.35 » n’est pas une date : seuls trois groupes séparés par le même signe en sont une', () => {
+    for (const size of ['1.20/1.35', '0.90/2.10', '2.50/2.80', '120/135', 'F 1.26/1.385', '1,20/1,35']) expect(isTitleBlockText(size), size).toBe(false);
+    for (const date of ['12.03.2024', '3/7/24', 'le 01.02.23', '15/11/2026']) expect(isTitleBlockText(date), date).toBe(true);
+    expect(isTitleBlockText('Projet')).toBe(true);
+    expect(isTitleBlockText('Séjour')).toBe(false);
+  });
+
+  it('un plan dont les fenêtres portent leurs dimensions garde son contour et ses pièces mesurées', () => {
+    // Quatre étiquettes de fenêtres écrites DANS le contour : elles faisaient passer le plan entier pour un cartouche.
+    const labels = [
+      text('1.20/1.35', 200 + 2 * K, 200 + 1 * K, 6),
+      text('1.20/1.35', 200 + 4 * K, 200 + 1 * K, 6),
+      text('0.90/2.10', 200 + 3 * K, 200 + 7 * K, 6),
+      text('1.20/1.35', 200 + 8 * K, 200 + 1 * K, 6),
+    ];
+    const { doc } = analysePdf([unnamedPage([text('Bureau', TOP.x, TOP.y)], [text('Cuisine', BOTTOM.x, BOTTOM.y)], labels)], 'maison.pdf');
+    const sheet = doc.sheets[0]!;
+    expect(sheet.name).toBe('Rez-de-chaussée');
+    expect(sheet.detected.outline).toBeDefined();
+    expect(Math.abs(areaM2(sheet, sheet.detected.outline!) / 80 - 1)).toBeLessThan(0.02);
+    expect(byName(sheet.detected.rooms, 'Séjour')!.measuredArea).toBeGreaterThan(30);
+    expect(doc.warnings.some((w) => /contour/i.test(w) && /fiable/i.test(w))).toBe(false);
+  });
+});
+
+/** Plan 10 × 8 m au 1:100 dessiné d'une seule épaisseur de trait, quatre pièces sans surface écrite, cotes de niveau. */
+function hairlinePlan(title: string | null): ReturnType<typeof page> {
+  const px = 200;
+  const py = 200;
+  const k = ppm(100);
+  const line = 0.5;
+  const thin = (segs: RawSeg[]): RawSeg[] => segs.map((s) => ({ ...s, w: line }));
+  const segs: RawSeg[] = thin([
+    ...shell(px, py, 10, 8, 100),
+    ...partition(px, py, 100, [6, 0.4], [6, 7.6]),
+    ...partition(px, py, 100, [6.12, 4], [9.6, 4]),
+    ...partition(px, py, 100, [0.4, 4], [6, 4]),
+    // Habillage (légende hachurée) de la même épaisseur : sans lui la page n'aurait pas assez de traits pour compter.
+    ...dressing(),
+  ]);
+  const texts: RawText[] = [
+    text('Échelle 1:100', 1000, 790, 9),
+    text('Séjour', px + 3 * k, py + 2 * k),
+    text('Cuisine', px + 3 * k, py + 6 * k),
+    text('Hall', px + 7.86 * k, py + 2.2 * k),
+    text('Bureau', px + 7.86 * k, py + 6 * k),
+    // Niveaux finis, comme sur un plan d'exécution.
+    text('±0,00', px + 2 * k, py + 3 * k, 6),
+    text('±0,00', px + 8 * k, py + 3 * k, 6),
+    text('-0,02', px + 2 * k, py + 7 * k, 6),
+  ];
+  if (title) texts.push(text(title, px + 5 * k, py + 8 * k + 30, 12));
+  return page(segs, texts);
+}
+
+describe('page « tout en trait fin » : un plan qui porte des cotes de niveau reste un plan', () => {
+  it('sans titre : la feuille garde ses quatre pièces, et n’est pas prise pour une coupe', () => {
+    const { doc } = analysePdf([hairlinePlan(null)], 'fin.pdf');
+    expect(doc.sheets).toHaveLength(1);
+    expect(doc.sheets[0]!.detected.rooms.map((r) => r.name).sort()).toEqual(['Bureau', 'Cuisine', 'Hall', 'Séjour']);
+    expect(doc.warnings.some((w) => /coupe ou façade/i.test(w))).toBe(false);
+    expect(doc.warnings.some((w) => /Aucun plan d’étage reconnu/.test(w))).toBe(false);
+  });
+
+  it('titré « Rez-de-chaussée » : pas de faux avertissement « plusieurs niveaux », et la feuille porte ce nom', () => {
+    const { doc } = analysePdf([hairlinePlan('Rez-de-chaussée')], 'fin.pdf');
+    expect(doc.sheets).toHaveLength(1);
+    expect(doc.sheets[0]!.name).toBe('Rez-de-chaussée');
+    expect(doc.sheets[0]!.detected.rooms).toHaveLength(4);
+    expect(doc.warnings.some((w) => /plusieurs niveaux/.test(w))).toBe(false);
+    expect(doc.sheets[0]!.detected.notes.some((n) => /plusieurs niveaux/.test(n))).toBe(false);
+  });
+
+  it('une cote de niveau n’est jamais un nom d’étage', () => {
+    for (const mark of ['-0,02', '±0,00', '+2,80', '−0.15 m', '2,75']) expect(guessStorey(mark), mark).toBeNull();
+    expect(guessStorey('Sous-sol')?.rank).toBe(-1);
+    expect(guessStorey('Niveau -1')?.rank).toBe(-1);
+  });
+});
+
+describe('aucun texte ne laisse voir un paramètre non rempli', () => {
+  it('pages proposées telles quelles (façade seule) : l’échelle lue dans le cartouche est dite comme telle', () => {
+    const k = ppm(100);
+    const segs: RawSeg[] = [...rect(200, 200, 200 + 10 * k, 200 + 6 * k, WALL), ...dressing()];
+    const texts: RawText[] = [text('Façade sud', 200 + 5 * k, 200 + 6 * k + 30, 12), text('Échelle 1:100', 1000, 790, 9)];
+    for (const lang of ['fr', 'de'] as const) {
+      const { doc } = analysePdf([page(segs, texts)], 'facade.pdf', { lang });
+      const all = [...doc.warnings, ...doc.sheets.flatMap((s) => [...s.detected.notes, s.metresPerUnit?.note ?? ''])];
+      for (const line of all) expect(line, line).not.toMatch(/[{}]/);
+      expect(all.join(' ')).not.toContain('« ? »');
+    }
+  });
+});
