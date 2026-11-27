@@ -62,3 +62,46 @@ export function parseProject(_json: string): Project {
 export function reportHtml(_sheets: LuxeebSheets, _project: Project, _lang: Lang): string {
   throw new Error('export.reportHtml: pas encore implémenté');
 }
+
+// ───────────────────────────── Guide de saisie LuxEeB-Tool ─────────────────────────────
+
+/** Une valeur isolée à reporter dans LuxEeB-Tool. */
+export interface GuideItem {
+  key: string;
+  /** Nom du champ : terme allemand de LuxEeB-Tool suivi de sa traduction. */
+  label: string;
+  /** Valeur lisible (avec unité). */
+  value: string;
+  /** Texte placé dans le presse-papiers par « Copier » (sans unité, virgule décimale). */
+  copy: string;
+  from: import('../core/types').Provenance | null;
+  note?: string;
+}
+
+/** Un tableau à reporter ligne par ligne, ou d'un bloc par copier-coller. */
+export interface GuideTable {
+  key: string;
+  columns: string[];
+  rows: { cells: string[]; from: import('../core/types').Provenance; deduct?: boolean; note?: string }[];
+  /** Bloc tabulé prêt à coller dans le classeur. */
+  pasteBlock: string;
+  /** Où placer le curseur avant de coller. */
+  pasteHint: string;
+}
+
+/** Une étape de la saisie dans LuxEeB-Tool, dans l'ordre de sa barre de navigation. */
+export interface GuideSection {
+  key: string;
+  /** Nom de la feuille dans LuxEeB-Tool (allemand, tel qu'affiché). */
+  luxeebName: string;
+  /** Titre traduit. */
+  title: string;
+  help: string;
+  items: GuideItem[];
+  tables: GuideTable[];
+}
+
+/** Tout ce qu'il faut saisir dans LuxEeB-Tool, dans l'ordre de sa procédure de saisie. */
+export function buildGuide(_sheets: LuxeebSheets, _project: Project, _lang: Lang): GuideSection[] {
+  throw new Error('export.buildGuide: pas encore implémenté');
+}
