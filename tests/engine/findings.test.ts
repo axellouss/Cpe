@@ -475,6 +475,22 @@ describe('détails de quelques contrôles', () => {
     expect(codes(deriveSheets(sound({ grossHeight: 4.5 }), 'fr'))).not.toContain('height.implausible');
   });
 
+  it('An mesurée sur le dessin ne vaut pas mieux que l’échelle : estimée tant que l’échelle l’est ; une surface écrite n’en dépend pas', () => {
+    // Pièces MESURÉES (surface en unités de feuille) sur un plan dont l'échelle n'est qu'une estimation.
+    const measured = [
+      { ...room('Séjour', 40), sheetArea: 400000 },
+      { ...room('Cuisine', 15), sheetArea: 150000 },
+    ];
+    const weak = deriveSheets(sound({ netArea: undefined, rooms: measured, scale: { value: 0.01, from: 'estimate' } }, rect(1000, 800)), 'fr');
+    expect(weak.totals).toMatchObject({ an: 55, anFrom: 'estimate' });
+    // Échelle confirmée par l'expert : les mesures redeviennent « lues sur le plan ».
+    const confirmed = deriveSheets(sound({ netArea: undefined, rooms: measured, scale: { value: 0.01, from: 'user' } }, rect(1000, 800)), 'fr');
+    expect(confirmed.totals).toMatchObject({ an: 55, anFrom: 'plan' });
+    // Surfaces ÉCRITES sur le plan (pas de mesure) : l'échelle estimée ne les affaiblit pas.
+    const stated = deriveSheets(sound({ netArea: undefined, rooms: [room('Séjour', 40), room('Cuisine', 15)], scale: { value: 0.01, from: 'estimate' } }, rect(1000, 800)), 'fr');
+    expect(stated.totals).toMatchObject({ an: 55, anFrom: 'plan' });
+  });
+
   it('An : la somme des pièces chauffées remplace l’estimation ; une surface saisie remplace les pièces', () => {
     const rooms = [room('Séjour', 40), room('Cuisine', 15), room('Garage', 18, false)];
     const withRooms = deriveSheets(sound({ netArea: undefined, rooms }), 'fr');

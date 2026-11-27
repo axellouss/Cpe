@@ -74,7 +74,10 @@ export function netAreaOf(storey: Storey, grossArea: number): NetArea {
   if (storey.rooms.some((r) => r.area.value > 0)) {
     const heated = storey.rooms.filter((r) => r.heated);
     const area = heated.reduce((sum, r) => sum + positive(r.area.value), 0);
-    return { area, source: 'rooms', from: weakest(...heated.map((r) => r.area.from)) };
+    // Une surface MESURÉE sur le dessin ne vaut pas mieux que l'échelle qui l'a donnée : à une échelle seulement
+    // estimée, An l'est aussi. Une surface écrite sur le plan, elle, ne dépend pas de l'échelle.
+    const fromOf = (r: Room): Provenance => (r.sheetArea !== undefined && r.area.from !== 'user' ? weakest(r.area.from, storey.metresPerUnit.from) : r.area.from);
+    return { area, source: 'rooms', from: weakest(...heated.map(fromOf)) };
   }
   return { area: NET_AREA_ESTIMATE_RATIO * grossArea, source: 'estimate', from: 'estimate' };
 }
