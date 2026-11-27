@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import type { EnvelopeRow, Lang, LuxeebSheets, Project } from '../../src/core/types';
-import { buildReportHtml, reportHtml } from '../../src/export';
+import { buildGuide, buildReportHtml, reportHtml } from '../../src/export';
+import { ENVELOPE_AZIMUTH_COLUMN } from '../../src/export/guide';
 import { registerMessages } from '../../src/i18n';
 import { makeProject, makeSheets } from './fixtures';
 
@@ -201,6 +202,24 @@ describe('reportHtml — contenu', () => {
       'estimé',
     ]);
     expect(cells(tableUnder(doc, 'Gebäudevolumen Ve — Volume brut chauffé').tBodies[0]!.rows[0]!)).toEqual(['Rez-de-chaussée', '1,00', '1,00', '80,00', '2,80', '224,00', 'plan']);
+  });
+
+  it.each(['fr', 'de'] as const)('garde en colonnes les aides de lecture que l’écran place sous la ligne (%s)', (lang) => {
+    const doc = parse(report(lang));
+    const headers = [...doc.querySelectorAll('table')].map((tb) => [...(tb.tHead?.rows[0]?.children ?? [])].map((th) => th.childNodes[0]?.textContent ?? ''));
+    for (const tb of buildGuide(makeSheets(), makeProject(), lang).flatMap((s) => s.tables)) {
+      // Seule colonne retirée du papier, et depuis toujours : l'azimut de l'enveloppe, que le repère nomme déjà.
+      const expected = tb.columns.filter((_, c) => !(tb.key === 'envelope' && c === ENVELOPE_AZIMUTH_COLUMN)).map((column) => column.split(' — ')[0]!);
+      const found = headers.find((h) => expected.every((column, c) => h[c] === column));
+      expect(found, tb.key).toBeDefined();
+      for (const c of tb.aside) {
+        if (tb.key === 'envelope' && c === ENVELOPE_AZIMUTH_COLUMN) continue;
+        expect(found, tb.key).toContain(tb.columns[c]);
+      }
+    }
+    // Ni identifiant ni empreinte de ligne dans le dossier.
+    expect(report(lang)).not.toContain('\u241F');
+    expect(report(lang)).not.toContain('c-wall|outside');
   });
 
   it('montre à part les parois vers un local chauffé, à ne pas saisir', () => {

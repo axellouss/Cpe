@@ -84,7 +84,7 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
 
 // ───────────────────────────── Compléments (hors contrat initial) ─────────────────────────────
 
-export { rescaleStorey, restoreFootprint, roomsOutsideOutline } from './storey';
+export { isBasementSheetName, orderSheetsBottomUp, proposeTopClosure, rescaleStorey, restoreFootprint, roomsOutsideOutline } from './storey';
 export { DEFAULT_CONSTRUCTION_IDS, DEFAULT_WINDOW_TYPE_ID } from './defaults';
 export { FINDING_CODES, findingText, type FindingCode } from './messages';
 export { weakest } from './provenance';

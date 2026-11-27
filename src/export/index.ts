@@ -10,7 +10,10 @@
  *  - Les blocs à coller n'ont PAS été essayés sur le classeur protégé : les présenter comme « à essayer »
  *    (c'est ce que dit `GuideTable.pasteHint`) et garder la recopie ligne par ligne comme voie sûre.
  *  - `GuideItem.copy` vide = rien à coller (liste déroulante de l'outil, ou valeur non renseignée).
+ *  - `GuideItem.copyIsMark` = le bouton ne copie pas la valeur affichée : il doit dire ce qu'il copie.
  *  - `GuideTable.pasteBlock` vide = pas de bloc pour ce tableau.
+ *  - `GuideTable.aside` = colonnes d'aide à la lecture, absentes de l'outil : à montrer sous la ligne, pas dans la grille.
+ *  - `GuideRow.id` + `GuideRow.stamp` = de quoi reconnaître une ligne déjà saisie, quelle que soit la langue.
  *  - Les cellules des tableaux sont prêtes à copier : nombres sans unité, virgule décimale, textes sûrs pour Excel.
  *  - `serializeProject` et `parseProject` lèvent une `ProjectFileError` : à attraper autour de l'enregistrement
  *    (y compris automatique) et de l'ouverture ; `projectFileErrorMessage(err, lang)` donne le texte à afficher.
@@ -96,7 +99,31 @@ export interface GuideItem {
   value: string;
   /** Texte placé dans le presse-papiers par « Copier » (sans unité, virgule décimale). */
   copy: string;
+  /**
+   * Vrai quand `copy` n'est PAS la valeur affichée mais la marque à poser (le « x » des lignes à déduire, dont
+   * `value` donne la liste) : le bouton doit alors nommer ce qu'il copie.
+   */
+  copyIsMark?: boolean;
   from: import('../core/types').Provenance | null;
+  note?: string;
+}
+
+/** Une ligne d'un tableau du guide. */
+export interface GuideRow {
+  /**
+   * Identifiant stable de la ligne, indépendant de la langue et unique dans son tableau : ligne d'enveloppe,
+   * zone, volume, type d'élément + milieu, type de fenêtre.
+   */
+  id: string;
+  /** Une cellule par colonne de `GuideTable.columns`, prête à copier. */
+  cells: string[];
+  /**
+   * Empreinte de ce qui se saisit sur cette ligne, sans aucun texte traduit : ses nombres, les termes de l'outil
+   * (orientation, « x », Einbausituation) et le type choisi. Si elle change, la ligne est à ressaisir.
+   */
+  stamp: string;
+  from: import('../core/types').Provenance;
+  deduct?: boolean;
   note?: string;
 }
 
@@ -104,7 +131,13 @@ export interface GuideItem {
 export interface GuideTable {
   key: string;
   columns: string[];
-  rows: { cells: string[]; from: import('../core/types').Provenance; deduct?: boolean; note?: string }[];
+  /**
+   * Indices des colonnes d'aide à la lecture (repère du relevé, azimut, « contre », surface totale…) : ce ne sont
+   * pas des colonnes de l'outil. Les autres colonnes sont celles de LuxEeB-Tool, dans son ordre.
+   * L'écran place les aides sous la ligne ; le CSV et le dossier imprimable gardent toutes les colonnes.
+   */
+  aside: number[];
+  rows: GuideRow[];
   /** Bloc tabulé prêt à coller dans le classeur. */
   pasteBlock: string;
   /** Où placer le curseur avant de coller. */

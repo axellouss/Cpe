@@ -4,7 +4,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { PlanDocument, PlanSheet } from '../../src/core/types';
-import { createEmptyProject, createStorey, deriveSheets, modelFromDocument, rescaleStorey } from '../../src/engine';
+import {
+  createEmptyProject,
+  createStorey,
+  deriveSheets,
+  isBasementSheetName,
+  modelFromDocument,
+  orderSheetsBottomUp,
+  proposeTopClosure,
+  rescaleStorey,
+} from '../../src/engine';
 import { brief, codes, rect, sheet } from './helpers';
 
 const emptyModel = () => createEmptyProject('fr').model;
@@ -221,6 +230,29 @@ describe('rescaleStorey : poser la règle après coup', () => {
     const typedRoom = { ...raw, rooms: raw.rooms.map((r, i) => (i === 0 ? { ...r, area: { value: 41, from: 'user' as const } } : r)) };
     expect(rescaleStorey(typedRoom, { value: 0.01, from: 'user' }).rooms[0]!.area.value).toBe(41);
   });
+
+  it('une surface écrite sur le plan ne bouge pas quand on pose la règle, même si elle vaut presque l’aire du polygone', () => {
+    const src = sheet('p', 'RDC', { metresPerUnit: { value: 0.01, from: 'plan' } });
+    src.detected = {
+      notes: [],
+      outline: rect(1000, 800),
+      openings: [],
+      rooms: [
+        // écrit 12,00 m², polygone de 12,20 m² (1,6 % d'écart) : c'est la surface ÉCRITE qui est retenue
+        { name: 'Chambre', statedArea: 12, measuredArea: 12.2, heatedGuess: 'yes', polygon: rect(400, 305) },
+        // rien d'écrit : surface mesurée
+        { name: 'Bureau', measuredArea: 20, heatedGuess: 'yes', polygon: rect(500, 400) },
+      ],
+    };
+    const raw = createStorey(src, 'RDC', emptyModel());
+    expect(raw.rooms.map((r) => [r.area.value, r.sheetArea !== undefined])).toEqual([[12, false], [20, true]]);
+    // La règle ne retombe jamais exactement sur l'ancienne échelle : ici +0,04 %, puis un facteur 2.
+    const nudged = rescaleStorey(raw, { value: 10 / 999.6, from: 'user' });
+    expect(nudged.rooms[0]!.area.value).toBe(12);
+    expect(nudged.rooms[1]!.area.value).toBeCloseTo(20.02, 2);
+    const doubled = rescaleStorey(raw, { value: 0.02, from: 'user' });
+    expect(doubled.rooms.map((r) => r.area.value)).toEqual([12, 80]);
+  });
 });
 
 describe('modelFromDocument : un document → premier jet de bâtiment', () => {
@@ -359,6 +391,48 @@ describe('modelFromDocument : un document → premier jet de bâtiment', () => {
       { value: 12.984, from: 'plan' },
       { value: 8, from: 'plan' },
     ]);
+  });
+
+  it('dernier niveau d’une maquette : la hauteur mesurée au sommet des murs n’est pas « lue sur le plan »', () => {
+    // Murs de 2,60 m sous une dalle de toiture de 25 cm : de dalle à dalle il y a 2,85 m, pas 2,60.
+    const top = withOutline('e', 'Étage', 8, 6);
+    top.detected.storeyHeight = 2.6;
+    top.detected.storeyHeightToWallTop = true;
+    const ground = withOutline('r', 'Rez-de-chaussée', 8, 6);
+    ground.detected.storeyHeight = 2.8;
+    const model = modelFromDocument(doc([ground, top]), 'fr');
+    expect(model.storeys[0]!.grossHeight).toEqual({ value: 2.8, from: 'plan' });
+    expect(model.storeys[1]!.grossHeight).toEqual({ value: 2.6, from: 'estimate' });
+    const sheets = deriveSheets({ ...createEmptyProject('fr'), model }, 'fr');
+    expect(sheets.findings.filter((f) => f.code === 'height.default').map((f) => f.params.storey)).toEqual(['Étage']);
+  });
+
+  it('range des feuilles du bas vers le haut, sous-sol compris, et sait dire ce qu’est un sous-sol', () => {
+    const levels = [
+      withOutline('d', 'Dachgeschoss', 10, 8, 5.61),
+      withOutline('k', 'Keller', 10, 8, -2.805),
+      withOutline('o', 'Obergeschoss', 10, 8, 2.805),
+      withOutline('e', 'Erdgeschoss', 10, 8, 0),
+    ];
+    expect(orderSheetsBottomUp(levels).map((s) => s.name)).toEqual(['Keller', 'Erdgeschoss', 'Obergeschoss', 'Dachgeschoss']);
+    // Sans altitude : par le rang des noms.
+    const named = ['Combles', 'Sous-sol', 'Rez-de-chaussée'].map((n, i) => withOutline(String(i), n, 10, 8));
+    expect(orderSheetsBottomUp(named).map((s) => s.name)).toEqual(['Sous-sol', 'Rez-de-chaussée', 'Combles']);
+    expect(isBasementSheetName('Keller')).toBe(true);
+    expect(isBasementSheetName('Sous-sol')).toBe(true);
+    expect(isBasementSheetName('Rez-de-jardin')).toBe(false);
+    expect(isBasementSheetName('Plan 3')).toBe(false);
+  });
+
+  it('propose la fermeture haute d’après la feuille du dernier étage, ou rien', () => {
+    const attic = withOutline('c', 'Dachgeschoss', 12, 10);
+    attic.detected.storeyHeight = 3.39;
+    attic.detected.eavesHeight = 0.67;
+    const model = createEmptyProject('fr').model;
+    const storey = createStorey(attic, 'Combles', model);
+    expect(proposeTopClosure(attic, storey)).toMatchObject({ kind: 'pitched-roof', pitchDeg: 29, kneeWallHeight: 0.67, from: 'estimate' });
+    expect(proposeTopClosure(withOutline('p', 'Étage', 12, 10), storey)).toBeNull();
+    expect(proposeTopClosure(null, storey)).toBeNull();
   });
 
   it('pose les hypothèses de départ, toutes marquées « par défaut »', () => {

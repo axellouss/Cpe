@@ -693,6 +693,8 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
       detected: { outline, rooms, openings, elevation: round(band.level.elevation, 3), notes },
     };
     if (storeyHeight !== undefined) sheet.detected.storeyHeight = storeyHeight;
+    // Dernier niveau : la hauteur s'arrête au sommet des murs, la toiture n'y est pas — à confirmer par l'expert.
+    if (storeyHeight !== undefined && isTop) sheet.detected.storeyHeightToWallTop = true;
     if (eavesHeight !== undefined) sheet.detected.eavesHeight = eavesHeight;
     if (clearHeight !== null) sheet.detected.clearHeight = round(clearHeight, 2);
     sheetOf.set(band, sheet);

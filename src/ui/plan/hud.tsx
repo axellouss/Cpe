@@ -192,10 +192,95 @@ export function Segmented<T extends string>(props: {
   );
 }
 
-/** Une mesure du bandeau de compteurs. */
-export function Counter(props: { label: string; value: string; unit?: string; tone?: 'plain' | 'warn' | 'accent'; title?: string; testId?: string }) {
+/**
+ * Liste de choix exclusifs où RIEN ne change tant qu'on n'a pas choisi : de vrais boutons, le choix actuel est
+ * marqué (cadre, coche et aria-current). Flèches haut / bas : passer d'un choix à l'autre ; Entrée ou Espace : choisir.
+ * (À la différence de boutons radio, se promener dans la liste au clavier ne modifie pas la valeur.)
+ */
+export function ChoiceList<T extends string>(props: {
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string; swatch?: ReactNode }[];
+  onChoose(value: T): void;
+  /** Texte lu après le libellé du choix actuel (« actuel »). */
+  currentLabel: string;
+  testId?: string;
+}) {
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+    if (step === 0 && e.key !== 'Home' && e.key !== 'End') return;
+    const buttons = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
+    if (buttons.length === 0) return;
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (Math.max(at, 0) + step + buttons.length) % buttons.length;
+    e.preventDefault();
+    e.stopPropagation();
+    buttons[next]?.focus();
+  };
   return (
-    <div className={`p2c-plan__counter p2c-plan__counter--${props.tone ?? 'plain'}`} title={props.title} data-testid={props.testId}>
+    <div className="p2c-plan__choices" role="group" aria-label={props.label} onKeyDown={onKeyDown} data-testid={props.testId}>
+      {props.options.map((o) => {
+        const current = o.value === props.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            className={`p2c-plan__choice ${current ? 'is-current' : ''}`}
+            aria-current={current ? 'true' : undefined}
+            data-autofocus={current ? '' : undefined}
+            data-value={o.value}
+            onClick={() => props.onChoose(o.value)}
+          >
+            {o.swatch ?? null}
+            <span className="p2c-plan__choice-label">{o.label}</span>
+            {current ? (
+              <span className="p2c-plan__choice-mark">
+                <span aria-hidden="true">✓</span>
+                <span className="p2c-plan__sr"> {props.currentLabel}</span>
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Une mesure du bandeau de compteurs qu'on peut toucher pour la corriger (le crayon le signale). */
+export function CounterButton(props: { label: string; value: string; unit?: string; ariaLabel: string; onClick(): void; testId?: string }) {
+  return (
+    <button type="button" className="p2c-plan__counter p2c-plan__counter--button" onClick={props.onClick} aria-label={props.ariaLabel} data-testid={props.testId}>
+      <span className="p2c-plan__counter-label">{props.label}</span>
+      <span className="p2c-plan__counter-value">
+        {props.value}
+        {props.unit ? <span className="p2c-plan__counter-unit"> {props.unit}</span> : null}
+        <span className="p2c-plan__counter-edit" aria-hidden="true">
+          {' '}
+          ✎
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Une mesure du bandeau de compteurs. `secondary` : simple rappel, masqué sur téléphone pour laisser la place au plan.
+ */
+export function Counter(props: {
+  label: string;
+  value: string;
+  unit?: string;
+  tone?: 'plain' | 'warn' | 'accent';
+  title?: string;
+  testId?: string;
+  secondary?: boolean;
+}) {
+  return (
+    <div
+      className={`p2c-plan__counter p2c-plan__counter--${props.tone ?? 'plain'} ${props.secondary ? 'p2c-plan__counter--secondary' : ''}`}
+      title={props.title}
+      data-testid={props.testId}
+    >
       <span className="p2c-plan__counter-label">{props.label}</span>
       <span className="p2c-plan__counter-value">
         {props.value}

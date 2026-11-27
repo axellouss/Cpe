@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Lang } from '../../src/core/types';
-import { sheetsToCsv } from '../../src/export';
+import { buildGuide, sheetsToCsv } from '../../src/export';
 import { registerMessages } from '../../src/i18n';
 import { makeProject, makeSheets } from './fixtures';
 
@@ -163,6 +163,25 @@ describe('sheetsToCsv — contenu', () => {
       'À déduire de la prochaine ligne sans « x ».',
     ]);
     expect(tb[6]!.slice(0, 8)).toEqual(['6', 'Dalle sur terre-plein', '1,00', '10,00', '8,00', 'Horizontal', '', '80,00']);
+  });
+
+  it.each(['fr', 'de'] as const)('garde toutes les colonnes du guide, aides de lecture comprises, et rien des repères internes (%s)', (lang) => {
+    // À l'écran, les aides de lecture passent sous la ligne ; dans le fichier, elles restent des colonnes.
+    const rows = rowsOf(csv(lang));
+    const tables = buildGuide(makeSheets(), makeProject(), lang).flatMap((s) => s.tables);
+    expect(tables.map((tb) => tb.key)).toEqual(['constructions', 'windowTypes', 'envelope', 'zones', 'volumes']);
+    for (const tb of tables) {
+      const header = rows.findIndex((r) => r.length === tb.columns.length + 2 && tb.columns.every((column, c) => r[c] === column));
+      expect(header, tb.key).toBeGreaterThan(0);
+      expect(tb.aside.every((c) => rows[header]![c] === tb.columns[c]), tb.key).toBe(true);
+      tb.rows.forEach((row, i) => {
+        expect(rows[header + 1 + i]!.slice(0, tb.columns.length), `${tb.key} ${row.id}`).toEqual(row.cells);
+        // Rien d'autre que les cellules, la provenance et la remarque : ni identifiant ni empreinte de la ligne.
+        expect(rows[header + 1 + i]!, `${tb.key} ${row.id}`).toHaveLength(tb.columns.length + 2);
+      });
+    }
+    expect(csv(lang)).not.toContain('\u241F');
+    expect(csv(lang)).not.toContain('c-wall|outside');
   });
 
   it('détaille les pièces de chaque étage, avec la provenance de leur surface', () => {

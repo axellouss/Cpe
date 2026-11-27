@@ -116,7 +116,24 @@ export function addStorey(project: Project, sheet: PlanSheet | null, name: strin
   const storeys = [...project.model.storeys];
   const at = index === undefined ? storeys.length : Math.max(0, Math.min(storeys.length, index));
   storeys.splice(at, 0, storey);
-  return { project: withModel(project, { ...project.model, storeys }), storey };
+  const storeysAligned = stillAligned(project.model.storeysAligned, storeys);
+  return { project: withModel(project, { ...project.model, storeys, storeysAligned }), storey };
+}
+
+/** Fichier d'où vient une feuille, d'après son identifiant « fichier#feuille » ; null pour un tracé sans plan. */
+function sourceOf(sheetId: string | null): string | null {
+  if (sheetId === null) return null;
+  const cut = sheetId.lastIndexOf('#');
+  return cut > 0 ? sheetId.slice(0, cut) : sheetId;
+}
+
+/**
+ * Des étages ne sont superposables (même repère) que s'ils viennent tous du même fichier : dès qu'un étage vient
+ * d'ailleurs — autre fichier, ou tracé à la main —, les décalages entre étages se comparent par les surfaces.
+ */
+function stillAligned(aligned: boolean, storeys: readonly Storey[]): boolean {
+  if (!aligned) return false;
+  return new Set(storeys.map((s) => sourceOf(s.sheetId))).size <= 1;
 }
 
 /**
@@ -175,6 +192,13 @@ export function renameStorey(project: Project, storeyId: string, name: string): 
  *  - Étage déjà tracé : seule la feuille de fond change, la géométrie reste telle quelle.
  */
 export function assignSheet(project: Project, storeyId: string, sheet: PlanSheet | null): Project {
+  const next = assignSheetOnly(project, storeyId, sheet);
+  // Un fond venu d'un autre fichier : les étages ne partagent plus forcément le même repère.
+  const aligned = stillAligned(next.model.storeysAligned, next.model.storeys);
+  return aligned === next.model.storeysAligned ? next : withModel(next, { ...next.model, storeysAligned: aligned });
+}
+
+function assignSheetOnly(project: Project, storeyId: string, sheet: PlanSheet | null): Project {
   return mapStorey(project, storeyId, (s) => {
     if (!sheet) return s.sheetId === null ? s : { ...s, sheetId: null };
     if (s.sheetId === sheet.id) return s;
@@ -396,7 +420,26 @@ export function updateConstruction(
     if (patch.u !== undefined) next.u = sourcedOrNull(patch.u);
     return next;
   });
-  return withModel(project, { ...project.model, constructions });
+  const before = project.model.constructions.find((c) => c.id === id);
+  const after = constructions.find((c) => c.id === id);
+  let model = { ...project.model, constructions };
+  if (before && after && before.category !== after.category) {
+    // Le type change de catégorie : les parois qui l'utilisaient et ne lui conviennent plus reviennent au type par défaut
+    // (un « mur ancien » devenu « toiture » ne peut plus habiller une façade).
+    const keep = (category: ConstructionCategory): boolean => after.category === category;
+    model = {
+      ...model,
+      storeys: model.storeys.map((s) =>
+        s.edges.some((e) => e.constructionId === id) && !keep('wall')
+          ? { ...s, edges: s.edges.map((e) => (e.constructionId === id ? { ...e, constructionId: null } : e)) }
+          : s,
+      ),
+      top: model.top.constructionId === id && !keep('roof') && !keep('ceiling') ? { ...model.top, constructionId: null } : model.top,
+      bottom: model.bottom.constructionId === id && !keep('floor') ? { ...model.bottom, constructionId: null } : model.bottom,
+      manualRows: model.manualRows,
+    };
+  }
+  return withModel(project, model);
 }
 
 /** Supprime un type ajouté par l'expert ; les parois qui l'utilisaient reviennent au type par défaut. */

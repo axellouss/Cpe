@@ -272,6 +272,31 @@
 .p2c-plan__counter--accent .p2c-plan__counter-value {
   color: var(--_accent);
 }
+/* Compteur qu'on peut toucher pour le corriger (longueur du dernier côté). */
+.p2c-plan__counter--button {
+  border-color: var(--_accent);
+  color: var(--_ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.p2c-plan__counter--button:hover {
+  background: var(--_accent-soft);
+}
+.p2c-plan__counter-edit {
+  color: var(--_accent);
+}
+
+/* Texte réservé aux lecteurs d'écran. */
+.p2c-plan__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 .p2c-plan__scalebar {
   display: flex;
@@ -313,8 +338,10 @@
   align-items: center;
   gap: 6px;
 }
+/* Entrée absente du plan (0 m) : libellé et valeur en gris LISIBLE (contraste ≥ 4,5:1), jamais par transparence.
+   L'échantillon de trait reste entier : c'est lui qui explique le motif à attribuer. */
 .p2c-plan__legend li.is-empty {
-  opacity: 0.55;
+  color: var(--_muted);
 }
 .p2c-plan__legend-value {
   color: var(--_muted);
@@ -646,6 +673,49 @@
   border-left: 0;
 }
 
+/* Choix exclusifs en boutons (ce qu'il y a derrière une façade) : rien ne change avant d'avoir choisi. */
+.p2c-plan__choices {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--_border);
+  border-radius: 9px;
+}
+.p2c-plan__choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--_ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.p2c-plan__choice + .p2c-plan__choice {
+  border-top: 1px solid var(--_border);
+}
+.p2c-plan__choice:hover {
+  background: var(--_accent-soft);
+}
+.p2c-plan__choice.is-current {
+  background: var(--_accent-soft);
+  box-shadow: inset 0 0 0 2px var(--_accent);
+  font-weight: 700;
+}
+.p2c-plan__choice-label {
+  flex: 1;
+}
+.p2c-plan__choice-mark {
+  color: var(--_accent);
+  font-weight: 700;
+}
+.p2c-plan .p2c-plan__choice:focus-visible {
+  outline-offset: -4px;
+}
+
 .p2c-plan__form-actions {
   display: flex;
   flex-wrap: wrap;
@@ -840,6 +910,40 @@
 .p2c-plan__label--hint {
   fill: var(--_snap);
   font-size: 11.5px;
+}
+/* Longueur en cours de frappe pendant le tracé. */
+.p2c-plan__label--typed {
+  fill: var(--_snap);
+}
+
+/* Longueurs des côtés, en pastilles. Modifiables (« is-editable ») : liseré d'action, comme un bouton. */
+.p2c-plan__len {
+  outline: none;
+}
+.p2c-plan__len-pill {
+  fill: var(--_paper);
+  fill-opacity: 0.9;
+  stroke: none;
+}
+.p2c-plan__len-text {
+  fill: var(--_ink);
+  font: 600 11.5px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.p2c-plan__len.is-editable .p2c-plan__len-pill {
+  fill-opacity: 1;
+  stroke: var(--_accent);
+  stroke-width: 1;
+}
+.p2c-plan__len.is-hot .p2c-plan__len-pill,
+.p2c-plan__len.is-active .p2c-plan__len-pill {
+  fill: var(--_accent-soft);
+  stroke: var(--_accent);
+  stroke-width: 2;
+}
+.p2c-plan__len:focus-visible .p2c-plan__len-pill {
+  stroke: var(--_accent);
+  stroke-width: 3;
 }
 .p2c-plan__label--opening {
   fill: var(--_window);
@@ -1098,9 +1202,25 @@
   stroke-width: 13;
   stroke-opacity: 0.55;
 }
+/* Trait de rappel d'une étiquette déplacée pour ne pas en recouvrir une autre. */
+.p2c-plan__opening-leader {
+  stroke: var(--_window);
+  stroke-width: 1;
+}
+.p2c-plan__opening--door .p2c-plan__opening-leader {
+  stroke: var(--_door);
+}
+.p2c-plan__opening.is-unconfirmed .p2c-plan__opening-leader {
+  stroke: var(--_warn);
+}
 
 .p2c-plan__room {
   outline: none;
+}
+/* Zone qui répond au toucher (au moins 44 px au doigt) : invisible, elle documente la cible. */
+.p2c-plan__room-hit {
+  fill: none;
+  stroke: none;
 }
 .p2c-plan__room-shape {
   fill: var(--_heated);
@@ -1168,17 +1288,61 @@
   width: 44px;
   height: 40px;
 }
+/*
+ * Sur un téléphone la zone de plan fait environ 360 × 340 px : le plan d'abord. L'interface posée dessus se serre
+ * (bandeau d'une ligne, compteurs en ligne, rappels masqués) et l'éditeur cadre le contour dans la place qu'elle
+ * laisse réellement (mesurée : voir `measureHud` dans PlanEditor.tsx).
+ */
+.p2c-plan.is-compact .p2c-plan__top {
+  top: 6px;
+  right: 6px;
+  left: 6px;
+  gap: 4px;
+}
+.p2c-plan.is-compact .p2c-plan__bottom {
+  right: 54px;
+  bottom: 6px;
+  left: 6px;
+  gap: 4px;
+}
+.p2c-plan.is-compact .p2c-plan__nav {
+  right: 6px;
+  bottom: 6px;
+}
 .p2c-plan.is-compact .p2c-plan__hint {
+  padding: 5px 9px;
   font-size: 13px;
 }
+.p2c-plan.is-compact .p2c-plan__actions {
+  gap: 4px;
+}
+.p2c-plan.is-compact .p2c-plan__actions .p2c-plan__btn {
+  padding: 6px 10px;
+  font-size: 13.5px;
+}
+.p2c-plan.is-compact .p2c-plan__counters {
+  gap: 4px;
+}
 .p2c-plan.is-compact .p2c-plan__counter {
-  padding: 3px 8px 4px;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 8px;
 }
 .p2c-plan.is-compact .p2c-plan__counter-value {
-  font-size: 14px;
+  font-size: 13.5px;
+}
+/* Simples rappels (surface dans l'outil « façades », provenance de An) : masqués, le plan passe avant. */
+.p2c-plan.is-compact .p2c-plan__counter--secondary {
+  display: none;
+}
+.p2c-plan.is-compact .p2c-plan__counter--button {
+  align-items: center;
+  min-height: 36px;
 }
 .p2c-plan.is-compact .p2c-plan__legend {
-  gap: 3px 10px;
+  gap: 2px 10px;
+  padding: 4px 8px;
   font-size: 12px;
 }
 /* Petit écran : la légende ne garde que ce qui est présent sur le plan, pour ne pas le masquer. */
@@ -1188,34 +1352,78 @@
 .p2c-plan.is-compact .p2c-plan__scalebar {
   display: none;
 }
+/* Ce qu'il y a derrière une façade : quatre grands boutons sur deux colonnes, la feuille couvre moins le plan. */
+.p2c-plan.is-compact .p2c-plan__choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  overflow: visible;
+  border: 0;
+}
+.p2c-plan.is-compact .p2c-plan__choice,
+.p2c-plan.is-compact .p2c-plan__choice + .p2c-plan__choice {
+  min-height: 48px;
+  padding: 6px 8px;
+  border: 1px solid var(--_border);
+  border-radius: 9px;
+}
+.p2c-plan.is-compact .p2c-plan__choice .p2c-plan__line-swatch {
+  width: 26px;
+}
+/* Boussole : un bandeau bas de deux rangées — la rose à gauche, à droite les quatre rotations puis l'azimut et la
+   validation. Le plan garde tout le reste. */
 .p2c-plan.is-compact .p2c-plan__compass {
   top: auto;
-  right: 56px;
-  bottom: 8px;
-  left: 8px;
+  right: 54px;
+  bottom: 6px;
+  left: 6px;
   display: grid;
-  grid-template: 'rose info' auto 'turns turns' auto 'ok ok' auto / 96px 1fr;
+  grid-template: 'rose turns turns' auto 'rose field ok' auto / 68px auto minmax(0, 1fr);
   align-items: center;
-  gap: 8px 10px;
+  gap: 4px 6px;
   width: auto;
-  padding: 8px;
+  padding: 4px;
 }
 .p2c-plan.is-compact .p2c-plan__rose {
   grid-area: rose;
-  width: 96px;
-  height: 96px;
+  width: 68px;
+  height: 68px;
 }
-.p2c-plan.is-compact .p2c-plan__compass-controls {
-  display: contents;
-}
+.p2c-plan.is-compact .p2c-plan__compass-controls,
 .p2c-plan.is-compact .p2c-plan__compass-info {
-  grid-area: info;
+  display: contents;
 }
 .p2c-plan.is-compact .p2c-plan__turns {
   grid-area: turns;
 }
+.p2c-plan.is-compact .p2c-plan__compass .p2c-plan__btn {
+  min-height: 34px;
+  padding: 4px 2px;
+  font-size: 13px;
+}
+.p2c-plan.is-compact .p2c-plan__compass .p2c-plan__field--inline {
+  grid-area: field;
+}
+.p2c-plan.is-compact .p2c-plan__compass .p2c-plan__input {
+  width: 3.5em;
+  min-height: 34px;
+  padding: 3px 6px;
+}
 .p2c-plan.is-compact .p2c-plan__compass-controls > .p2c-plan__btn--primary {
   grid-area: ok;
+  padding: 4px 8px;
+}
+/* Le libellé du champ et la phrase de résultat restent lus par les lecteurs d'écran ; à l'écran, ce sont les
+   façades du plan qui portent le résultat (secteur et azimut), juste à côté de l'aiguille. */
+.p2c-plan.is-compact .p2c-plan__compass .p2c-plan__field-label,
+.p2c-plan.is-compact .p2c-plan__compass-sentence {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .p2c-plan.is-compact[data-tool='north'] .p2c-plan__bottom {
   display: none;

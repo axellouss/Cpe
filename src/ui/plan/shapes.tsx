@@ -8,6 +8,8 @@ import type { KeyboardEvent, ReactNode } from 'react';
 import { edgeOutwardNormal } from '../../core/geometry';
 import type { Opening, Storey, StoreyEdge, Vec2 } from '../../core/types';
 import { MIDPOINT_MIN_EDGE_PX } from './hitTest';
+import { LENGTH_PILL, layoutOpeningLabels } from './labels';
+import type { LengthLabel, OpeningLabelInput } from './labels';
 import { formatDecimal } from './numbers';
 import { openingMark } from './openings';
 import { isRightAngle } from './snapping';
@@ -25,7 +27,16 @@ export function toPoints(view: View, points: readonly Vec2[]): string {
 }
 
 /** Texte lisible sur n'importe quel fond (liseré de la couleur du papier). */
-export function Label(props: { x: number; y: number; className?: string; anchor?: 'start' | 'middle' | 'end'; title?: string; children: ReactNode }) {
+export function Label(props: {
+  x: number;
+  y: number;
+  className?: string;
+  anchor?: 'start' | 'middle' | 'end';
+  title?: string;
+  /** Rotation du texte autour de son point d'ancrage (degrés) : −90 pour suivre un mur vertical. */
+  rotate?: number;
+  children: ReactNode;
+}) {
   return (
     <text
       x={props.x}
@@ -33,6 +44,7 @@ export function Label(props: { x: number; y: number; className?: string; anchor?
       className={`p2c-plan__label ${props.className ?? ''}`}
       textAnchor={props.anchor ?? 'middle'}
       dominantBaseline="central"
+      transform={props.rotate ? `rotate(${props.rotate} ${props.x.toFixed(1)} ${props.y.toFixed(1)})` : undefined}
     >
       {props.title ? <title>{props.title}</title> : null}
       {props.children}
@@ -128,6 +140,7 @@ export function EdgeLines(props: {
         y1={a.y}
         x2={b.x}
         y2={b.y}
+        data-edge={i}
         {...(it
           ? {
               tabIndex: 0,
@@ -168,6 +181,68 @@ export function EdgeLengthLabels(props: { outline: readonly Vec2[]; view: View; 
     );
   }
   return <g aria-hidden="true">{labels}</g>;
+}
+
+export interface LengthInteraction {
+  label(l: LengthLabel): string;
+  activate(edge: number): void;
+}
+
+/**
+ * Longueurs des côtés en pastilles (placement : ./labels.ts). Avec `interaction`, chaque pastille est un bouton :
+ * on l'atteint au clavier (Entrée ou Espace l'ouvre) ; le toucher et le clic sont traités par l'outil, qui teste
+ * les mêmes emprises.
+ */
+export function LengthPills(props: { labels: readonly LengthLabel[]; hot?: number | null; active?: number | null; interaction?: LengthInteraction }) {
+  const it = props.interaction;
+  if (props.labels.length === 0) return null;
+  return (
+    <g aria-hidden={it ? undefined : true}>
+      {props.labels.map((l) => {
+        const cls = ['p2c-plan__len', it ? 'is-editable' : '', props.hot === l.edge ? 'is-hot' : '', props.active === l.edge ? 'is-active' : ''].join(' ');
+        return (
+          <g
+            key={l.edge}
+            className={cls}
+            data-length-edge={l.edge}
+            {...(it
+              ? {
+                  tabIndex: 0,
+                  role: 'button',
+                  'aria-label': it.label(l),
+                  onKeyDown: (e: KeyboardEvent) => {
+                    if (!activationKey(e)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    it.activate(l.edge);
+                  },
+                }
+              : {})}
+          >
+            <rect
+              className="p2c-plan__len-pill"
+              x={l.box.x}
+              y={l.box.y}
+              width={l.box.width}
+              height={l.box.height}
+              rx={Math.min(l.box.width, l.box.height) / 2}
+            />
+            <text
+              className="p2c-plan__len-text"
+              x={l.x}
+              y={l.y}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={LENGTH_PILL.font}
+              transform={l.rotate ? `rotate(${l.rotate} ${l.x.toFixed(1)} ${l.y.toFixed(1)})` : undefined}
+            >
+              {l.text}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
 }
 
 /** Petits carrés d'équerre aux angles droits du contour. */
@@ -280,19 +355,28 @@ export interface OpeningInteraction {
   remove?(o: Opening): void;
 }
 
-/** Marques des ouvertures sur les façades : trait épais à l'échelle + dimensions. */
+/**
+ * Marques des ouvertures sur les façades : trait épais à l'échelle + dimensions.
+ * Les étiquettes ne se recouvrent pas (placement : ./labels.ts) : une étiquette gênée se décale avec un trait de
+ * rappel ; faute de place, seules l'ouverture sélectionnée et celles « à confirmer » gardent la leur.
+ */
 export function OpeningMarks(props: {
   outline: readonly Vec2[];
   openings: readonly Opening[];
   metresPerUnit: number;
   view: View;
   labels?: boolean;
+  /** Vrai = le texte suit les façades raides (écran étroit). */
+  labelsAlong?: boolean;
+  /** Nombre de positions essayées par étiquette avant de l'omettre (5 par défaut). */
+  labelTries?: number;
   selectedId?: string | null;
   interaction?: OpeningInteraction;
 }) {
   const { outline, view } = props;
   if (outline.length < 2) return null;
-  const marks: ReactNode[] = [];
+  const drawn: { o: Opening; a: Vec2; b: Vec2; cls: string }[] = [];
+  const texts: OpeningLabelInput[] = [];
   for (const o of props.openings) {
     const mark = openingMark(outline, o, props.metresPerUnit);
     if (!mark) continue;
@@ -313,42 +397,56 @@ export function OpeningMarks(props: {
       toConfirm ? 'is-unconfirmed' : '',
       props.selectedId === o.id ? 'is-selected' : '',
     ].join(' ');
-    const it = props.interaction;
-    marks.push(
-      <g
-        key={o.id}
-        className={cls}
-        {...(it
-          ? {
-              tabIndex: 0,
-              role: 'button',
-              'aria-label': it.label(o),
-              onKeyDown: (e: KeyboardEvent) => {
-                if (activationKey(e)) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  it.activate(o);
-                } else if ((e.key === 'Delete' || e.key === 'Backspace') && it.remove) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  it.remove(o);
-                }
-              },
-            }
-          : {})}
-      >
-        <line className="p2c-plan__opening-halo" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-        <line className="p2c-plan__opening-bar" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-        {o.kind === 'window' ? <line className="p2c-plan__opening-glass" x1={a.x} y1={a.y} x2={b.x} y2={b.y} /> : null}
-        {props.labels ? (
-          <Label {...outsideLabel(c, normal, 12)} className="p2c-plan__label--opening">
-            {openingLabel(o) + (toConfirm ? ' ?' : '')}
-          </Label>
-        ) : null}
-      </g>,
-    );
+    drawn.push({ o, a, b, cls });
+    if (props.labels) {
+      texts.push({ id: o.id, text: openingLabel(o) + (toConfirm ? ' ?' : ''), centre: c, normal, priority: toConfirm || props.selectedId === o.id });
+    }
   }
-  return <g>{marks}</g>;
+  const placed = new Map(layoutOpeningLabels(texts, { along: props.labelsAlong ?? false, maxTries: props.labelTries ?? 5 }).map((p) => [p.id, p]));
+  const it = props.interaction;
+  return (
+    <g>
+      {drawn.map(({ o, a, b, cls }) => {
+        const label = placed.get(o.id);
+        return (
+          <g
+            key={o.id}
+            className={cls}
+            {...(it
+              ? {
+                  tabIndex: 0,
+                  role: 'button',
+                  'aria-label': it.label(o),
+                  onKeyDown: (e: KeyboardEvent) => {
+                    if (activationKey(e)) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      it.activate(o);
+                    } else if ((e.key === 'Delete' || e.key === 'Backspace') && it.remove) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      it.remove(o);
+                    }
+                  },
+                }
+              : {})}
+          >
+            <line className="p2c-plan__opening-halo" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+            <line className="p2c-plan__opening-bar" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+            {o.kind === 'window' ? <line className="p2c-plan__opening-glass" x1={a.x} y1={a.y} x2={b.x} y2={b.y} /> : null}
+            {label?.leader ? (
+              <line className="p2c-plan__opening-leader" x1={label.leader.x1} y1={label.leader.y1} x2={label.leader.x2} y2={label.leader.y2} />
+            ) : null}
+            {label ? (
+              <Label x={label.x} y={label.y} anchor={label.anchor} rotate={label.rotate} className="p2c-plan__label--opening">
+                {label.text}
+              </Label>
+            ) : null}
+          </g>
+        );
+      })}
+    </g>
+  );
 }
 
 /** Marqueur du point d'accrochage et guides actifs (angle droit, alignement). */

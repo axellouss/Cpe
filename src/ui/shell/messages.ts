@@ -19,6 +19,8 @@ export const SHELL_MESSAGES: Dictionary = {
     'shell.close': 'Fermer',
     'shell.back': 'Retour',
     'shell.continue': 'Continuer',
+    'shell.field.range': 'Valeur attendue : de {min} à {max}{unit}. La saisie n’a pas été retenue.',
+    'shell.field.invalid': 'Nombre attendu. La saisie n’a pas été retenue.',
     'shell.yes': 'Oui',
     'shell.no': 'Non',
     'shell.drop.anywhere': 'Déposez ici pour ajouter ces plans',
@@ -115,6 +117,8 @@ export const SHELL_MESSAGES: Dictionary = {
     'shell.copy.failed': 'La copie a été refusée par le navigateur. Sélectionnez la valeur et copiez-la à la main.',
     'shell.copy.aria': 'Copier {name}',
     'shell.copy.cell': 'Copier {value} ({column})',
+    'shell.copy.mark': 'Copier « {value} »',
+    'shell.copy.mark.aria': 'Copier « {value} » ({name})',
 
     // ── Accueil ──
     'shell.home.title': 'Déposez vos plans, on s’occupe du relevé',
@@ -286,6 +290,7 @@ export const SHELL_MESSAGES: Dictionary = {
     'shell.read.accept.keep': 'Continuer avec mes étages',
     'shell.read.noStorey': 'Aucun étage : cochez « Étage chauffé » sur au moins une feuille.',
     'shell.read.rebound': 'Fonds de plan retrouvés — étages concernés : {count}.',
+    'shell.read.sameName': 'Un autre fichier nommé « {name} » était déjà chargé : celui-ci est ajouté à côté, sous le nom « {renamed} ».',
 
     // ── Fermetures, milieux, catégories ──
     'shell.top.flat-roof': 'Toiture plate',
@@ -726,6 +731,8 @@ export const SHELL_MESSAGES: Dictionary = {
     'shell.close': 'Schließen',
     'shell.back': 'Zurück',
     'shell.continue': 'Weiter',
+    'shell.field.range': 'Erwarteter Wert: {min} bis {max}{unit}. Die Eingabe wurde nicht übernommen.',
+    'shell.field.invalid': 'Zahl erwartet. Die Eingabe wurde nicht übernommen.',
     'shell.yes': 'Ja',
     'shell.no': 'Nein',
     'shell.drop.anywhere': 'Hier ablegen, um diese Pläne hinzuzufügen',
@@ -822,6 +829,8 @@ export const SHELL_MESSAGES: Dictionary = {
     'shell.copy.failed': 'Der Browser hat das Kopieren abgelehnt. Markieren Sie den Wert und kopieren Sie ihn von Hand.',
     'shell.copy.aria': '{name} kopieren',
     'shell.copy.cell': '{value} kopieren ({column})',
+    'shell.copy.mark': '„{value}“ kopieren',
+    'shell.copy.mark.aria': '„{value}“ kopieren ({name})',
 
     // ── Start ──
     'shell.home.title': 'Pläne ablegen — das Aufmaß übernehmen wir',
@@ -993,6 +1002,7 @@ export const SHELL_MESSAGES: Dictionary = {
     'shell.read.accept.keep': 'Mit meinen Geschossen weiter',
     'shell.read.noStorey': 'Kein Geschoss: Haken Sie bei mindestens einem Blatt „Beheiztes Geschoss“ an.',
     'shell.read.rebound': 'Planhintergründe wiedergefunden — betroffene Geschosse: {count}.',
+    'shell.read.sameName': 'Eine andere Datei mit dem Namen „{name}“ war bereits geladen: Diese wird daneben unter dem Namen „{renamed}“ hinzugefügt.',
 
     // ── Abschlüsse, Umgebung, Kategorien ──
     'shell.top.flat-roof': 'Flachdach',

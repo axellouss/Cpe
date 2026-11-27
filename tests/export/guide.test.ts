@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EnvelopeRow, Lang } from '../../src/core/types';
 import { buildGuide, GUIDE_SECTION_KEYS, guideDisclaimer, type GuideItem, type GuideSection, type GuideTable } from '../../src/export';
-import { ENVELOPE_AZIMUTH_COLUMN } from '../../src/export/guide';
+import { ENVELOPE_AZIMUTH_COLUMN, GUIDE_ASIDE_COLUMNS } from '../../src/export/guide';
 import { ENVELOPE_BLOCK, makeProject, makeSheets, VOLUMES_BLOCK, ZONES_BLOCK } from './fixtures';
 
 const PROVENANCES = ['plan', 'calc', 'default', 'estimate', 'user'];
@@ -300,8 +300,9 @@ describe('buildGuide — types d’éléments et de fenêtres', () => {
       "Breite [m] — largeur d'une fenêtre typique",
       "Höhe [m] — hauteur d'une fenêtre typique",
     ]);
-    expect(tb.rows).toEqual([
+    expect(tb.rows).toMatchObject([
       {
+        id: 'w1',
         // ordre de l'outil : g-Wert avant U-Wert Fenster
         cells: ['Fenêtre PVC', '1,20', '1,35', '2', '3,24', '0,60', '1,30'],
         from: 'default',
@@ -354,18 +355,21 @@ describe('buildGuide — enveloppe', () => {
       'Contre',
     ]);
     expect(tb.columns[ENVELOPE_AZIMUTH_COLUMN]).toBe('Orientation (azimut)');
-    expect(tb.rows[0]).toEqual({
+    expect(tb.rows[0]).toMatchObject({
+      id: 'e1',
       cells: ['1', 'Fenêtre PVC', '2,00', '1,20', '1,35', 'Nord', 'x', '3,24', 'Fenêtre 1,20 × 1,35 m – Nord (RDC)', 'Nord (0°)', 'extérieur'],
       from: 'plan',
       deduct: true,
       note: 'À déduire de la prochaine ligne sans « x ».',
     });
     // le mur porte la surface nette, après déduction des fenêtres
-    expect(tb.rows[1]).toEqual({
+    expect(tb.rows[1]).toMatchObject({
+      id: 'e2',
       cells: ['2', 'Mur extérieur', '1,00', '10,00', '2,80', 'Nord', '', '24,76', 'Mur extérieur – Nord (RDC)', 'Nord (0°)', 'extérieur'],
       from: 'plan',
       deduct: false,
     });
+    expect(tb.rows[1]!.note).toBeUndefined();
     expect(tb.rows[2]!.cells.slice(5, 10)).toEqual(['Ost', '', '22,40', 'Mur extérieur – Est (RDC)', 'Est (90°)']);
     expect(tb.rows.map((r) => r.from)).toEqual(['plan', 'plan', 'plan', 'plan', 'default', 'user']);
     // les cellules des colonnes du bloc sont exactement celles du bloc
@@ -385,11 +389,27 @@ describe('buildGuide — enveloppe', () => {
     expect(item(s, 'envelope.rowCount').value).toBe('6');
     expect(item(s, 'envelope.deductLines')).toMatchObject({ value: '1', copy: 'x', from: 'calc' });
     expect(item(s, 'envelope.deductLines').note).toContain('« Abzug »');
+    // « Copier » ne copie pas la liste affichée mais la marque : le guide le signale, pour que le bouton le dise.
+    expect(item(s, 'envelope.deductLines').copyIsMark).toBe(true);
 
     const sheets = makeSheets();
     sheets.envelope = sheets.envelope.filter((r) => !r.deduct);
     const none = item(section(buildGuide(sheets, makeProject(), 'fr'), 'envelope'), 'envelope.deductLines');
     expect(none).toMatchObject({ value: '—', copy: '', note: 'Aucune ligne à déduire.' });
+    expect(none.copyIsMark).toBeUndefined();
+  });
+
+  it('ne copie jamais autre chose que la valeur affichée, sauf la marque « x » qui est signalée', () => {
+    for (const lang of ['fr', 'de'] as const) {
+      for (const s of guide(lang)) {
+        for (const i of s.items) {
+          if (i.key === 'envelope.deductLines') continue;
+          expect(i.copyIsMark, i.key).toBeUndefined();
+          // Ce qui est copié se lit dans la valeur affichée (sans l'unité, sans le « L- » du code postal).
+          if (i.copy) expect(i.value, i.key).toContain(i.copy);
+        }
+      }
+    }
   });
 
   it('écarte les parois vers un local chauffé et signale une déduction orpheline', () => {
@@ -424,6 +444,141 @@ describe('buildGuide — enveloppe', () => {
   });
 });
 
+describe('buildGuide — colonnes de l’outil et aides de lecture', () => {
+  /** En-têtes des colonnes de l'outil d'un tableau (sans leur traduction), dans l'ordre. */
+  function toolColumns(tb: GuideTable): string[] {
+    return tb.columns.filter((_, c) => !tb.aside.includes(c)).map((column) => column.split(' — ')[0]!);
+  }
+
+  it('ne garde dans la grille de l’enveloppe que les colonnes de LuxEeB-Tool, dans son ordre', () => {
+    const fr = table(section(guide('fr'), 'envelope'), 'envelope');
+    expect(toolColumns(fr)).toEqual(['N°', 'Bauteil', 'Anzahl', 'Länge (Rohbaumaß) [m]', 'Breite (Rohbaumaß) [m]', 'Orientierung', 'Abzug', 'A [m²]']);
+    expect(fr.aside.map((c) => fr.columns[c])).toEqual(['Repère du relevé', 'Orientation (azimut)', 'Contre']);
+    const de = table(section(guide('de'), 'envelope'), 'envelope');
+    expect(toolColumns(de)).toEqual(['Nr.', 'Bauteil', 'Anzahl', 'Länge (Rohbaumaß) [m]', 'Breite (Rohbaumaß) [m]', 'Orientierung', 'Abzug', 'A [m²]']);
+    expect(de.aside.map((c) => de.columns[c])).toEqual(['Bezeichnung im Aufmaß', 'Himmelsrichtung (Azimut)', 'Grenzt an']);
+  });
+
+  it('range à part les aides de lecture des autres tableaux', () => {
+    const fr = guide('fr');
+    const constructions = table(section(fr, 'opaque'), 'constructions');
+    expect(toolColumns(constructions)).toEqual(['Bezeichnung', 'U-Wert [W/(m²K)]', 'Einbausituation', 'Fläche des Bauteils A [m²]', 'Perimeter P [m]']);
+    expect(constructions.aside.map((c) => constructions.columns[c])).toEqual(['Catégorie', 'Contre', 'Surface totale [m²]']);
+    const windows = table(section(fr, 'windows'), 'windowTypes');
+    expect(toolColumns(windows)).toEqual(['Bezeichnung', 'Breite [m]', 'Höhe [m]', 'g-Wert [-]', 'U-Wert Fenster [W/(m²K)]']);
+    expect(windows.aside.map((c) => windows.columns[c])).toEqual(['Nombre de fenêtres', 'Surface totale [m²]']);
+    const zones = table(section(fr, 'areas'), 'zones');
+    expect(toolColumns(zones)).toEqual(['Raumbezeichnung', 'Anzahl', 'Breite [m]', 'Länge [m]', 'Vn [m³]']);
+    expect(zones.aside.map((c) => zones.columns[c])).toEqual(['Hauteur libre [m]']);
+    expect(table(section(fr, 'areas'), 'volumes').aside).toEqual([]);
+  });
+
+  it.each(['fr', 'de'] as const)('les colonnes d’un bloc à coller sont des colonnes de l’outil, jamais des aides (%s)', (lang) => {
+    for (const s of guide(lang)) {
+      for (const tb of s.tables) {
+        expect(tb.aside, tb.key).toEqual([...GUIDE_ASIDE_COLUMNS[tb.key as keyof typeof GUIDE_ASIDE_COLUMNS]]);
+        for (const c of tb.aside) expect(c).toBeLessThan(tb.columns.length);
+        if (!tb.pasteBlock) continue;
+        const grid = tb.rows[0]!.cells.filter((_, c) => !tb.aside.includes(c)).join('\t');
+        expect(grid, tb.key).toContain(tb.pasteBlock.split('\r\n')[0]!);
+      }
+    }
+  });
+});
+
+describe('buildGuide — lignes reconnaissables d’une langue à l’autre', () => {
+  const tables = (sections: GuideSection[]): GuideTable[] => sections.flatMap((s) => s.tables);
+
+  it('donne à chaque ligne un identifiant stable, unique dans son tableau', () => {
+    const fr = guide('fr');
+    expect(table(section(fr, 'envelope'), 'envelope').rows.map((r) => r.id)).toEqual(['e1', 'e2', 'e3', 'e4', 'e5', 'e6']);
+    expect(table(section(fr, 'areas'), 'zones').rows.map((r) => r.id)).toEqual(['z0']);
+    expect(table(section(fr, 'areas'), 'volumes').rows.map((r) => r.id)).toEqual(['v0']);
+    // Un type d'élément donne une ligne par milieu : l'identifiant porte les deux.
+    expect(table(section(fr, 'opaque'), 'constructions').rows.map((r) => r.id)).toEqual(['c-wall|outside', 'c-roof|outside', 'c-floor|ground']);
+    expect(table(section(fr, 'windows'), 'windowTypes').rows.map((r) => r.id)).toEqual(['w1']);
+    for (const tb of tables(fr)) expect(new Set(tb.rows.map((r) => r.id)).size, tb.key).toBe(tb.rows.length);
+  });
+
+  it('garde identifiants et empreintes identiques en français et en allemand', () => {
+    const fr = tables(guide('fr'));
+    const de = tables(guide('de'));
+    expect(fr.map((tb) => tb.key)).toEqual(de.map((tb) => tb.key));
+    fr.forEach((tb, i) => {
+      // Les textes, eux, sont bien traduits : la comparaison a un sens.
+      expect(tb.columns).not.toEqual(de[i]!.columns);
+      expect(tb.rows.map((r) => [r.id, r.stamp])).toEqual(de[i]!.rows.map((r) => [r.id, r.stamp]));
+      for (const r of tb.rows) expect(r.stamp, `${tb.key} ${r.id}`).not.toBe('');
+    });
+  });
+
+  it('ne met dans l’empreinte aucun texte traduit ni libellé : seulement ce qui se saisit', () => {
+    const sheets = makeSheets();
+    const before = table(section(buildGuide(sheets, makeProject(), 'fr'), 'envelope'), 'envelope').rows;
+    // Renommer le repère et l'élément (ce que fait le changement de langue) ne change rien.
+    sheets.envelope = sheets.envelope.map((r) => ({ ...r, label: `${r.label} (umbenannt)`, elementName: `${r.elementName} neu` }));
+    sheets.zones = sheets.zones.map((z) => ({ ...z, label: 'Beheizte Zone – Erdgeschoss' }));
+    const renamed = buildGuide(sheets, makeProject(), 'de');
+    expect(table(section(renamed, 'envelope'), 'envelope').rows.map((r) => r.stamp)).toEqual(before.map((r) => r.stamp));
+    expect(table(section(renamed, 'areas'), 'zones').rows[0]!.stamp).toBe(table(section(guide('fr'), 'areas'), 'zones').rows[0]!.stamp);
+  });
+
+  it('change l’empreinte d’une ligne dès qu’une valeur à saisir change, et seulement de cette ligne', () => {
+    const stamps = (change: (row: EnvelopeRow) => EnvelopeRow): string[] => {
+      const sheets = makeSheets();
+      sheets.envelope = sheets.envelope.map((r) => (r.id === 'e3' ? change(r) : r));
+      return table(section(buildGuide(sheets, makeProject(), 'fr'), 'envelope'), 'envelope').rows.map((r) => r.stamp);
+    };
+    const base = stamps((r) => r);
+    const changes: [string, (row: EnvelopeRow) => EnvelopeRow][] = [
+      ['longueur', (r) => ({ ...r, length: 8.5, grossArea: 23.8, netArea: 23.8 })],
+      ['hauteur', (r) => ({ ...r, width: 2.6, grossArea: 20.8, netArea: 20.8 })],
+      ['nombre', (r) => ({ ...r, count: 2 })],
+      ['orientation', (r) => ({ ...r, orientation: 'SE' })],
+      ['marque « x »', (r) => ({ ...r, deduct: true })],
+      ['type d’élément', (r) => ({ ...r, constructionId: 'c-roof' })],
+    ];
+    for (const [what, change] of changes) {
+      const next = stamps(change);
+      expect(next[2], what).not.toBe(base[2]);
+      // Les autres lignes ne bougent pas — sauf la marque « x », qui ne change que la ligne elle-même.
+      expect(next.filter((_, i) => i !== 2), what).toEqual(base.filter((_, i) => i !== 2));
+    }
+  });
+
+  it('change l’empreinte des lignes qui changent de numéro : leur place dans l’outil n’est plus la même', () => {
+    const sheets = makeSheets();
+    sheets.envelope = sheets.envelope.filter((r) => r.id !== 'e3');
+    const rows = table(section(buildGuide(sheets, makeProject(), 'fr'), 'envelope'), 'envelope').rows;
+    const base = table(section(guide('fr'), 'envelope'), 'envelope').rows;
+    const stampOf = (list: typeof rows, id: string): string => list.find((r) => r.id === id)!.stamp;
+    expect(stampOf(rows, 'e1')).toBe(stampOf(base, 'e1'));
+    expect(stampOf(rows, 'e2')).toBe(stampOf(base, 'e2'));
+    expect(stampOf(rows, 'e4')).not.toBe(stampOf(base, 'e4'));
+  });
+
+  it('laisse les aides de lecture hors de l’empreinte : la surface totale d’un type ne s’y saisit pas', () => {
+    const sheets = makeSheets();
+    const base = table(section(buildGuide(sheets, makeProject(), 'fr'), 'opaque'), 'constructions').rows;
+    sheets.constructions = sheets.constructions.map((c) => ({ ...c, area: c.area + 12 }));
+    const wider = table(section(buildGuide(sheets, makeProject(), 'fr'), 'opaque'), 'constructions').rows;
+    expect(wider.map((r) => r.cells[5])).not.toEqual(base.map((r) => r.cells[5]));
+    expect(wider.map((r) => r.stamp)).toEqual(base.map((r) => r.stamp));
+    // La valeur U, elle, se saisit.
+    sheets.constructions = sheets.constructions.map((c) => (c.constructionId === 'c-wall' ? { ...c, u: { value: 0.28, from: 'user' as const } } : c));
+    const withU = table(section(buildGuide(sheets, makeProject(), 'fr'), 'opaque'), 'constructions').rows;
+    expect(withU[0]!.stamp).not.toBe(base[0]!.stamp);
+    expect(withU[1]!.stamp).toBe(base[1]!.stamp);
+  });
+
+  it('distingue deux lignes qui auraient le même identifiant', () => {
+    const sheets = makeSheets();
+    sheets.envelope = [...sheets.envelope, { ...sheets.envelope[2]!, label: 'Doublon' }, { ...sheets.envelope[2]!, label: 'Doublon 2' }];
+    const ids = table(section(buildGuide(sheets, makeProject(), 'fr'), 'envelope'), 'envelope').rows.map((r) => r.id);
+    expect(ids).toEqual(['e1', 'e2', 'e3', 'e4', 'e5', 'e6', 'e3#2', 'e3#3']);
+  });
+});
+
 describe('buildGuide — surfaces, volumes et contrôle', () => {
   it('donne les zones et les volumes avec leurs blocs', () => {
     const s = section(guide('fr'), 'areas');
@@ -436,7 +591,7 @@ describe('buildGuide — surfaces, volumes et contrôle', () => {
       'Hauteur libre [m]',
       "Vn [m³] — indicatif : l'outil calcule Vn lui-même",
     ]);
-    expect(zones.rows).toEqual([{ cells: ['Zone chauffée – Rez-de-chaussée', '1,00', '1,00', '68,40', '2,50', '171,00'], from: 'estimate' }]);
+    expect(zones.rows).toMatchObject([{ id: 'z0', cells: ['Zone chauffée – Rez-de-chaussée', '1,00', '1,00', '68,40', '2,50', '171,00'], from: 'estimate' }]);
     expect(zones.pasteBlock).toBe(ZONES_BLOCK);
     expect(zones.pasteHint).toContain('À essayer');
     expect(zones.pasteHint).toContain('« Raumbezeichnung »');
@@ -451,7 +606,7 @@ describe('buildGuide — surfaces, volumes et contrôle', () => {
       'Höhe [m] — hauteur',
       'Ve [m³] — Ve attendu',
     ]);
-    expect(volumes.rows).toEqual([{ cells: ['Rez-de-chaussée', '1,00', '1,00', '80,00', '2,80', '224,00'], from: 'plan' }]);
+    expect(volumes.rows).toMatchObject([{ id: 'v0', cells: ['Rez-de-chaussée', '1,00', '1,00', '80,00', '2,80', '224,00'], from: 'plan' }]);
     expect(volumes.pasteBlock).toBe(VOLUMES_BLOCK);
     expect(volumes.pasteHint).toContain('« Bezeichnung »');
     expect(s.help).toContain('« Lüftungsanlage »');

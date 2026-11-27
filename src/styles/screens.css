@@ -2147,99 +2147,7 @@
   color: var(--ink);
 }
 
-.gtable__scroll {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-}
-
-.gtable__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-
-.gtable__table th {
-  padding: 8px 8px;
-  border-bottom: 2px solid var(--border-strong);
-  background: var(--surface-2);
-  text-align: left;
-  vertical-align: bottom;
-  white-space: nowrap;
-}
-
-.gtable__term {
-  display: block;
-  font-weight: 700;
-}
-
-.gtable__translation {
-  display: block;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 500;
-}
-
-.gtable__table td {
-  padding: 3px 4px;
-  border-top: 1px solid var(--border);
-  vertical-align: middle;
-  white-space: nowrap;
-}
-
-.gtable__table td .copy--cell {
-  white-space: nowrap;
-}
-
-.gtable__table td.num {
-  text-align: right;
-}
-
-.gtable__table td.num .copy--cell {
-  justify-content: flex-end;
-  text-align: right;
-}
-
-.gtable__check {
-  width: 1%;
-  padding-left: 10px !important;
-  padding-right: 6px !important;
-  text-align: center !important;
-}
-
-.gtable__table th.num {
-  text-align: right;
-}
-
-.gtable__check .icon {
-  display: inline-block;
-  color: var(--muted);
-}
-
-.gtable__row.is-deduct td {
-  background: color-mix(in srgb, var(--info-bg) 60%, transparent);
-}
-
-.gtable__row.is-entered td {
-  color: var(--muted);
-  background: color-mix(in srgb, var(--ok-bg) 55%, transparent);
-}
-
-.gtable__noterow td {
-  padding: 2px 10px 8px;
-  border-top: 0;
-  white-space: normal;
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
-.gtable__noterow td[colspan] {
-  min-width: 260px;
-}
-
-.gtable__rowcopy {
-  white-space: nowrap;
-}
+/* Grille et cartes des tableaux du résultat : src/ui/shell/components/result.css. */
 
 .disclaimer {
   padding: 12px 14px;
@@ -2249,7 +2157,8 @@
   font-size: 0.9rem;
 }
 
-@media (min-width: 1100px) {
+/* La table des matières ne passe à gauche que si les tableaux gardent la place de leur grille (900 px, voir result.css). */
+@media (min-width: 1260px) {
   .result__layout {
     grid-template-columns: 250px minmax(0, 1fr);
     align-items: start;
@@ -2461,7 +2370,6 @@
 .checklist,
 .checklist__head,
 .toc__list,
-.gtable__scroll,
 .xtabs,
 .xtable-wrap,
 .steps {

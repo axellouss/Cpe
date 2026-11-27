@@ -114,6 +114,10 @@ async function type(target: HTMLElement | string, value: string): Promise<void> 
     setter?.call(el, value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   });
+  // Un champ numérique ne transmet sa valeur qu'à la validation : on sort du champ, comme l'expert le ferait.
+  await act(async () => {
+    el.blur();
+  });
 }
 
 async function key(init: KeyboardEventInit): Promise<void> {

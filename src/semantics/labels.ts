@@ -43,9 +43,13 @@ export function parseArea(text: string): number | null {
 
 // ───────────────────────────── Échelle ─────────────────────────────
 
-const SCALE_RE = /(?:^|[^\d])1\s*([:/])\s*(\d{1,4})(?!\d)/;
-// « M 1:200 », « M=1:50 » : la lettre M seule ne vaut que collée au rapport (sinon tout mot contenant un « m » passerait).
-const SCALE_WORD_RE = /(echelle|\bech\b\.?|massstab|\bmst\b\.?|\bm\.?\s*=?\s*1\s*[:/]|scale)/;
+// Le dénominateur ne doit être suivi ni d'une décimale ni d'une unité : « Étage 1 : 100,5 m² » n'est pas une échelle.
+const SCALE_RE = /(?:^|[^\d])1\s*([:/])\s*(\d{1,4})(?!\d)(?![.,]\d)(?!\s*(?:m|cm|mm|qm)(?:[²2]|\b))/;
+const SCALE_WORD_RE = /(echelle|\bech\b\.?|massstab|\bmst\b\.?|scale)/;
+/** « M 1:200 », « M=1:50 », « M. 1:100 » : la lettre M majuscule collée au rapport écrit avec « : ». */
+const SCALE_M_RE = /(?:^|[^A-Za-zÀ-ÿ])M\.?\s*=?\s*1\s*:/;
+/** Rapport nu précédé d'un mot (« Étage 1 : 100 », « Phase 1:20 », « N° 1:25 ») : une numérotation, pas une échelle. */
+const NUMBERED_RE = /[A-Za-zÀ-ÿ°.]\s+1\s*[:/]\s*\d/;
 /** Sans mot « échelle », un rapport nu n'est une échelle de plan que s'il est écrit avec « : » et vaut au moins 1:10. */
 const MIN_BARE_SCALE = 10;
 const COMMON_SCALES = new Set([1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 500, 1000, 2000, 2500, 5000]);
@@ -60,9 +64,9 @@ export function parseScaleText(text: string): number | null {
   if (!m) return null;
   const denom = Number(m[2]);
   if (!Number.isFinite(denom) || denom < 1) return null;
-  const hasWord = SCALE_WORD_RE.test(fold(text));
-  // « Page 1/2 », « Blatt 1/5 » : une fraction nue n'est pas une échelle.
-  if (!hasWord && (m[1] !== ':' || denom < MIN_BARE_SCALE || !COMMON_SCALES.has(denom))) return null;
+  const hasWord = SCALE_WORD_RE.test(fold(text)) || SCALE_M_RE.test(text);
+  // « Page 1/2 », « Blatt 1/5 » : une fraction nue n'est pas une échelle ; « Étage 1 : 100 » non plus.
+  if (!hasWord && (m[1] !== ':' || denom < MIN_BARE_SCALE || !COMMON_SCALES.has(denom) || NUMBERED_RE.test(text))) return null;
   return denom;
 }
 
@@ -118,6 +122,13 @@ export function isOutsideEnvelopeName(name: string): boolean {
 const ROOM_WORD_RE = new RegExp(ROOM_RULES.map((r) => r.re.source).join('|'));
 
 /** Vrai si le texte ressemble à un nom de pièce (et non à une cote, un titre de plan…). */
+/**
+ * Textes de cartouche ou de légende qui contiennent un mot de pièce sans en être une : « Bureau d'études Schmit »,
+ * « Einfamilienwohnhaus », « Kindergarten », « Plan des combles », « Voir détail cuisine », « Mur entre garage et séjour ».
+ */
+const NOT_A_ROOM_RE =
+  /bureau d'etudes|d'architecture|architekt|architecte|ingenieur|einfamilien|mehrfamilien|zweifamilien|wohnhaus|wohnanlage|kindergarten|^plan\b|^grundriss\b|^voir\b|^siehe\b|^detail\b|^hauteur\b|^hohe\b|^mur\b|^wand\b|parking public|^bad [a-z]+$/;
+
 /** Mots de liaison : un texte qui commence ou finit par l'un d'eux est un bout de phrase, pas un nom de pièce. */
 const LINK_WORD_RE = /^(?:and|or|the|between|with|et|ou|avec|entre|und|oder|mit|zwischen)$/;
 
@@ -129,6 +140,7 @@ export function looksLikeRoomName(text: string): boolean {
   const words = f.split(/\s+/).filter(Boolean);
   if (words.length > 5) return false;
   if (LINK_WORD_RE.test(words[0]!) || LINK_WORD_RE.test(words[words.length - 1]!)) return false;
+  if (NOT_A_ROOM_RE.test(f.replace(/[’`]/g, "'"))) return false;
   return ROOM_WORD_RE.test(f);
 }
 
@@ -253,8 +265,14 @@ export function isRoofLevelName(name: string): boolean {
 }
 
 /** Reconnaît un nom de niveau dans un titre de plan ou un nom de calque/feuille. */
+const UPPER_STOREY_RE = /\b(\d{1,2})\s*(?:e|eme|ieme)\s*etage\b|\betage\s*(\d{1,2})\b|\b(\d{1,2})\.\s*(?:og\b|obergeschoss)|\b(\d{1,2})\s?og\b|\br\+(\d{1,2})\b/;
+
 export function guessStorey(text: string): { fr: string; de: string; rank: number } | null {
   const f = fold(text);
+  // Étages 3 et plus (« 3e étage », « 4. Obergeschoss », « R+5 ») : une seule règle, le rang est le numéro.
+  const upper = UPPER_STOREY_RE.exec(f);
+  const n = upper ? Number(upper[1] ?? upper[2] ?? upper[3] ?? upper[4] ?? upper[5]) : 0;
+  if (n >= 3 && n <= 60) return { fr: `${n}e étage`, de: `${n}. Obergeschoss`, rank: n };
   for (const r of STOREY_RULES) if (r.re.test(f)) return { fr: r.fr, de: r.de, rank: r.rank };
   return null;
 }

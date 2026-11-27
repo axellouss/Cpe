@@ -1,15 +1,16 @@
 /**
- * Outil « façades » : toucher une arête pour dire ce qu'il y a derrière
- * (extérieur → voisin chauffé → local non chauffé → terre), ou choisir dans la bulle.
- * Chaque état a sa couleur ET son motif de trait (lisible sans distinguer les couleurs).
+ * Outil « façades » : dire ce qu'il y a derrière chaque arête (extérieur, voisin chauffé, local non chauffé, terre).
+ * Deux gestes, jamais de surprise : un toucher DÉSIGNE la façade et ouvre les quatre choix, le choix actuel marqué ;
+ * rien ne change tant qu'un choix n'a pas été touché. Le choix fait, la bulle se referme : on passe à la façade
+ * suivante. Chaque état a sa couleur ET son motif de trait (lisible sans distinguer les couleurs).
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { edgeLength } from '../../../core/geometry';
 import type { Boundary, Vec2 } from '../../../core/types';
 import { hitEdge, hitRadius } from '../hitTest';
-import { BoundarySwatch, Hint, Popover, Segmented } from '../hud';
+import { BoundarySwatch, ChoiceList, Hint, Popover } from '../hud';
 import { formatDecimal } from '../numbers';
-import { BOUNDARY_CYCLE, nextBoundary, pointOnEdge, setBoundary, syncedEdges } from '../outlineOps';
+import { BOUNDARY_CYCLE, pointOnEdge, setBoundary, syncedEdges } from '../outlineOps';
 import { EdgeLengthLabels, EdgeLines, GhostOutlines, OpeningMarks, OutlineFill } from '../shapes';
 import { AreaCounters, BottomBar, CounterRow, Overlay, ScaleWarning, TopBar, scaleIsGuess, useController } from '../toolShared';
 import type { ToolContext } from '../toolTypes';
@@ -19,6 +20,8 @@ export function BoundaryTool({ ctx }: { ctx: ToolContext }) {
   const { storey, view, tr } = ctx;
   const [picked, setPicked] = useState<{ edge: number; at: Vec2 } | null>(null);
   const [hot, setHot] = useState<number | null>(null);
+  /** Élément du plan (façade atteinte au clavier) à qui rendre le clavier quand la bulle se referme. */
+  const returnFocus = useRef<Element | null>(null);
   const edges = syncedEdges(storey);
   const mpu = storey.metresPerUnit.value;
   const approx = scaleIsGuess(storey);
@@ -28,16 +31,34 @@ export function BoundaryTool({ ctx }: { ctx: ToolContext }) {
   const boundaryOf = (edge: number): Boundary => edges[edge]?.boundary ?? 'outside';
   const lengthOf = (edge: number): number => edgeLength(storey.outline, edge) * mpu;
 
-  const cycle = (edge: number, at: Vec2): void => {
-    ctx.commit(setBoundary(storey, edge, nextBoundary(boundaryOf(edge))));
+  /** Désigne une façade et ouvre les choix. Ne modifie rien. */
+  const select = (edge: number, at: Vec2, from: Element | null): void => {
+    returnFocus.current = from;
     setPicked({ edge, at });
+  };
+
+  const close = (): void => {
+    setPicked(null);
+    const el = returnFocus.current;
+    returnFocus.current = null;
+    if (el instanceof SVGElement && el.isConnected) el.focus({ preventScroll: true });
+    else ctx.focusSurface();
+  };
+
+  /** Le seul endroit où la façade change : un choix touché dans la bulle. */
+  const choose = (boundary: Boundary): void => {
+    if (current) {
+      const next = setBoundary(storey, current.edge, boundary);
+      if (next !== storey) ctx.commit(next);
+    }
+    close();
   };
 
   useController(ctx, {
     tap(p) {
       if (!hasOutline) return;
       const hit = hitEdge(storey.outline, view, p.screen, hitRadius(p.pointerType) * 1.3);
-      if (hit) cycle(hit.index, hit.point);
+      if (hit) select(hit.index, hit.point, null);
       else setPicked(null);
     },
     hover(p) {
@@ -50,7 +71,7 @@ export function BoundaryTool({ ctx }: { ctx: ToolContext }) {
     },
     key(e) {
       if (e.key === 'Escape' && current) {
-        setPicked(null);
+        close();
         return true;
       }
       return false;
@@ -78,7 +99,7 @@ export function BoundaryTool({ ctx }: { ctx: ToolContext }) {
                 length: formatDecimal(lengthOf(i), 2),
                 boundary: tr(`plan.boundary.${boundaryOf(i)}`),
               }),
-            activate: (i) => cycle(i, pointOnEdge(storey.outline, i, 0.5)),
+            activate: (i) => select(i, pointOnEdge(storey.outline, i, 0.5), typeof document === 'undefined' ? null : document.activeElement),
           }}
         />
         <OpeningMarks outline={storey.outline} openings={storey.openings} metresPerUnit={mpu} view={view} />
@@ -89,27 +110,25 @@ export function BoundaryTool({ ctx }: { ctx: ToolContext }) {
       </TopBar>
       {current ? (
         <Popover
+          key={current.edge}
           anchor={sheetToScreen(view, current.at)}
           size={ctx.size}
           compact={ctx.compact}
           label={tr('plan.boundary.title')}
-          onClose={() => {
-            setPicked(null);
-            ctx.focusSurface();
-          }}
+          onClose={close}
+          className="p2c-plan__popover--choices"
           testId="plan-boundary-popover"
         >
           <p className="p2c-plan__popover-title">
             {tr('plan.boundary.title')} <span className="p2c-plan__muted">· {formatDecimal(lengthOf(current.edge), 2)} m</span>
           </p>
-          <Segmented<Boundary>
-            name="p2c-boundary"
+          <ChoiceList<Boundary>
             label={tr('plan.boundary.title')}
             value={boundaryOf(current.edge)}
             options={BOUNDARY_CYCLE.map((b) => ({ value: b, label: tr(`plan.boundary.${b}`), swatch: <BoundarySwatch boundary={b} /> }))}
-            onChange={(b) => ctx.commit(setBoundary(storey, current.edge, b))}
-            vertical
-            autoFocus
+            onChoose={choose}
+            currentLabel={tr('plan.boundary.current')}
+            testId="plan-boundary-choices"
           />
         </Popover>
       ) : null}
@@ -126,7 +145,7 @@ export function BoundaryTool({ ctx }: { ctx: ToolContext }) {
           </ul>
         ) : null}
         <CounterRow ctx={ctx}>
-          <AreaCounters ctx={ctx} storey={storey} />
+          <AreaCounters ctx={ctx} storey={storey} secondary />
           <ScaleWarning ctx={ctx} storey={storey} />
         </CounterRow>
       </BottomBar>

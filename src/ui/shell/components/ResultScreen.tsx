@@ -3,6 +3,8 @@
  *  - en haut, les contrôles de plausibilité, les bloquants d'abord, chacun avec un bouton qui mène à l'endroit à corriger ;
  *  - par valeur, « copier » (avec confirmation visible et annoncée) et l'étiquette de provenance ;
  *  - par tableau, « copier le bloc », la copie ligne par ligne ou cellule par cellule, et une coche « saisie » ;
+ *    la grille ne montre que les colonnes de LuxEeB-Tool, dans son ordre : les aides de lecture et la remarque
+ *    passent sous la ligne, et sur un écran étroit chaque ligne devient une carte (voir result.css) ;
  *  - téléchargements : CSV, projet, dossier imprimable.
  * Volontairement absents : toute classe énergétique (seul LuxEeB-Tool la calcule) et toute promesse de saisie
  * automatique (l'outil n'a pas de fonction d'import : l'expert copie, colle et relit).
@@ -11,7 +13,7 @@ import { useMemo } from 'react';
 import type { Finding, LuxeebSheets, Project, Severity } from '../../../core/types';
 import { findingText } from '../../../engine';
 import { buildReportHtml, exportFileName, EXPORT_MIME, guideDisclaimer, PASTE_EOL, projectFileErrorMessage, sheetsToCsv } from '../../../export';
-import type { GuideItem, GuideSection, GuideTable } from '../../../export';
+import type { GuideItem, GuideRow, GuideSection, GuideTable } from '../../../export';
 import { serializeWorkspace } from '../autosave';
 import { downloadText, openPrintable } from '../browser';
 import { derive, guide } from '../compute';
@@ -21,6 +23,7 @@ import { AnimatedNumber, Badge, CopyButton, ProvenanceTag, useT } from './common
 import type { BadgeTone } from './common';
 import { Icon } from './icons';
 import type { IconName } from './icons';
+import './result.css';
 
 const SEVERITIES: readonly Severity[] = ['block', 'warn', 'info'];
 const SEVERITY_TONE: Record<Severity, BadgeTone> = { block: 'bad', warn: 'warn', info: 'info' };
@@ -33,8 +36,13 @@ export function shortHash(text: string): string {
   return h.toString(36);
 }
 
-export function rowKey(sectionKey: string, tableKey: string, index: number, cells: readonly string[]): string {
-  return `${sectionKey}/${tableKey}/${index}/${shortHash(cells.join('␟'))}`;
+/**
+ * Clé d'une coche « saisie dans LuxEeB-Tool » : l'identifiant stable de la ligne et l'empreinte de ce qui s'y
+ * saisit (nombres et termes de l'outil). Aucun texte traduit n'y entre : la coche survit au changement de langue,
+ * et tombe dès qu'une valeur à saisir sur cette ligne change.
+ */
+export function rowKey(sectionKey: string, tableKey: string, row: Pick<GuideRow, 'id' | 'stamp'>): string {
+  return `${sectionKey}/${tableKey}/${row.id}/${shortHash(row.stamp)}`;
 }
 
 /**
@@ -55,6 +63,39 @@ function splitTerm(label: string): [string, string] {
 }
 
 const NUMERIC = /^-?\d+(?:,\d+)?$/;
+
+/** Répartition des colonnes d'un tableau entre la grille (colonnes de l'outil) et la seconde ligne (aides). */
+export interface TableLayout {
+  /** Indices des colonnes de LuxEeB-Tool, dans son ordre : ce sont les seules de la grille. */
+  grid: number[];
+  /** Indices des colonnes d'aide à la lecture, montrées sous la ligne. */
+  aside: number[];
+  /** Par colonne : toutes ses cellules remplies sont des nombres (en-tête et valeurs alignés à droite). */
+  numeric: boolean[];
+  /** Première colonne de texte de la grille — le nom de la ligne —, ou -1 : elle prend la largeur d'une carte. */
+  lead: number;
+  /** Par colonne : texte long de l'outil (Einbausituation…), qui prend deux places sur une carte. */
+  wide: boolean[];
+}
+
+/** Au-delà, un texte ne tient plus dans une case de carte d'un tiers de téléphone (« Horizontal » y tient). */
+const WIDE_TEXT = 12;
+
+export function tableLayout(table: GuideTable): TableLayout {
+  const helper = new Set(table.aside);
+  const all = table.columns.map((_, c) => c);
+  const filled = (c: number): string[] => table.rows.map((row) => row.cells[c] ?? '').filter((cell) => cell !== '');
+  const numeric = all.map((c) => filled(c).length > 0 && filled(c).every((cell) => NUMERIC.test(cell)));
+  const grid = all.filter((c) => !helper.has(c));
+  const lead = grid.find((c) => filled(c).some((cell) => !NUMERIC.test(cell))) ?? -1;
+  return {
+    grid,
+    aside: all.filter((c) => helper.has(c)),
+    numeric,
+    lead,
+    wide: all.map((c) => c !== lead && !helper.has(c) && filled(c).some((cell) => cell.length > WIDE_TEXT)),
+  };
+}
 
 // ───────────────────────────── Contrôles ─────────────────────────────
 
@@ -178,7 +219,15 @@ function ItemRow({ item }: { item: GuideItem }) {
         <ProvenanceTag from={item.from} />
       </div>
       <div className="gitem__copy">
-        {item.copy ? (
+        {item.copy && item.copyIsMark ? (
+          // Ce bouton ne copie pas la valeur affichée (la liste des lignes) mais la marque à y poser : il la nomme.
+          <CopyButton
+            text={item.copy}
+            label={tr('shell.copy.mark', { value: item.copy })}
+            ariaLabel={tr('shell.copy.mark.aria', { value: item.copy, name: term })}
+            testId="copy-item"
+          />
+        ) : item.copy ? (
           <CopyButton text={item.copy} ariaLabel={tr('shell.copy.aria', { name: term })} testId="copy-item" />
         ) : item.from === 'user' || item.from === 'default' ? (
           // Réponse en clair pour une liste déroulante de l'outil : rien à coller, l'expert choisit l'entrée.
@@ -196,17 +245,23 @@ function TableBlock({ section, table }: { section: GuideSection; table: GuideTab
   const tr = useT();
   const store = useShellStore();
   const entered = useShell((s) => s.entered);
-  const keys = table.rows.map((row, i) => rowKey(section.key, table.key, i, row.cells));
+  const keys = table.rows.map((row) => rowKey(section.key, table.key, row));
   const done = keys.filter((k) => entered[k]).length;
-  // Colonnes dont toutes les cellules remplies sont des nombres : en-tête aligné à droite comme les valeurs.
-  const numeric = table.columns.map((_, c) => table.rows.length > 0 && table.rows.every((row) => !row.cells[c] || NUMERIC.test(row.cells[c] ?? '')) && table.rows.some((row) => row.cells[c]));
+  const layout = tableLayout(table);
+  const terms = table.columns.map(splitTerm);
+  // Sans bloc à coller, pas de copie de ligne (voir rowCopyText) : la colonne elle-même disparaît.
+  const hasRowCopy = table.rows.some((_, i) => rowCopyText(table, i) !== '');
+  const leadPosition = layout.grid.indexOf(layout.lead);
   const nameKey = `shell.result.table.${table.key}`;
   const name = tr(nameKey) === nameKey ? table.key : tr(nameKey);
+  const titleId = `gtable-${section.key}-${table.key}`;
 
   return (
     <div className="gtable" data-testid="guide-table" data-key={table.key}>
       <div className="gtable__bar">
-        <h3 className="gtable__name">{name}</h3>
+        <h3 className="gtable__name" id={titleId}>
+          {name}
+        </h3>
         <span className="gtable__count">
           {tr('shell.result.rows', { count: table.rows.length })}
           {table.rows.length > 0 ? ` · ${tr('shell.result.entered', { done, total: table.rows.length })}` : ''}
@@ -217,66 +272,127 @@ function TableBlock({ section, table }: { section: GuideSection; table: GuideTab
       {table.pasteHint ? <p className={`gtable__hint ${table.pasteBlock ? 'gtable__hint--try' : ''}`}>{table.pasteHint}</p> : null}
 
       {table.rows.length > 0 ? (
-        <div className="gtable__scroll" role="region" aria-label={name} tabIndex={0}>
-          <table className="gtable__table">
-            <thead>
-              <tr>
-                <th scope="col" className="gtable__check">
+        <div className="gtable__frame">
+          {/* Les rôles sont écrits en toutes lettres : la mise en cartes (result.css) change l'affichage des
+              éléments du tableau, et il doit rester un tableau pour un lecteur d'écran. */}
+          <table className="gtable__table" role="table" aria-labelledby={titleId}>
+            <thead role="rowgroup">
+              <tr role="row">
+                <th scope="col" role="columnheader" className="gtable__check">
                   <span className="visually-hidden">{tr('shell.result.enteredColumn')}</span>
                   <Icon name="check" size={15} />
                 </th>
-                {table.columns.map((column, c) => {
-                  const [term, translation] = splitTerm(column);
+                {layout.grid.map((c) => {
+                  const [term, translation] = terms[c]!;
                   return (
-                    <th scope="col" key={c} className={numeric[c] ? 'num' : undefined}>
-                      <span className="gtable__term">{term}</span>
+                    <th
+                      scope="col"
+                      role="columnheader"
+                      key={c}
+                      className={`gtable__head ${c === layout.lead ? 'gtable__head--lead' : ''} ${layout.numeric[c] ? 'num' : ''} ${translation ? 'has-translation' : ''}`}
+                    >
+                      {/* Avec une traduction à côté, le terme est celui de l'outil : de l'allemand, à prononcer comme tel. */}
+                      <span className="gtable__term" lang={translation ? 'de' : undefined}>
+                        {term}
+                      </span>
                       {translation ? <span className="gtable__translation">{translation}</span> : null}
                     </th>
                   );
                 })}
-                <th scope="col">{tr('shell.result.source')}</th>
-                <th scope="col">
-                  <span className="visually-hidden">{tr('shell.result.copyRow')}</span>
+                <th scope="col" role="columnheader" className="gtable__source">
+                  {tr('shell.result.source')}
                 </th>
+                {hasRowCopy ? (
+                  <th scope="col" role="columnheader" className="gtable__rowcopy">
+                    <span className="visually-hidden">{tr('shell.result.copyRow')}</span>
+                  </th>
+                ) : null}
               </tr>
             </thead>
             {table.rows.map((row, i) => {
               const key = keys[i]!;
               const isEntered = entered[key] === true;
+              const lineCopy = rowCopyText(table, i);
+              const previous = table.rows[i - 1];
+              // Une même remarque sur des lignes à déduire qui se suivent n'est dite qu'une fois.
+              const note = row.note && !(row.deduct && previous?.deduct && previous.note === row.note) ? row.note : '';
+              const helpers = layout.aside.filter((c) => (row.cells[c] ?? '') !== '');
               return (
-                <tbody key={key} className={`gtable__row ${row.deduct ? 'is-deduct' : ''} ${isEntered ? 'is-entered' : ''}`} data-testid="guide-row">
-                  <tr>
-                    <td className="gtable__check">
-                      <input
-                        type="checkbox"
-                        checked={isEntered}
-                        onChange={() => store.getState().toggleEntered(key)}
-                        aria-label={tr('shell.result.enteredRow', { n: i + 1 })}
-                        data-testid="row-entered"
-                      />
+                <tbody
+                  key={row.id}
+                  role="rowgroup"
+                  className={`gtable__row ${row.deduct ? 'is-deduct' : ''} ${isEntered ? 'is-entered' : ''}`}
+                  data-testid="guide-row"
+                  data-row={row.id}
+                >
+                  <tr role="row" className="gtable__main">
+                    <td role="cell" className="gtable__check">
+                      <label className="gtable__tick">
+                        <input
+                          type="checkbox"
+                          checked={isEntered}
+                          onChange={() => store.getState().toggleEntered(key)}
+                          aria-label={tr('shell.result.enteredRow', { n: i + 1 })}
+                          data-testid="row-entered"
+                        />
+                      </label>
                     </td>
-                    {row.cells.map((cell, c) => (
-                      <td key={c} className={NUMERIC.test(cell) ? 'num' : ''}>
-                        {cell ? (
-                          <CopyButton text={cell} variant="cell" ariaLabel={tr('shell.copy.cell', { value: cell, column: splitTerm(table.columns[c] ?? '')[0] })}>
-                            {cell}
-                          </CopyButton>
-                        ) : null}
-                      </td>
-                    ))}
-                    <td>
+                    {layout.grid.map((c, position) => {
+                      const cell = row.cells[c] ?? '';
+                      const [term, translation] = terms[c]!;
+                      const place =
+                        c === layout.lead
+                          ? 'gtable__cell--lead'
+                          : leadPosition > 0 && position < leadPosition
+                            ? 'gtable__cell--index'
+                            : layout.wide[c]
+                              ? 'gtable__cell--wide'
+                              : '';
+                      return (
+                        <td role="cell" key={c} className={`gtable__cell ${place} ${NUMERIC.test(cell) ? 'num' : ''}`} data-testid="row-cell">
+                          {/* Nom de la colonne dans l'outil, visible sur chaque carte ; en grille, l'en-tête le donne déjà. */}
+                          <span className="gtable__label" aria-hidden="true" lang={translation ? 'de' : undefined}>
+                            {term}
+                          </span>
+                          {cell ? (
+                            <CopyButton text={cell} variant="cell" ariaLabel={tr('shell.copy.cell', { value: cell, column: term })}>
+                              {cell}
+                            </CopyButton>
+                          ) : (
+                            <span className="gtable__none" aria-hidden="true">
+                              –
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td role="cell" className="gtable__source">
                       <ProvenanceTag from={row.from} />
                     </td>
-                    <td className="gtable__rowcopy">
-                      {rowCopyText(table, i) ? (
-                        <CopyButton text={rowCopyText(table, i)} label={tr('shell.result.copyRow.short')} ariaLabel={tr('shell.result.copyRow.aria', { n: i + 1 })} testId="copy-row" />
-                      ) : null}
-                    </td>
+                    {hasRowCopy ? (
+                      <td role="cell" className="gtable__rowcopy">
+                        {lineCopy ? (
+                          <CopyButton text={lineCopy} label={tr('shell.result.copyRow.short')} ariaLabel={tr('shell.result.copyRow.aria', { n: i + 1 })} testId="copy-row" />
+                        ) : null}
+                      </td>
+                    ) : null}
                   </tr>
-                  {row.note && !(row.deduct && table.rows[i - 1]?.deduct && table.rows[i - 1]?.note === row.note) ? (
-                    <tr className="gtable__noterow">
-                      <td />
-                      <td colSpan={row.cells.length + 2}>{row.note}</td>
+                  {helpers.length > 0 || note ? (
+                    <tr role="row" className="gtable__aside" data-testid="row-aside">
+                      <td role="cell" className="gtable__check" />
+                      <td role="cell" colSpan={layout.grid.length + (hasRowCopy ? 2 : 1)}>
+                        {helpers.length > 0 ? (
+                          <dl className="gtable__more">
+                            {helpers.map((c) => (
+                              <div key={c}>
+                                <dt>{table.columns[c]}</dt>
+                                <dd>{row.cells[c]}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        ) : null}
+                        {note ? <p className="gtable__note">{note}</p> : null}
+                      </td>
                     </tr>
                   ) : null}
                 </tbody>
@@ -405,10 +521,10 @@ export function ResultScreen() {
     let done = 0;
     let total = 0;
     for (const table of section.tables) {
-      table.rows.forEach((row, i) => {
+      for (const row of table.rows) {
         total++;
-        if (entered[rowKey(section.key, table.key, i, row.cells)]) done++;
-      });
+        if (entered[rowKey(section.key, table.key, row)]) done++;
+      }
     }
     return { done, total };
   };

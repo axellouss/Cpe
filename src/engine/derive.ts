@@ -358,7 +358,10 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
         continue;
       }
 
-      const construction = resolveConstruction(model, edge?.constructionId ?? null, defaultWallId(boundary), lang);
+      // Un type qui n'est pas (ou plus) un mur ne peut pas habiller une façade : on retombe sur le type par défaut.
+      const edgeTypeId = edge?.constructionId ?? null;
+      const wallTypeId = edgeTypeId !== null && model.constructions.some((c) => c.id === edgeTypeId && c.category === 'wall') ? edgeTypeId : null;
+      const construction = resolveConstruction(model, wallTypeId, defaultWallId(boundary), lang);
       const key = `${construction.id}|${boundary}|${orientation}|${heightCm}`;
       let group = walls.get(key);
       if (!group) {

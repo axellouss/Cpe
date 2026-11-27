@@ -29,6 +29,7 @@ import type {
   Sourced,
   Storey,
   StoreyEdge,
+  TopClosure,
   Vec2,
 } from '../core/types';
 import { guessStorey, isRoofLevelName } from '../semantics/labels';
@@ -195,13 +196,16 @@ const ROOM_AREA_MISMATCH = 0.05;
  * surface habitable au-dessus de 1,80 ou 2,00 m sous rampant, typiquement — et c'est la mesure (faces intérieures,
  * hauteur libre ≥ 1,00 m quand le lecteur la connaît) qui est retenue, avec les deux valeurs en note.
  */
-function pickRoomArea(stated: number | undefined, measured: number | undefined): { value: number; note?: string } {
+function pickRoomArea(
+  stated: number | undefined,
+  measured: number | undefined,
+): { value: number; note?: string; measured: boolean } {
   const s = stated !== undefined && stated > 0 ? stated : undefined;
   const m = measured !== undefined && measured > 0 ? measured : undefined;
   if (s !== undefined && m !== undefined && Math.abs(s - m) / m > ROOM_AREA_MISMATCH) {
-    return { value: round(m, 2), note: `${round(s, 2)} / ${round(m, 2)}` };
+    return { value: round(m, 2), note: `${round(s, 2)} / ${round(m, 2)}`, measured: true };
   }
-  return { value: s ?? m ?? 0 };
+  return { value: s ?? m ?? 0, measured: s === undefined && m !== undefined };
 }
 
 export function createStorey(sheet: PlanSheet | null, name: string, model: BuildingModel): Storey {
@@ -249,6 +253,8 @@ export function createStorey(sheet: PlanSheet | null, name: string, model: Build
       heated: r.heatedGuess === 'yes',
       needsReview: r.heatedGuess === 'ask' || !(area > 0),
     };
+    // Surface mesurée sur le dessin : on garde sa valeur en unités de feuille, pour qu'elle suive une correction d'échelle.
+    if (picked.measured && metresPerUnit.value > 0) room.sheetArea = area / (metresPerUnit.value * metresPerUnit.value);
     if (r.polygon) room.polygon = r.polygon.map((p) => ({ x: p.x, y: p.y }));
     if (r.at) room.at = { x: r.at.x, y: r.at.y };
     return room;
@@ -265,7 +271,8 @@ export function createStorey(sheet: PlanSheet | null, name: string, model: Build
       detected.storeyHeight === undefined
         ? { value: DEFAULT_GROSS_HEIGHT, from: 'default' }
         : detected.eavesHeight === undefined
-          ? { value: detected.storeyHeight, from: 'plan' }
+          ? // Mesurée jusqu'au sommet des murs seulement (dernier niveau d'une maquette) : il manque la toiture.
+            { value: detected.storeyHeight, from: detected.storeyHeightToWallTop ? 'estimate' : 'plan' }
           : // Murs de hauteurs inégales : ni le faîtage ni un acrotère ne sont une hauteur d'étage. Sous des combles
             // (murs bas), la valeur ne sert que si l'expert écarte la toiture inclinée ; sinon on retient le plus
             // bas sommet de mur. Dans les deux cas : à confirmer.
@@ -352,14 +359,11 @@ export function restoreFootprint(storey: Storey, sheet: PlanSheet | null): Store
 /** Écart relatif en deçà duquel une largeur donnée par le lecteur est reconnue comme « mesurée sur le tracé ». */
 const MEASURED_WIDTH_TOLERANCE = 0.02;
 
-/** Écart relatif en deçà duquel la surface d'une pièce est reconnue comme « mesurée sur son polygone ». */
-const MEASURED_ROOM_TOLERANCE = 0.02;
-
 /**
  * Applique une nouvelle échelle à un étage (« poser la règle »). Tout ce qui a été MESURÉ sur la feuille avec
  * l'ancienne échelle suit la nouvelle :
  *  - les largeurs d'ouvertures mesurées sur le dessin (`sheetWidth`), tant que l'expert ne les a pas saisies ;
- *  - les surfaces de pièces qui valaient l'aire de leur polygone à l'ancienne échelle.
+ *  - les surfaces de pièces mesurées sur le dessin (`sheetArea`), tant que l'expert ne les a pas saisies.
  * Ne bougent pas : les valeurs saisies par l'expert, et les surfaces écrites sur le plan (elles ne dépendent pas
  * de l'échelle). Une largeur seulement estimée (échelle non confirmée) devient « à confirmer ». Renvoie un nouvel étage.
  */
@@ -378,11 +382,10 @@ export function rescaleStorey(storey: Storey, metresPerUnit: Sourced<number>): S
       return { ...o, width, from };
     }),
     rooms: storey.rooms.map((r): Room => {
-      if (!changed || r.area.from === 'user' || !r.polygon || r.polygon.length < 3) return r;
-      const sheetArea = polygonArea(r.polygon);
-      const measuredOld = sheetArea * old * old;
-      if (!(measuredOld > 0) || Math.abs(r.area.value - measuredOld) > MEASURED_ROOM_TOLERANCE * measuredOld) return r;
-      return { ...r, area: { ...r.area, value: round(sheetArea * next * next, 2) } };
+      // Seules les surfaces mesurées sur le dessin (`sheetArea`) dépendent de l'échelle ; une surface écrite sur le
+      // plan ne bouge pas, même si elle vaut à peu près l'aire du polygone.
+      if (!changed || r.area.from === 'user' || r.sheetArea === undefined) return r;
+      return { ...r, area: { ...r.area, value: round(r.sheetArea * next * next, 2) } };
     }),
   };
 }
@@ -432,6 +435,26 @@ function uniqueName(name: string, taken: ReadonlySet<string>): string {
   }
 }
 
+/** Vrai si le nom de la feuille désigne un sous-sol (rang ≤ −1) ; un rez-de-jardin est un niveau habité. */
+export function isBasementSheetName(name: string): boolean {
+  const guess = guessStorey(name);
+  return guess !== null && guess.rank <= -1;
+}
+
+/**
+ * Range des feuilles du bas vers le haut avec la règle du premier jet : altitudes si toutes connues, sinon rang
+ * des noms reconnus puis feuilles au nom inconnu dans l'ordre reçu.
+ */
+export function orderSheetsBottomUp<T extends PlanSheet>(sheets: readonly T[]): T[] {
+  const candidates: Candidate[] = sheets.map((sheet, docIndex) => ({
+    sheet,
+    docIndex,
+    elevation: sheet.detected.elevation,
+    guess: guessStorey(sheet.name),
+  }));
+  return sortBottomUp(candidates).map((c) => c.sheet as T);
+}
+
 export function modelFromDocument(doc: PlanDocument, lang: Lang): BuildingModel {
   const model = emptyModel(lang);
   model.storeysAligned = doc.storeysAligned;
@@ -442,7 +465,7 @@ export function modelFromDocument(doc: PlanDocument, lang: Lang): BuildingModel 
   doc.sheets.forEach((sheet, docIndex) => {
     const guess = guessStorey(sheet.name);
     // Rang ≤ −1 : sous-sol. Un rez-de-jardin (−0,5) est un niveau habité : il reste un étage chauffé.
-    if (guess && guess.rank <= -1) {
+    if (isBasementSheetName(sheet.name)) {
       // Sous-sol reconnu : hors volume chauffé par défaut → le premier étage chauffé repose sur un local non chauffé.
       hasBasement = true;
       return;
@@ -473,24 +496,30 @@ export function modelFromDocument(doc: PlanDocument, lang: Lang): BuildingModel 
   });
   if (hasBasement) model.bottom = defaultBottom('above-unheated');
 
-  // Dernier niveau aux murs de hauteurs inégales (pignons) : toiture inclinée sur combles chauffés, à confirmer.
-  const top = sorted[sorted.length - 1]?.sheet.detected;
-  const topStorey = model.storeys[model.storeys.length - 1];
-  if (top && topStorey && top.eavesHeight !== undefined && top.storeyHeight !== undefined) {
-    const rise = top.storeyHeight - top.eavesHeight;
-    const scale = topStorey.metresPerUnit.value;
-    const span = extentAlong(topStorey.outline, longestEdgeAngle(topStorey.outline)).across * scale;
-    if (rise > 0.5 && span > 1 && top.eavesHeight < ATTIC_MAX_EAVES) {
-      const pitch = radToDeg(Math.atan2(rise, span / 2));
-      model.top = {
-        ...defaultTop(),
-        kind: 'pitched-roof',
-        shape: 'gable',
-        pitchDeg: Math.round(Math.min(70, Math.max(5, pitch))),
-        kneeWallHeight: round(Math.max(0, top.eavesHeight), 2),
-        from: 'estimate',
-      };
-    }
-  }
+  const proposedTop = proposeTopClosure(sorted[sorted.length - 1]?.sheet ?? null, model.storeys[model.storeys.length - 1] ?? null);
+  if (proposedTop) model.top = proposedTop;
   return model;
+}
+
+/**
+ * Fermeture haute proposée d'après la feuille du dernier étage : quand ses murs ont des hauteurs inégales et que le
+ * plus bas est une jambette (combles), une toiture inclinée à deux pans avec sa jambette et sa pente, À CONFIRMER
+ * (provenance 'estimate'). null s'il n'y a rien à proposer : l'appelant garde sa fermeture.
+ */
+export function proposeTopClosure(sheet: PlanSheet | null, topStorey: Storey | null): TopClosure | null {
+  const top = sheet?.detected;
+  if (!top || !topStorey || top.eavesHeight === undefined || top.storeyHeight === undefined) return null;
+  const rise = top.storeyHeight - top.eavesHeight;
+  const scale = topStorey.metresPerUnit.value;
+  const span = extentAlong(topStorey.outline, longestEdgeAngle(topStorey.outline)).across * scale;
+  if (!(rise > 0.5 && span > 1 && top.eavesHeight < ATTIC_MAX_EAVES)) return null;
+  const pitch = radToDeg(Math.atan2(rise, span / 2));
+  return {
+    ...defaultTop(),
+    kind: 'pitched-roof',
+    shape: 'gable',
+    pitchDeg: Math.round(Math.min(70, Math.max(5, pitch))),
+    kneeWallHeight: round(Math.max(0, top.eavesHeight), 2),
+    from: 'estimate',
+  };
 }

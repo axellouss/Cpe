@@ -58,6 +58,8 @@ export interface LoadedDocument {
   id: string;
   doc: PlanDocument;
   urls: string[];
+  /** Empreinte du contenu lu : distingue le même fichier redéposé d'un AUTRE fichier qui porte le même nom. */
+  signature?: string;
 }
 
 /** Suivi de la lecture d'un fichier déposé. */

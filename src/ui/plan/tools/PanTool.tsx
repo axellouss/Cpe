@@ -24,7 +24,7 @@ export function PanTool({ ctx }: { ctx: ToolContext }) {
       </TopBar>
       <BottomBar>
         <CounterRow ctx={ctx}>
-          <AreaCounters ctx={ctx} storey={storey} />
+          <AreaCounters ctx={ctx} storey={storey} secondary />
           <ScaleWarning ctx={ctx} storey={storey} />
         </CounterRow>
       </BottomBar>

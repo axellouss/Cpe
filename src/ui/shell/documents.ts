@@ -8,7 +8,7 @@
  * ce qui permet de retrouver le fond de plan d'un projet rouvert.
  */
 import type { BottomKind, Lang, PlanDocument, PlanSheet, Project, Sourced } from '../../core/types';
-import { createEmptyProject, createStorey, modelFromDocument, proposeHeatedOutline } from '../../engine';
+import { createEmptyProject, createStorey, isBasementSheetName, modelFromDocument, proposeHeatedOutline, proposeTopClosure } from '../../engine';
 import { t } from '../../i18n';
 import { guessStorey } from '../../semantics/labels';
 import type { LoadedDocument } from './types';
@@ -38,9 +38,32 @@ export function collectObjectUrls(doc: PlanDocument): string[] {
   return urls;
 }
 
-export function toLoadedDocument(doc: PlanDocument): LoadedDocument {
+export function toLoadedDocument(doc: PlanDocument, signature?: string): LoadedDocument {
   const spaced = namespaceDocument(doc);
-  return { id: spaced.fileName, doc: spaced, urls: collectObjectUrls(spaced) };
+  const loaded: LoadedDocument = { id: spaced.fileName, doc: spaced, urls: collectObjectUrls(spaced) };
+  if (signature !== undefined) loaded.signature = signature;
+  return loaded;
+}
+
+/**
+ * Empreinte peu coûteuse d'un document lu : taille du fichier si elle est connue, nombre de feuilles, étendue et
+ * nombre de traits de chacune. Deux lectures du même fichier donnent la même ; deux plans différents, presque jamais.
+ */
+export function documentSignature(doc: PlanDocument, byteLength?: number): string {
+  const r = (v: number): string => (Number.isFinite(v) ? v.toFixed(3) : '?');
+  const sheets = doc.sheets.map((s) => {
+    const b = s.bbox;
+    return [s.name, r(b.minX), r(b.minY), r(b.maxX), r(b.maxY), s.segments?.length ?? 0, s.detected.outline?.length ?? 0, s.detected.rooms.length].join(',');
+  });
+  return [byteLength ?? '?', doc.kind, doc.sheets.length, ...sheets].join('|');
+}
+
+/** Nom libre pour un second fichier qui porte le nom d'un fichier déjà chargé : « plan.pdf (2) ». */
+export function distinctFileName(fileName: string, taken: readonly string[]): string {
+  for (let n = 2; ; n++) {
+    const candidate = `${fileName} (${n})`;
+    if (!taken.includes(candidate)) return candidate;
+  }
 }
 
 export interface SheetRef {
@@ -104,6 +127,8 @@ export interface SheetProposal {
   name: string;
   /** Nom de l'étage existant qui utilise déjà la feuille (rôle 'used'). */
   usedBy?: string;
+  /** Altitude du niveau si le fichier la donne (IFC) : sert à ranger une feuille cochée après coup. */
+  elevation?: number;
 }
 
 export interface Proposal {
@@ -118,9 +143,9 @@ export interface Proposal {
   storeysAligned: boolean;
 }
 
+/** Même règle que le moteur : un sous-sol est écarté d'office, un rez-de-jardin est un niveau habité. */
 function isBasementName(name: string): boolean {
-  const guess = guessStorey(name);
-  return guess !== null && guess.rank < 0;
+  return isBasementSheetName(name);
 }
 
 function proposedName(sheet: PlanSheet, lang: Lang): string {
@@ -174,14 +199,16 @@ export function proposeStoreys(documents: readonly LoadedDocument[], project: Pr
       sheets.push({ sheetId: ref.sheet.id, fileName: ref.doc.fileName, sheetName: ref.sheet.name, role: 'used', include: false, name: used, usedBy: used });
       return;
     }
-    sheets.push({
+    const entry: SheetProposal = {
       sheetId: ref.sheet.id,
       fileName: ref.doc.fileName,
       sheetName: ref.sheet.name,
       role,
       include: effectiveMode === 'append' ? false : include,
       name,
-    });
+    };
+    if (ref.sheet.detected.elevation !== undefined) entry.elevation = ref.sheet.detected.elevation;
+    sheets.push(entry);
   };
 
   for (const d of draft) {
@@ -219,12 +246,30 @@ export function includedSheets(proposal: Proposal): SheetProposal[] {
   return proposal.sheets.filter((s) => s.include);
 }
 
-/** Coche ou décoche une feuille. */
+/** Vrai si le niveau `a` est au-dessus du niveau `b`, d'après les altitudes ou, à défaut, les noms reconnus. */
+function isAbove(a: SheetProposal, b: SheetProposal): boolean {
+  if (a.elevation !== undefined && b.elevation !== undefined) return a.elevation > b.elevation;
+  const ra = guessStorey(a.sheetName)?.rank;
+  const rb = guessStorey(b.sheetName)?.rank;
+  return ra !== undefined && rb !== undefined && ra > rb;
+}
+
+/**
+ * Coche ou décoche une feuille. Une feuille cochée après coup (sous-sol chauffé, niveau sans contour) prend sa
+ * place dans la pile — sous le premier étage coché qui est au-dessus d'elle — au lieu de se poser sur la toiture.
+ */
 export function toggleProposalSheet(proposal: Proposal, sheetId: string, include: boolean): Proposal {
-  return {
-    ...proposal,
-    sheets: proposal.sheets.map((s) => (s.sheetId === sheetId && s.role !== 'used' ? { ...s, include } : s)),
-  };
+  const sheets = proposal.sheets.map((s) => (s.sheetId === sheetId && s.role !== 'used' ? { ...s, include } : s));
+  const moved = sheets.find((s) => s.sheetId === sheetId);
+  if (include && moved && moved.include) {
+    const others = sheets.filter((s) => s !== moved);
+    const at = others.findIndex((s) => s.include && isAbove(s, moved));
+    if (at >= 0) {
+      others.splice(at, 0, moved);
+      return { ...proposal, sheets: others };
+    }
+  }
+  return { ...proposal, sheets };
 }
 
 export function renameProposalSheet(proposal: Proposal, sheetId: string, name: string): Proposal {
@@ -273,6 +318,12 @@ export function applyProposal(proposal: Proposal, documents: readonly LoadedDocu
     model.storeysAligned = proposal.storeysAligned;
     if (base.model.bottom.from !== 'user') {
       model.bottom = { kind: proposedBottomKind(proposal), constructionId: base.model.bottom.constructionId, from: 'default' };
+    }
+    if (base.model.top.from !== 'user') {
+      // Dernier étage aux murs de hauteurs inégales (maquette) : la toiture inclinée proposée par le moteur, à confirmer.
+      const last = model.storeys[model.storeys.length - 1] ?? null;
+      const proposedTop = proposeTopClosure(last ? findSheet(documents, last.sheetId) : null, last);
+      model.top = proposedTop ?? { ...fresh.top, constructionId: base.model.top.constructionId };
     }
   } else if (includedSheets(proposal).length > 0) {
     // Des étages venus d'autres fichiers ne sont pas forcément superposables.

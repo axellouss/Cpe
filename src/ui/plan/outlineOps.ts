@@ -145,6 +145,111 @@ export function deleteVertex(storey: Storey, index: number): Storey {
   return { ...storey, outline, edges: nextEdges, openings };
 }
 
+// ───────────────────────────── Longueur d'un côté ─────────────────────────────
+
+/** Sinus de l'angle en dessous duquel deux directions sont « le même mur » (≈ 0,3°). */
+const SAME_WALL = 0.005;
+
+function cross2(a: Vec2, b: Vec2): number {
+  return a.x * b.y - a.y * b.x;
+}
+
+function dot2(a: Vec2, b: Vec2): number {
+  return a.x * b.x + a.y * b.y;
+}
+
+/**
+ * Donne au côté `index` (points[index] → point suivant) la longueur voulue, en unités de feuille.
+ * Son premier sommet reste en place, le suivant GLISSE LE LONG DU CÔTÉ.
+ *
+ *  - Tracé ouvert (`closed` = faux) : tous les points suivants sont décalés d'autant — la suite du tracé garde
+ *    ses directions et ses longueurs.
+ *  - Contour fermé : pour que les angles tiennent (une maison reste d'équerre), le mur qui part du sommet déplacé
+ *    glisse parallèlement à lui-même ; son autre bout suit la droite du côté d'après. Les sommets alignés sur ce
+ *    mur (mur coupé en deux pour distinguer « extérieur » et « mitoyen ») glissent avec lui.
+ *    Un triangle n'a pas de côté à faire glisser, et un sommet aligné sur son propre mur glisse seul.
+ *
+ * null si la longueur est illisible (≤ 0), le côté dégénéré, ou si le contour se replierait (côté voisin inversé).
+ */
+export function resizeSide(points: readonly Vec2[], index: number, length: number, closed: boolean): Vec2[] | null {
+  const n = points.length;
+  if (!(length > 0) || !Number.isFinite(length) || !Number.isInteger(index) || index < 0) return null;
+  if (closed ? n < 3 || index >= n : index >= n - 1) return null;
+  const at = (k: number): number => ((k % n) + n) % n;
+  const a = points[index]!;
+  const j = at(index + 1);
+  const b = points[j]!;
+  const len = dist(a, b);
+  if (len < 1e-12) return null;
+  const u = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+  const moved = { x: a.x + u.x * length, y: a.y + u.y * length };
+  const delta = { x: moved.x - b.x, y: moved.y - b.y };
+  const out = points.map((p) => ({ x: p.x, y: p.y }));
+  out[j] = moved;
+
+  if (!closed) {
+    for (let k = j + 1; k < n; k++) out[k] = { x: points[k]!.x + delta.x, y: points[k]!.y + delta.y };
+    return out;
+  }
+  if (n === 3) return out;
+
+  // Le mur qui part du sommet déplacé.
+  const c = points[at(j + 1)]!;
+  const v = { x: c.x - b.x, y: c.y - b.y };
+  const vl = Math.hypot(v.x, v.y);
+  if (vl < 1e-12) return out;
+  if (Math.abs(cross2(u, v)) <= SAME_WALL * vl) {
+    // Sommet aligné sur son propre mur : il glisse seul, sans dépasser le sommet suivant.
+    if (dot2(u, v) > 0 && dot2({ x: c.x - moved.x, y: c.y - moved.y }, u) <= 1e-9 * vl) return null;
+    return out;
+  }
+
+  // Dernier sommet de ce mur (e) : on saute les sommets alignés. f = sommet d'après, qui ne bouge pas.
+  let e = at(j + 1);
+  while (at(e + 1) !== index) {
+    const p = points[e]!;
+    const q = points[at(e + 1)]!;
+    const d = { x: q.x - p.x, y: q.y - p.y };
+    const dl = Math.hypot(d.x, d.y);
+    if (dl > 1e-12 && (Math.abs(cross2(v, d)) > SAME_WALL * vl * dl || dot2(v, d) < 0)) break;
+    e = at(e + 1);
+  }
+  const end = points[e]!;
+  const fixed = points[at(e + 1)]!;
+  const w = { x: end.x - fixed.x, y: end.y - fixed.y };
+  const wl = Math.hypot(w.x, w.y);
+  const denom = cross2(w, v);
+  // Pas de droite sur laquelle faire glisser le bout du mur : seul le sommet bouge.
+  if (wl < 1e-12 || Math.abs(denom) <= 1e-9 * wl * vl) return out;
+
+  // Nouveau bout du mur : intersection de la parallèle passant par le sommet déplacé et de la droite (fixed, end).
+  const t = cross2({ x: moved.x - fixed.x, y: moved.y - fixed.y }, v) / denom;
+  if (!(t > 1e-6)) return null;
+  const newEnd = { x: fixed.x + w.x * t, y: fixed.y + w.y * t };
+  const span = { x: newEnd.x - moved.x, y: newEnd.y - moved.y };
+  if (!(dot2(span, v) > 1e-9 * vl * vl)) return null;
+  const whole = dot2({ x: end.x - b.x, y: end.y - b.y }, v);
+  for (let q = at(j + 1); q !== e; q = at(q + 1)) {
+    const p = points[q]!;
+    const s = whole > 0 ? dot2({ x: p.x - b.x, y: p.y - b.y }, v) / whole : 0;
+    out[q] = { x: moved.x + span.x * s, y: moved.y + span.y * s };
+  }
+  out[e] = newEnd;
+  return out;
+}
+
+/**
+ * Longueur exacte (m) saisie pour le côté `edgeIndex` du contour (voir `resizeSide`). Les arêtes gardent leurs
+ * propriétés et leurs ouvertures : aucune n'est créée ni supprimée, seules leurs extrémités bougent.
+ * Renvoie l'étage inchangé si la longueur est impossible.
+ */
+export function setEdgeLength(storey: Storey, edgeIndex: number, metres: number): Storey {
+  const mpu = storey.metresPerUnit.value;
+  if (!(mpu > 0) || storey.outline.length < 3) return storey;
+  const outline = resizeSide(storey.outline, edgeIndex, metres / mpu, true);
+  return outline ? { ...storey, outline, edges: syncedEdges(storey) } : storey;
+}
+
 // ───────────────────────────── Contour entier ─────────────────────────────
 
 /**

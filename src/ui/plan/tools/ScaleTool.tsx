@@ -280,7 +280,7 @@ export function ScaleTool({ ctx }: { ctx: ToolContext }) {
         <Hint icon="↔">
           {!a && applied === null ? <strong>{tr('plan.scale.longest')} </strong> : null}
           {tr(hintKey)}
-          {ctx.coarse && !b ? <span className="p2c-plan__hint-sub"> {tr('plan.touch.aim')}</span> : null}
+          {ctx.coarse && !b ? <span className="p2c-plan__hint-sub"> {tr(ctx.compact ? 'plan.touch.aimShort' : 'plan.touch.aim')}</span> : null}
         </Hint>
         {a ? (
           <Actions>

@@ -7,7 +7,7 @@ import type { KeyboardEvent } from 'react';
 import { bboxOf, centroid } from '../../../core/geometry';
 import type { Room } from '../../../core/types';
 import { storeyMetrics } from '../../../engine';
-import { hitRoom, tagSize } from '../hitTest';
+import { hitRoom, roomMinTarget, roomTarget, tagSize } from '../hitTest';
 import { Counter, Hint } from '../hud';
 import { formatDecimal } from '../numbers';
 import { roomsToReview, toggleRoom } from '../outlineOps';
@@ -40,10 +40,13 @@ export function RoomsTool({ ctx }: { ctx: ToolContext }) {
 
   useController(ctx, {
     tap(p) {
-      const id = hitRoom(storey.rooms, view, p.screen, tagLabel);
+      // Une petite pièce (WC, placard) garde une cible confortable : 44 px au doigt, 24 px à la souris.
+      const id = hitRoom(storey.rooms, view, p.screen, tagLabel, roomMinTarget(p.pointerType));
       if (id !== null) toggle(id);
     },
   });
+  /** Cible minimale dessinée dans le calque (repère des tests et des outils d'accessibilité). */
+  const minTarget = roomMinTarget(ctx.coarse ? 'touch' : 'mouse');
 
   const keyToggle = (id: string) => (e: KeyboardEvent) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -70,6 +73,7 @@ export function RoomsTool({ ctx }: { ctx: ToolContext }) {
           const wPx = (bb.maxX - bb.minX) * view.scale;
           const hPx = (bb.maxY - bb.minY) * view.scale;
           const c = sheetToScreen(view, centroid(poly));
+          const target = roomTarget(room, view, minTarget);
           return (
             <g
               key={room.id}
@@ -81,6 +85,7 @@ export function RoomsTool({ ctx }: { ctx: ToolContext }) {
               onKeyDown={keyToggle(room.id)}
               data-room={room.id}
             >
+              {target ? <rect className="p2c-plan__room-hit" x={target.x} y={target.y} width={target.width} height={target.height} /> : null}
               <polygon className="p2c-plan__room-shape" points={toPoints(view, poly)} />
               {wPx > 46 && hPx > 30 ? (
                 <>
@@ -168,7 +173,7 @@ export function RoomsTool({ ctx }: { ctx: ToolContext }) {
             title={tr(sourceKey)}
             testId="plan-counter-an"
           />
-          <Counter label={tr('plan.counter.anSource')} value={tr(sourceKey)} />
+          <Counter label={tr('plan.counter.anSource')} value={tr(sourceKey)} secondary />
           {toReview > 0 ? <Counter tone="warn" label={tr('plan.counter.toReview')} value={String(toReview)} testId="plan-counter-review" /> : null}
         </CounterRow>
       </BottomBar>

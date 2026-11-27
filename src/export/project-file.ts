@@ -247,6 +247,8 @@ const readRoom: Reader<Room> = (value, path) => {
     heated: field(o, 'heated', path, asBoolean),
     needsReview: field(o, 'needsReview', path, asBoolean),
   };
+  const sheetArea = optional(o, 'sheetArea', path, asNumber);
+  if (sheetArea !== undefined) room.sheetArea = sheetArea;
   const polygon = optional(o, 'polygon', path, listOf(readVec2));
   if (polygon !== undefined) room.polygon = polygon;
   const at = optional(o, 'at', path, readVec2);

@@ -3,6 +3,10 @@
  * boutons ±45° / ±5°, champ numérique, flèches du clavier. Chaque façade extérieure affiche son secteur
  * (N, NE, E, SE, S, SW, W, NW) TOUJOURS accompagné de l'azimut en degrés : « O » veut dire ouest en français
  * et est en allemand, on écrit donc W/E et on donne les degrés ; le nom complet localisé est en infobulle.
+ *
+ * Écran étroit : le plan garde l'écran. La rose et ses commandes tiennent dans un bandeau bas de deux rangées
+ * (styles : « Téléphone » de plan-editor.css) ; la phrase de résultat n'y est plus affichée — les façades du plan
+ * la disent, à côté de l'aiguille — mais reste lue par les lecteurs d'écran (aria-valuetext de la rose).
  */
 import { useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
@@ -10,6 +14,7 @@ import { edgeOutwardNormal, normDeg } from '../../../core/geometry';
 import type { Orientation } from '../../../core/types';
 import { facadeOrientation, needleScreenAngle, northFromPointer, rotateNeedle, settleAngle, topSector } from '../compass';
 import { Button, Hint } from '../hud';
+import { isSteep } from '../labels';
 import { parseAngle } from '../numbers';
 import { syncedEdges } from '../outlineOps';
 import { EdgeLines, GhostOutlines, Label, OpeningMarks, OutlineFill, outsideLabel } from '../shapes';
@@ -106,15 +111,32 @@ export function NorthTool({ ctx }: { ctx: ToolContext }) {
       if (Math.hypot(b.x - a.x, b.y - a.y) < 14) continue;
       const o = facadeOrientation(storey.outline, i, angle);
       const n = edgeOutwardNormal(storey.outline, i);
+      // Écran étroit : étiquettes plus près du trait, et sur deux lignes le long des façades raides (secteur au-dessus
+      // de l'azimut) — elles ne débordent plus sur les côtés, le contour peut occuper l'écran.
+      const at = outsideLabel({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, n, ctx.compact ? 8 : 12);
+      const stacked = ctx.compact && isSteep(n);
       facades.push(
         <Label
           key={i}
-          {...outsideLabel({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, n, 12)}
+          {...at}
           className={`p2c-plan__label--facade ${o.borderline ? 'is-borderline' : ''}`}
           title={tr(o.borderline ? 'plan.north.facadeTitleBorderline' : 'plan.north.facadeTitle', { name: sectorName(o.sector), azimuth: o.azimuth })}
         >
-          <tspan className="p2c-plan__facade-sector">{o.sector}</tspan>
-          <tspan dx="4">{o.azimuth}°</tspan>
+          {stacked ? (
+            <>
+              <tspan className="p2c-plan__facade-sector" x={at.x} dy="-0.6em">
+                {o.sector}
+              </tspan>
+              <tspan x={at.x} dy="1.2em">
+                {o.azimuth}°
+              </tspan>
+            </>
+          ) : (
+            <>
+              <tspan className="p2c-plan__facade-sector">{o.sector}</tspan>
+              <tspan dx="4">{o.azimuth}°</tspan>
+            </>
+          )}
         </Label>,
       );
     }
@@ -135,7 +157,7 @@ export function NorthTool({ ctx }: { ctx: ToolContext }) {
         <g>{facades}</g>
       </Overlay>
       <TopBar>
-        <Hint>{tr('plan.north.hint')}</Hint>
+        <Hint>{tr(ctx.compact ? 'plan.north.hintShort' : 'plan.north.hint')}</Hint>
       </TopBar>
       <div className="p2c-plan__compass" data-p2c-ui="" data-testid="plan-compass">
         <svg

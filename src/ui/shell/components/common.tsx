@@ -190,7 +190,7 @@ export function CopyButton(props: CopyButtonProps) {
 
 export interface NumberFieldProps {
   value: number | null;
-  /** Appelé à chaque valeur valide ; null quand le champ est vidé (si `allowEmpty`). */
+  /** Appelé à la validation (sortie du champ, Entrée) avec une valeur valide ; null quand le champ est vidé (si `allowEmpty`). */
   onCommit(value: number | null): void;
   id?: string;
   ariaLabel?: string;
@@ -209,9 +209,15 @@ export interface NumberFieldProps {
   describedBy?: string;
 }
 
-/** Champ de nombre : accepte la virgule et le point, ne transmet que des valeurs valides, se remet en forme en sortant. */
+/**
+ * Champ de nombre : accepte la virgule et le point. La valeur n'est transmise qu'à la VALIDATION (sortie du champ
+ * ou Entrée), jamais frappe par frappe : taper « 280 » dans une hauteur ne doit pas laisser « 2 » dans le projet
+ * parce que « 2 » était valide au passage. Une saisie refusée laisse la valeur d'avant intacte et dit pourquoi.
+ */
 export function NumberField(props: NumberFieldProps) {
+  const tr = useT();
   const [draft, setDraft] = useState<string | null>(null);
+  const [refused, setRefused] = useState(false);
   const formatted = inputNumber(props.value, props.integer ? 0 : (props.digits ?? 3));
   const shown = draft ?? formatted;
 
@@ -225,13 +231,31 @@ export function NumberField(props: NumberFieldProps) {
     return true;
   };
 
-  const onChange = (text: string): void => {
-    setDraft(text);
-    if (!valid(text)) return;
-    props.onCommit(text.trim() === '' ? null : parseNumber(text));
+  const commit = (): void => {
+    const text = draft;
+    setDraft(null);
+    if (text === null || text === formatted) return;
+    if (!valid(text)) {
+      // Rien n'est transmis : le champ reprend la valeur d'avant, et on explique ce qui est attendu.
+      setRefused(text.trim() !== '');
+      return;
+    }
+    setRefused(false);
+    const next = text.trim() === '' ? null : parseNumber(text);
+    if (next !== props.value) props.onCommit(next);
   };
 
   const invalid = draft !== null && draft.trim() !== '' && !valid(draft);
+  const range =
+    props.min !== undefined && props.max !== undefined
+      ? tr('shell.field.range', {
+          min: inputNumber(props.min, props.integer ? 0 : (props.digits ?? 3)),
+          max: inputNumber(props.max, props.integer ? 0 : (props.digits ?? 3)),
+          unit: props.unit ? ` ${props.unit}` : '',
+        })
+      : tr('shell.field.invalid');
+  const errorId = props.id ? `${props.id}-error` : undefined;
+  const showError = invalid || refused;
   return (
     <span className={`field ${props.className ?? ''} ${invalid ? 'is-invalid' : ''}`}>
       <input
@@ -244,19 +268,30 @@ export function NumberField(props: NumberFieldProps) {
         placeholder={props.placeholder}
         aria-label={props.ariaLabel}
         aria-invalid={invalid || undefined}
-        aria-describedby={props.describedBy}
+        aria-describedby={[props.describedBy, showError ? errorId : undefined].filter(Boolean).join(' ') || undefined}
         data-testid={props.testId}
         onFocus={(e) => {
           setDraft(formatted);
+          setRefused(false);
           e.currentTarget.select();
         }}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={() => setDraft(null)}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
+          else if (e.key === 'Escape' && draft !== null && draft !== formatted) {
+            // Échap annule la frappe en cours sans rien transmettre.
+            e.stopPropagation();
+            setDraft(formatted);
+          }
         }}
       />
       {props.unit ? <span className="field__unit">{props.unit}</span> : null}
+      {showError ? (
+        <span className="field__error" id={errorId} role="alert">
+          {range}
+        </span>
+      ) : null}
     </span>
   );
 }

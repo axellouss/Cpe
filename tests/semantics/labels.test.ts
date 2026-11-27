@@ -57,6 +57,16 @@ describe('parseScaleText', () => {
     expect(parseScaleText('1:2')).toBeNull();
   });
 
+  it('ne prend pas une numérotation ou une surface pour une échelle', () => {
+    for (const text of ['Etage 1 : 100,5 m2', 'Niveau 1 : 250 m²', 'Phase 1:20 jours', 'N° 1:25', 'mit 1:75', 'm 1/3', 'Lot 1 : 100']) {
+      expect(parseScaleText(text), text).toBeNull();
+    }
+    // … sans perdre les vraies échelles.
+    expect(parseScaleText('1:100')).toBe(100);
+    expect(parseScaleText('Grundriss EG  M 1:50')).toBe(50);
+    expect(parseScaleText('Plan du rez-de-chaussée — échelle 1/100')).toBe(100);
+  });
+
   it('accepte la lettre M collée au rapport', () => {
     expect(parseScaleText('M=1:50')).toBe(50);
     expect(parseScaleText('M. 1:100')).toBe(100);
@@ -103,6 +113,26 @@ describe('classement des pièces', () => {
     // « abri » ne doit pas être trouvé dans « Fabrik »
     expect(classifyRoomName('Fabrikraum')).toBe('ask');
     expect(classifyRoomName('Abri de jardin')).toBe('no');
+  });
+
+  it('écarte les textes de cartouche qui contiennent un mot de pièce', () => {
+    for (const text of [
+      'Einfamilienwohnhaus',
+      'Bureau d’études Schmit',
+      'Bad Mondorf',
+      'Kindergarten',
+      'Voir détail cuisine',
+      'Hauteur sous plafond salon',
+      'Atelier d’architecture',
+      'Plan des combles',
+      'Parking public',
+      'Mur entre garage et séjour',
+    ]) {
+      expect(looksLikeRoomName(text), text).toBe(false);
+    }
+    for (const text of ['Bad', 'Bad 2', 'Bureau', 'Kinderzimmer', 'Wohnzimmer', 'Atelier', 'Parking', 'Salle de bain']) {
+      expect(looksLikeRoomName(text), text).toBe(true);
+    }
   });
 
   it('sait quels locaux sont hors de l’enveloppe par nature', () => {
@@ -174,6 +204,9 @@ describe('niveaux, ouvertures, nord, hauteurs', () => {
     expect(guessStorey('1er étage')?.rank).toBe(1);
     expect(guessStorey('Grundriss 1. OG')?.rank).toBe(1);
     expect(guessStorey('2. Obergeschoss')?.rank).toBe(2);
+    expect(guessStorey('3. Obergeschoss')).toEqual({ fr: '3e étage', de: '3. Obergeschoss', rank: 3 });
+    expect(guessStorey('4e étage')).toEqual({ fr: '4e étage', de: '4. Obergeschoss', rank: 4 });
+    expect(guessStorey('Plan R+5')?.rank).toBe(5);
     expect(guessStorey('SOUS-SOL')?.rank).toBe(-1);
     expect(guessStorey('Kellergeschoss')?.rank).toBe(-1);
     expect(guessStorey('Dachgeschoss')?.rank).toBe(9);

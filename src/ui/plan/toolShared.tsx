@@ -125,16 +125,31 @@ export function CounterRow(props: { ctx: ToolContext; children?: ReactNode }) {
   );
 }
 
-/** Surface brute et périmètre du contour affiché (y compris pendant un glissement). */
-export function AreaCounters(props: { ctx: ToolContext; storey: Storey }) {
+/**
+ * Surface brute et périmètre du contour affiché (y compris pendant un glissement).
+ * `secondary` : l'outil ne les modifie pas (façades, déplacement) — simple rappel, masqué sur téléphone.
+ */
+export function AreaCounters(props: { ctx: ToolContext; storey: Storey; secondary?: boolean }) {
   const { ctx, storey } = props;
   if (storey.outline.length < 3) return null;
   const m = storeyMetrics(storey);
   const approx = scaleIsGuess(storey) ? '≈ ' : '';
   return (
     <>
-      <Counter label={ctx.tr('plan.counter.grossArea')} value={approx + formatDecimal(m.grossArea, 2)} unit="m²" testId="plan-counter-area" />
-      <Counter label={ctx.tr('plan.counter.perimeter')} value={approx + formatDecimal(m.perimeter, 2)} unit="m" testId="plan-counter-perimeter" />
+      <Counter
+        label={ctx.tr('plan.counter.grossArea')}
+        value={approx + formatDecimal(m.grossArea, 2)}
+        unit="m²"
+        testId="plan-counter-area"
+        secondary={props.secondary}
+      />
+      <Counter
+        label={ctx.tr('plan.counter.perimeter')}
+        value={approx + formatDecimal(m.perimeter, 2)}
+        unit="m"
+        testId="plan-counter-perimeter"
+        secondary={props.secondary}
+      />
     </>
   );
 }

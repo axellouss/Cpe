@@ -107,6 +107,11 @@ export interface SheetDetection {
    * sommet de mur (m), c'est-à-dire la jambette. `storeyHeight` est alors la hauteur au faîtage, pas une hauteur d'étage.
    */
   eavesHeight?: number;
+  /**
+   * Vrai si `storeyHeight` est mesurée jusqu'au sommet des MURS du dernier niveau, sans la toiture au-dessus
+   * (dalle, complexe de toiture) : ce n'est pas encore une hauteur « de dalle à dalle », l'expert doit la confirmer.
+   */
+  storeyHeightToWallTop?: boolean;
   /** Hauteur libre (m) si lisible. */
   clearHeight?: number;
   /** Altitude du niveau (m) si lisible. */
@@ -216,6 +221,11 @@ export interface Room {
   heated: boolean;
   /** Vrai tant que l'expert n'a pas tranché une pièce ambiguë. */
   needsReview: boolean;
+  /**
+   * Surface MESURÉE sur le dessin, en unités de feuille au carré, quand `area` en vient (et non d'une surface écrite
+   * sur le plan) : si l'échelle est corrigée, `area` la suit tant que l'expert ne l'a pas saisie lui-même.
+   */
+  sheetArea?: number;
   polygon?: Vec2[];
   at?: Vec2;
 }

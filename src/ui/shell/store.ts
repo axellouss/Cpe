@@ -24,6 +24,8 @@ import { dropStoreyMarks, firstOpenStep, markPlanStep, nextOpenStep, planSteps, 
 import {
   applyProposal,
   defaultStoreyName,
+  distinctFileName,
+  documentSignature,
   findSheet,
   includedSheets,
   proposeStoreys,
@@ -480,7 +482,17 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
             }));
           };
           try {
-            const loaded = toLoadedDocument(await readPlanFile(file, { lang: get().lang }));
+            const doc = await readPlanFile(file, { lang: get().lang });
+            const signature = documentSignature(doc, (file as { size?: number }).size);
+            let loaded = toLoadedDocument(doc, signature);
+            const sameName = get().documents.find((d) => d.id === loaded.id);
+            if (sameName && sameName.signature !== undefined && sameName.signature !== signature) {
+              // Un AUTRE fichier du même nom (plan.pdf d'un second dossier) : il ne doit pas prendre la place du
+              // premier ni glisser son dessin sous des étages déjà tracés. On le garde à côté, sous un nom distinct.
+              const renamed = distinctFileName(doc.fileName, get().documents.map((d) => d.id));
+              loaded = toLoadedDocument({ ...doc, fileName: renamed }, signature);
+              toast(tr('shell.read.sameName', { name: doc.fileName, renamed }), 'warn');
+            }
             const previous = get().documents.find((d) => d.id === loaded.id);
             // Le même fichier redéposé remplace l'ancien : ses adresses d'objets sont libérées (sauf celles reprises).
             if (previous) for (const url of previous.urls) if (!loaded.urls.includes(url)) deps.revokeUrl(url);

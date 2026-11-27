@@ -1,0 +1,411 @@
+/*
+ * Tableaux de l'écran « Résultat » (ResultScreen.tsx, TableBlock).
+ *
+ * Grille : entre la coche « saisie » et l'étiquette de provenance, uniquement les colonnes de LuxEeB-Tool, dans son
+ * ordre. Les aides de lecture (repère du relevé, azimut, « contre »…) et la remarque passent sous la ligne et
+ * reviennent à la ligne : rien ne défile en largeur, tout ce qui se copie reste visible avec la coche et la source.
+ *
+ * Cartes : dès que le tableau n'a plus la place de sa grille (téléphone, tablette, colonne étroite), chaque ligne
+ * devient une carte où chaque valeur garde le nom de sa colonne dans l'outil. La bascule suit la largeur du
+ * TABLEAU (requête de conteneur), pas celle de la fenêtre : la table des matières latérale ne la fausse pas.
+ * Seuil : 900 px. La grille la plus large (enveloppe, 8 colonnes de l'outil) demande environ 800 px en français
+ * et 860 px en allemand ; la marge couvre des noms d'éléments plus longs que ceux de l'exemple.
+ *
+ * Le cadre et le titre du tableau (.gtable, .gtable__bar, .gtable__hint…) sont dans src/styles/screens.css.
+ */
+
+.gtable {
+  container: gtable / inline-size;
+}
+
+/* Filet de sécurité : un mot insécable démesuré fait défiler ce cadre, jamais la page. */
+.gtable__frame {
+  position: relative;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+}
+
+.gtable__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+/* ───────────── Grille ───────────── */
+
+.gtable__table th {
+  padding: 8px 5px;
+  border-bottom: 2px solid var(--border-strong);
+  background: var(--surface-2);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: left;
+  vertical-align: bottom;
+}
+
+.gtable__table th.num {
+  text-align: right;
+}
+
+/* Le nom de la ligne (Bauteil, Bezeichnung…) est le seul texte long : il reçoit la place que les nombres laissent. */
+.gtable__table th.gtable__head--lead {
+  width: 24%;
+}
+
+.gtable__term {
+  display: block;
+}
+
+.gtable__translation {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.gtable__main > td {
+  padding: 3px 2px;
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.gtable__cell {
+  overflow-wrap: break-word;
+}
+
+.gtable__cell.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.gtable__cell.num .copy--cell {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+/* Nom de la colonne et tiret des cellules vides : utiles sur une carte seulement. */
+.gtable__label,
+.gtable__none {
+  display: none;
+}
+
+.gtable__table .gtable__check {
+  width: 1%;
+  padding-right: 2px;
+  padding-left: 6px;
+  text-align: center;
+}
+
+.gtable__check .icon {
+  display: inline-block;
+  color: var(--muted);
+}
+
+/* La coche est petite : son libellé agrandit la zone cliquable. */
+.gtable__tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.gtable__table .gtable__source,
+.gtable__table .gtable__rowcopy {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.gtable__main > .gtable__rowcopy {
+  padding-right: 6px;
+  text-align: right;
+}
+
+.gtable__rowcopy .copy {
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+/* Seconde ligne : aides de lecture puis remarque, alignées sur le texte de la première colonne. */
+.gtable__aside > td {
+  padding: 0 9px 8px;
+  border-top: 0;
+}
+
+.gtable__more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 18px;
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.gtable__more > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  min-width: 0;
+}
+
+.gtable__more dt {
+  color: var(--muted);
+}
+
+.gtable__more dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.gtable__note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.gtable__more + .gtable__note {
+  margin-top: 2px;
+}
+
+/* Le « x » de la colonne Abzug et la coche disent déjà la même chose : la teinte n'est qu'un repère de plus. */
+.gtable__row.is-deduct {
+  background: color-mix(in srgb, var(--info-bg) 60%, transparent);
+}
+
+.gtable__row.is-entered {
+  background: color-mix(in srgb, var(--ok-bg) 55%, transparent);
+}
+
+.gtable__row.is-entered .gtable__cell {
+  color: var(--muted);
+}
+
+/* ───────────── Cartes ───────────── */
+
+@container gtable (max-width: 899px) {
+  .gtable__frame {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .gtable__table,
+  .gtable__table > thead,
+  .gtable__row,
+  .gtable__aside {
+    display: block;
+  }
+
+  /* L'en-tête devient la légende des cartes : les termes de l'outil qui ont une traduction. Les autres en-têtes
+     restent lisibles par un lecteur d'écran (masqués à l'œil, pas retirés). */
+  .gtable__table > thead > tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 16px;
+    padding: 0 2px;
+  }
+
+  .gtable__table th {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    border: 0;
+    white-space: nowrap;
+  }
+
+  .gtable__table th.has-translation {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 6px;
+    width: auto;
+    height: auto;
+    margin: 0 0 6px;
+    overflow: visible;
+    clip-path: none;
+    background: none;
+    font-size: 0.8rem;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .gtable__row {
+    padding: 8px 12px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-s);
+  }
+
+  .gtable__row + .gtable__row {
+    margin-top: 8px;
+  }
+
+  /*
+   * Une carte se lit dans l'ordre du tableau — c'est aussi l'ordre de la tabulation, rien n'est déplacé :
+   * la coche et le nom de la ligne, les valeurs chacune sous le nom de sa colonne, puis la provenance et la
+   * copie de la ligne.
+   */
+  .gtable__main {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  .gtable__table .gtable__main > td {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    width: auto;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .gtable__table .gtable__main > .gtable__check {
+    flex: none;
+    margin-left: -10px;
+  }
+
+  .gtable__tick {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Trois valeurs par rangée (quatre puis six sur une carte plus large) ; un texte long en prend deux places. */
+  .gtable__main > .gtable__cell {
+    --cell: calc((100% - 20px) / 3);
+    flex: 0 0 var(--cell);
+  }
+
+  .gtable__main > .gtable__cell--wide {
+    flex-basis: calc(2 * var(--cell) + 10px);
+  }
+
+  /* La coche, le numéro de ligne s'il y en a un, puis le nom, qui prend toute la place qui reste de la rangée. */
+  .gtable__table .gtable__main > .gtable__cell--index {
+    flex: 0 0 auto;
+    min-width: 44px;
+  }
+
+  .gtable__table .gtable__main > .gtable__cell--lead {
+    flex: 1 1 calc(100% - 46px);
+  }
+
+  .gtable__table .gtable__main > .gtable__cell--index ~ .gtable__cell--lead {
+    flex-basis: calc(100% - 110px);
+  }
+
+  /*
+   * Pied de carte, toujours sur sa propre rangée : la provenance à gauche, la copie de la ligne à droite.
+   * Le saut de rangée est un pseudo-élément placé juste avant eux ; l'ordre des vrais éléments ne change pas.
+   */
+  .gtable__main::before {
+    content: '';
+    order: 1;
+    flex: 0 0 100%;
+    height: 0;
+  }
+
+  .gtable__table .gtable__main > .gtable__source {
+    order: 1;
+    flex: 1 1 auto;
+    align-items: flex-start;
+    justify-content: center;
+  }
+
+  .gtable__table .gtable__main > .gtable__rowcopy {
+    order: 1;
+    flex: none;
+    justify-content: center;
+  }
+
+  .gtable__rowcopy .copy {
+    min-height: 44px;
+  }
+
+  .gtable__label {
+    display: block;
+    padding: 0 2px 2px;
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1.25;
+    overflow-wrap: break-word;
+    hyphens: auto;
+  }
+
+  .gtable__none {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 9px;
+    color: var(--muted);
+  }
+
+  .gtable__cell.num {
+    text-align: left;
+    white-space: normal;
+  }
+
+  /* Sans survol sur un écran tactile : le contour dit que la valeur se touche pour être copiée. */
+  .gtable__cell .copy--cell,
+  .gtable__cell.num .copy--cell {
+    justify-content: flex-start;
+    min-height: 44px;
+    padding: 4px 8px;
+    border-color: var(--border-strong);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .gtable__aside > td {
+    display: block;
+    padding: 8px 2px 0;
+  }
+
+  .gtable__aside > .gtable__check {
+    display: none;
+  }
+
+  /* Sur une carte étroite, les aides se lisent comme une phrase plutôt que comme des blocs empilés. */
+  .gtable__more,
+  .gtable__more > div {
+    display: inline;
+  }
+
+  .gtable__more dt,
+  .gtable__more dd {
+    display: inline;
+  }
+
+  .gtable__more dt {
+    margin-right: 6px;
+  }
+
+  .gtable__more > div + div::before {
+    content: ' · ';
+    color: var(--muted);
+  }
+
+  .gtable__more + .gtable__note {
+    margin-top: 4px;
+  }
+}
+
+@container gtable (min-width: 440px) and (max-width: 899px) {
+  .gtable__main > .gtable__cell {
+    --cell: calc((100% - 30px) / 4);
+  }
+}
+
+@container gtable (min-width: 640px) and (max-width: 899px) {
+  .gtable__main > .gtable__cell {
+    --cell: calc((100% - 50px) / 6);
+  }
+}

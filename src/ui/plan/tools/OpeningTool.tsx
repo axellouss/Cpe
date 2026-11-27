@@ -195,12 +195,16 @@ export function OpeningTool({ ctx }: { ctx: ToolContext }) {
             activate: (i) => openNew(i, 0.5),
           }}
         />
+        {/* Écran étroit : le texte suit les façades raides, deux rangées au plus ; au-delà, seules l'ouverture
+            sélectionnée et celles « à confirmer » gardent leur étiquette (les autres reviennent en zoomant). */}
         <OpeningMarks
           outline={storey.outline}
           openings={shown}
           metresPerUnit={mpu}
           view={view}
           labels
+          labelsAlong={ctx.compact}
+          labelTries={ctx.compact ? 2 : 5}
           selectedId={selectedId}
           interaction={{
             label: (o) => tr('plan.opening.markAria', { kind: kindLabel(o.kind), size: openingLabel(o) }),
@@ -214,7 +218,7 @@ export function OpeningTool({ ctx }: { ctx: ToolContext }) {
         />
       </Overlay>
       <TopBar>
-        <Hint>{tr(hasOutline ? 'plan.opening.hint' : 'plan.needOutline')}</Hint>
+        <Hint>{tr(!hasOutline ? 'plan.needOutline' : ctx.compact ? 'plan.opening.hintShort' : 'plan.opening.hint')}</Hint>
       </TopBar>
       {active && anchorSheet ? (
         <Popover

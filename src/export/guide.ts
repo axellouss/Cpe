@@ -26,7 +26,7 @@ import {
   termLabel,
   weakestProvenance,
 } from './format';
-import type { GuideItem, GuideSection, GuideTable } from './index';
+import type { GuideItem, GuideRow, GuideSection, GuideTable } from './index';
 import {
   LUXEEB_AREAS,
   LUXEEB_ENVELOPE,
@@ -49,10 +49,51 @@ import { envelopeDeductLines, envelopePasteBlock, luxeebEnvelopeRows, volumesPas
 const DASH = '—';
 
 type Params = Record<string, string | number>;
-type GuideRow = GuideTable['rows'][number];
+
+/** Un nombre tel que le guide l'écrit (« 12,50 », « 3 », « -1,2 ») : identique dans les deux langues. */
+const NUMERIC = /^-?\d+(?:,\d+)?$/;
+const STAMP_SEPARATOR = '\u241F';
+
+/**
+ * Ligne en cours de construction. `id` : identifiant stable, jamais un texte traduit. `fixed` : ce qui se saisit
+ * sur la ligne en plus de ses nombres et ne dépend pas de la langue (terme de l'outil, identifiant du type choisi).
+ */
+type RowDraft = Omit<GuideRow, 'stamp'> & { fixed?: readonly string[] };
+
+/**
+ * Assemble un tableau : rend les identifiants uniques (un doublon venu des données reçoit un suffixe) et calcule
+ * l'empreinte de chaque ligne — les nombres des colonnes de l'outil et les termes fixes, rien de traduit. C'est
+ * elle qui dit si une ligne déjà saisie a changé ; les colonnes d'aide (`aside`) n'y entrent pas.
+ */
+function guideTable(key: string, columns: string[], aside: number[], drafts: readonly RowDraft[], pasteBlock: string, pasteHint: string): GuideTable {
+  const used = new Set<string>();
+  const rows = drafts.map(({ fixed = [], ...row }): GuideRow => {
+    let id = row.id;
+    for (let n = 2; used.has(id); n++) id = `${row.id}#${n}`;
+    used.add(id);
+    const numbers = row.cells.filter((cell, c) => !aside.includes(c) && NUMERIC.test(cell));
+    return { ...row, id, stamp: [...numbers, ...fixed].join(STAMP_SEPARATOR) };
+  });
+  return { key, columns, aside, rows, pasteBlock, pasteHint };
+}
 
 /** Indice de la colonne « orientation avec azimut » du tableau d'enveloppe (aide de lecture, absente de l'outil). */
 export const ENVELOPE_AZIMUTH_COLUMN = 9;
+
+/**
+ * Colonnes d'aide à la lecture de chaque tableau (indices dans `columns`) : elles n'existent pas dans LuxEeB-Tool.
+ *  - constructions : catégorie, « contre », surface totale ;
+ *  - windowTypes : nombre de fenêtres, surface totale ;
+ *  - envelope : repère du relevé, orientation avec azimut, « contre » ;
+ *  - zones : hauteur libre.
+ */
+export const GUIDE_ASIDE_COLUMNS = {
+  constructions: [1, 2, 5],
+  windowTypes: [3, 4],
+  envelope: [8, ENVELOPE_AZIMUTH_COLUMN, 10],
+  zones: [4],
+  volumes: [],
+} as const satisfies Record<string, readonly number[]>;
 
 /** Clés des sections, dans l'ordre renvoyé par `buildGuide`. */
 export const GUIDE_SECTION_KEYS = ['project', 'opaque', 'windows', 'envelope', 'areas', 'check', 'remaining'] as const;
@@ -173,7 +214,7 @@ function uNote(lang: Lang, u: ConstructionSummary['u']): string {
   return u ? sourcedNote(lang, 'export.note.uFrom', u) : t(lang, 'export.note.uMissing');
 }
 
-function constructionRow(c: ConstructionSummary, lang: Lang, contributing: readonly Provenance[] = []): GuideRow {
+function constructionRow(c: ConstructionSummary, lang: Lang, contributing: readonly Provenance[] = []): RowDraft {
   const proposal = proposeSituation(c.category, c.boundary);
   const notes: string[] = [];
   if (c.boundary === 'heated') notes.push(t(lang, 'export.note.heatedBoundary'));
@@ -181,6 +222,8 @@ function constructionRow(c: ConstructionSummary, lang: Lang, contributing: reado
   if (c.boundary === 'ground') notes.push(t(lang, c.category === 'wall' ? 'export.note.groundWall' : 'export.note.groundFloor'));
   if (proposal.toCheck) notes.push(t(lang, 'export.note.situationCheck'));
   return {
+    // Un type d'élément donne une ligne par milieu : l'identifiant du type ne suffit pas.
+    id: `${c.constructionId}|${c.boundary}`,
     // Ordre de l'outil (« Eigene Angaben ») : Bezeichnung, puis U-Wert, puis Einbausituation.
     cells: [
       excelSafeText(c.name),
@@ -192,6 +235,7 @@ function constructionRow(c: ConstructionSummary, lang: Lang, contributing: reado
       c.ground?.slabArea === undefined ? '' : luxeebNumber(c.ground.slabArea),
       c.ground?.perimeter === undefined ? '' : luxeebNumber(c.ground.perimeter),
     ],
+    fixed: [proposal.option ?? ''],
     // Une surface calculée vaut ce que valent les lignes d'enveloppe dont elle est la somme.
     from: weakestProvenance(['calc', c.u?.from, ...contributing]),
     note: notes.join(' '),
@@ -226,9 +270,9 @@ function opaqueSection(sheets: LuxeebSheets, project: Project, lang: Lang): Guid
     );
   }
 
-  const table: GuideTable = {
-    key: 'constructions',
-    columns: [
+  const table = guideTable(
+    'constructions',
+    [
       termLabel(lang, O.designation, 'export.tr.designation'),
       t(lang, 'export.col.category'),
       t(lang, 'export.col.boundary'),
@@ -238,16 +282,17 @@ function opaqueSection(sheets: LuxeebSheets, project: Project, lang: Lang): Guid
       termLabel(lang, O.slabArea, 'export.tr.slabArea', 'm²'),
       termLabel(lang, O.perimeter, 'export.tr.perimeter', 'm'),
     ],
-    rows: sheets.constructions.map((c) =>
+    [...GUIDE_ASIDE_COLUMNS.constructions],
+    sheets.constructions.map((c) =>
       constructionRow(
         c,
         lang,
         sheets.envelope.filter((r) => r.constructionId === c.constructionId && r.boundary === c.boundary).map((r) => r.from),
       ),
     ),
-    pasteBlock: '',
-    pasteHint: t(lang, sheets.constructions.length > 0 ? 'export.paste.none' : 'export.paste.empty'),
-  };
+    '',
+    t(lang, sheets.constructions.length > 0 ? 'export.paste.none' : 'export.paste.empty'),
+  );
 
   return {
     key: 'opaque',
@@ -261,12 +306,13 @@ function opaqueSection(sheets: LuxeebSheets, project: Project, lang: Lang): Guid
 
 // ───────────────────────────── 3. Fenêtres ─────────────────────────────
 
-function windowRow(w: WindowSummary, lang: Lang, contributing: readonly Provenance[] = []): GuideRow {
+function windowRow(w: WindowSummary, lang: Lang, contributing: readonly Provenance[] = []): RowDraft {
   const notes: string[] = [];
   if (w.uw) notes.push(uNote(lang, w.uw));
   else notes.push(t(lang, 'export.note.windowValues', { psi: LUXEEB_WINDOWS.psiDefault }));
   if (w.g) notes.push(sourcedNote(lang, 'export.note.gFrom', w.g));
   return {
+    id: w.windowTypeId,
     cells: [
       excelSafeText(w.name),
       luxeebNumber(w.typicalWidth),
@@ -289,9 +335,9 @@ function windowsSection(sheets: LuxeebSheets, project: Project, lang: Lang): Gui
   if (generation !== null) {
     items.push(item('windows.generation', t(lang, 'export.label.windowGeneration'), generation, '', 'user', t(lang, 'export.note.windowGeneration')));
   }
-  const table: GuideTable = {
-    key: 'windowTypes',
-    columns: [
+  const table = guideTable(
+    'windowTypes',
+    [
       termLabel(lang, W.designation, 'export.tr.designation'),
       termLabel(lang, W.width, 'export.tr.typicalWidth', 'm'),
       termLabel(lang, W.height, 'export.tr.typicalHeight', 'm'),
@@ -300,12 +346,11 @@ function windowsSection(sheets: LuxeebSheets, project: Project, lang: Lang): Gui
       termLabel(lang, W.gValue, 'export.tr.gValue', '-'),
       termLabel(lang, W.uWindow, 'export.tr.uWindow', 'W/(m²K)'),
     ],
-    rows: sheets.windows.map((w) =>
-      windowRow(w, lang, sheets.envelope.filter((r) => r.windowTypeId === w.windowTypeId).map((r) => r.from)),
-    ),
-    pasteBlock: '',
-    pasteHint: t(lang, sheets.windows.length > 0 ? 'export.paste.none' : 'export.paste.empty'),
-  };
+    [...GUIDE_ASIDE_COLUMNS.windowTypes],
+    sheets.windows.map((w) => windowRow(w, lang, sheets.envelope.filter((r) => r.windowTypeId === w.windowTypeId).map((r) => r.from))),
+    '',
+    t(lang, sheets.windows.length > 0 ? 'export.paste.none' : 'export.paste.empty'),
+  );
   return {
     key: 'windows',
     luxeebName: LUXEEB_SHEET.windows,
@@ -326,7 +371,7 @@ function envelopeSection(rows: readonly EnvelopeRow[], lang: Lang): GuideSection
     if (!r.deduct) lastTarget = i;
   });
 
-  const tableRows: GuideRow[] = rows.map((r, i) => {
+  const tableRows: RowDraft[] = rows.map((r, i) => {
     const cells = [
       String(i + 1),
       excelSafeText(r.elementName),
@@ -340,14 +385,16 @@ function envelopeSection(rows: readonly EnvelopeRow[], lang: Lang): GuideSection
       orientationLabel(r.orientation, lang),
       enumText(lang, 'boundary', r.boundary) ?? '',
     ];
-    if (!r.deduct) return { cells, from: r.from, deduct: false };
-    return { cells, from: r.from, deduct: true, note: t(lang, i > lastTarget ? 'export.note.deductOrphan' : 'export.note.deductRow') };
+    // Changer le type d'une paroi change l'entrée à choisir dans la liste « Bauteil » sans toucher aux nombres.
+    const fixed = [luxeebOrientation(r.orientation), r.deduct ? E.deductMark : '', r.constructionId ?? '', r.windowTypeId ?? ''];
+    if (!r.deduct) return { id: r.id, cells, fixed, from: r.from, deduct: false };
+    return { id: r.id, cells, fixed, from: r.from, deduct: true, note: t(lang, i > lastTarget ? 'export.note.deductOrphan' : 'export.note.deductRow') };
   });
 
   const blockColumns = [E.count, E.length, E.width, E.orientation];
-  const table: GuideTable = {
-    key: 'envelope',
-    columns: [
+  const table = guideTable(
+    'envelope',
+    [
       t(lang, 'export.col.line'),
       termLabel(lang, E.element, 'export.tr.element'),
       termLabel(lang, E.count, 'export.tr.count'),
@@ -360,25 +407,29 @@ function envelopeSection(rows: readonly EnvelopeRow[], lang: Lang): GuideSection
       t(lang, 'export.col.azimuth'),
       t(lang, 'export.col.boundary'),
     ],
-    rows: tableRows,
-    pasteBlock: envelopePasteBlock(rows),
-    pasteHint:
-      rows.length > 0
-        ? t(lang, 'export.paste.envelope', { first: E.count, count: rows.length, columns: blockColumns.join(', '), deduct: E.deduct })
-        : t(lang, 'export.paste.empty'),
-  };
+    [...GUIDE_ASIDE_COLUMNS.envelope],
+    tableRows,
+    envelopePasteBlock(rows),
+    rows.length > 0
+      ? t(lang, 'export.paste.envelope', { first: E.count, count: rows.length, columns: blockColumns.join(', '), deduct: E.deduct })
+      : t(lang, 'export.paste.empty'),
+  );
 
   const items: GuideItem[] = [
     item('envelope.rowCount', t(lang, 'export.label.rowCount'), String(rows.length), '', 'calc'),
     deductLines.length > 0
-      ? item(
-          'envelope.deductLines',
-          t(lang, 'export.label.deductLines'),
-          deductLines.join(', '),
-          E.deductMark,
-          'calc',
-          t(lang, 'export.note.deductLines', { column: E.deduct }),
-        )
+      ? {
+          ...item(
+            'envelope.deductLines',
+            t(lang, 'export.label.deductLines'),
+            deductLines.join(', '),
+            E.deductMark,
+            'calc',
+            t(lang, 'export.note.deductLines', { column: E.deduct }),
+          ),
+          // Le bouton ne copie pas la liste affichée mais la marque à poser sur ces lignes : il doit le dire.
+          copyIsMark: true,
+        }
       : item('envelope.deductLines', t(lang, 'export.label.deductLines'), DASH, '', 'calc', t(lang, 'export.note.noDeduct')),
   ];
 
@@ -429,9 +480,9 @@ function areasSection(sheets: LuxeebSheets, envelope: readonly EnvelopeRow[], la
   const totals = enteredTotals(sheets, envelope);
 
   const zoneColumns = [A.roomName, A.count, A.width, A.length];
-  const zones: GuideTable = {
-    key: 'zones',
-    columns: [
+  const zones = guideTable(
+    'zones',
+    [
       termLabel(lang, A.roomName, 'export.tr.roomName'),
       termLabel(lang, A.count, 'export.tr.count'),
       termLabel(lang, A.width, 'export.tr.width', 'm'),
@@ -439,21 +490,22 @@ function areasSection(sheets: LuxeebSheets, envelope: readonly EnvelopeRow[], la
       t(lang, 'export.col.clearHeight'),
       termLabel(lang, A.vn, 'export.tr.vnIndicative', 'm³'),
     ],
-    rows: sheets.zones.map((z) => ({
+    [...GUIDE_ASIDE_COLUMNS.zones],
+    sheets.zones.map((z) => ({
+      id: z.id,
       cells: [excelSafeText(z.label), one, one, luxeebNumber(z.area), luxeebNumber(z.clearHeight), luxeebNumber(z.airVolume)],
       from: z.from,
     })),
-    pasteBlock: zonesPasteBlock(sheets.zones),
-    pasteHint:
-      sheets.zones.length > 0
-        ? t(lang, 'export.paste.zones', { first: A.roomName, count: sheets.zones.length, columns: zoneColumns.join(', ') })
-        : t(lang, 'export.paste.empty'),
-  };
+    zonesPasteBlock(sheets.zones),
+    sheets.zones.length > 0
+      ? t(lang, 'export.paste.zones', { first: A.roomName, count: sheets.zones.length, columns: zoneColumns.join(', ') })
+      : t(lang, 'export.paste.empty'),
+  );
 
   const volumeColumns = [A.designation, A.count, A.width, A.length, A.height];
-  const volumes: GuideTable = {
-    key: 'volumes',
-    columns: [
+  const volumes = guideTable(
+    'volumes',
+    [
       termLabel(lang, A.designation, 'export.tr.designation'),
       termLabel(lang, A.count, 'export.tr.count'),
       termLabel(lang, A.width, 'export.tr.width', 'm'),
@@ -461,16 +513,17 @@ function areasSection(sheets: LuxeebSheets, envelope: readonly EnvelopeRow[], la
       termLabel(lang, A.height, 'export.tr.height', 'm'),
       termLabel(lang, A.ve, 'export.tr.veExpected', 'm³'),
     ],
-    rows: sheets.volumes.map((v) => ({
+    [...GUIDE_ASIDE_COLUMNS.volumes],
+    sheets.volumes.map((v) => ({
+      id: v.id,
       cells: [excelSafeText(v.label), one, one, luxeebNumber(v.area), luxeebNumber(v.height), luxeebNumber(entered(v.area) * entered(v.height))],
       from: v.from,
     })),
-    pasteBlock: volumesPasteBlock(sheets.volumes),
-    pasteHint:
-      sheets.volumes.length > 0
-        ? t(lang, 'export.paste.volumes', { first: A.designation, count: sheets.volumes.length, columns: volumeColumns.join(', ') })
-        : t(lang, 'export.paste.empty'),
-  };
+    volumesPasteBlock(sheets.volumes),
+    sheets.volumes.length > 0
+      ? t(lang, 'export.paste.volumes', { first: A.designation, count: sheets.volumes.length, columns: volumeColumns.join(', ') })
+      : t(lang, 'export.paste.empty'),
+  );
 
   return {
     key: 'areas',

@@ -98,6 +98,56 @@ function ToolView({ tool, ctx }: { tool: PlanTool; ctx: ToolContext }) {
 /** En dessous de cette largeur de la zone de plan (px), la vue s'ouvre de préférence sur le contour. */
 const NARROW_STAGE_PX = 640;
 
+/**
+ * Écran étroit : marge (px) gardée autour du contour cadré, selon ce que l'outil écrit à l'extérieur de lui
+ * (longueurs des côtés, dimensions des ouvertures sur deux rangées, secteur et azimut des façades).
+ */
+const COMPACT_MARGIN: Record<PlanTool, { x: number; y: number }> = {
+  pan: { x: 12, y: 12 },
+  scale: { x: 18, y: 18 },
+  outline: { x: 30, y: 28 },
+  boundary: { x: 46, y: 24 },
+  opening: { x: 40, y: 40 },
+  north: { x: 44, y: 22 },
+  rooms: { x: 10, y: 10 },
+};
+
+/** Ce que la vue cadre tant que l'utilisateur ne l'a pas bougée : au mieux (règle d'ouverture), le contour, ou tout. */
+type AutoFit = 'auto' | 'focus' | 'all';
+
+function sameInsets(a: Insets | null, b: Insets | null): boolean {
+  if (a === null || b === null) return a === b;
+  return Math.abs(a.top - b.top) < 1 && Math.abs(a.right - b.right) < 1 && Math.abs(a.bottom - b.bottom) < 1 && Math.abs(a.left - b.left) < 1;
+}
+
+/**
+ * Place réellement prise par l'interface posée sur le plan (bandeau, boutons, compteurs, navigation, boussole) :
+ * chaque élément est rattaché au bord qu'il longe. null si rien n'est mesurable (rendu hors navigateur) ou si
+ * l'interface ne laisserait pas de place au plan.
+ */
+function measureHud(root: HTMLElement): Insets | null {
+  const frame = root.getBoundingClientRect();
+  if (!(frame.width > 0) || !(frame.height > 0)) return null;
+  const used = { top: 0, right: 0, bottom: 0, left: 0 };
+  let any = false;
+  for (const el of root.querySelectorAll('.p2c-plan__top > *, .p2c-plan__bottom > *, .p2c-plan__nav, .p2c-plan__compass')) {
+    const r = el.getBoundingClientRect();
+    if (!(r.width > 0) || !(r.height > 0)) continue;
+    any = true;
+    const reach = { top: r.bottom - frame.top, right: frame.right - r.left, bottom: frame.bottom - r.top, left: r.right - frame.left };
+    const least = Math.min(reach.top, reach.right, reach.bottom, reach.left);
+    if (least === reach.top) used.top = Math.max(used.top, reach.top);
+    else if (least === reach.bottom) used.bottom = Math.max(used.bottom, reach.bottom);
+    else if (least === reach.right) used.right = Math.max(used.right, reach.right);
+    else used.left = Math.max(used.left, reach.left);
+  }
+  if (!any) return null;
+  const gap = 4;
+  const insets = { top: Math.max(8, used.top + gap), right: Math.max(8, used.right + gap), bottom: Math.max(8, used.bottom + gap), left: Math.max(8, used.left + gap) };
+  if (frame.width - insets.left - insets.right < 96 || frame.height - insets.top - insets.bottom < 96) return null;
+  return insets;
+}
+
 export function PlanEditor(props: PlanEditorProps) {
   const { sheet, storey, tool, lang, onStoreyChange, onNorthChange, onToolDone } = props;
   const ghostStoreys = props.ghostStoreys;
@@ -154,26 +204,48 @@ export function PlanEditor(props: PlanEditorProps) {
     return sheet ? box : inflateBBox(box, 0.35);
   }, [sheet, storey.outline, ghostStoreys]);
 
-  const focusBox = useMemo<BBox | null>(
-    () => (storey.outline.length >= 3 ? inflateBBox(bboxOf(storey.outline), 0.1) : null),
-    [storey.outline],
-  );
+  // Ce que « cadrer le contour » doit montrer : le contour, et pour l'outil « pièces » les pièces dessinées juste à
+  // côté (garage hors de l'enveloppe) — elles se touchent aussi.
+  const focusBox = useMemo<BBox | null>(() => {
+    if (storey.outline.length < 3) return null;
+    let box = bboxOf(storey.outline);
+    if (tool === 'rooms') {
+      const near = inflateBBox(box, 0.5);
+      for (const room of storey.rooms) {
+        if (!room.polygon || room.polygon.length < 3) continue;
+        const rb = bboxOf(room.polygon);
+        if (rb.maxX < near.minX || rb.minX > near.maxX || rb.maxY < near.minY || rb.minY > near.maxY) continue;
+        box = unionBBox(box, rb) ?? box;
+      }
+    }
+    return box;
+  }, [storey.outline, storey.rooms, tool]);
 
-  // Place laissée libre par l'interface ; l'outil « nord » réserve en plus celle de la boussole.
+  // Place laissée libre par l'interface. Grand écran : marges fixes (le plan ne change pas de taille d'une étape à
+  // l'autre) ; l'outil « nord » réserve en plus la boussole. Écran étroit : chaque pixel compte, on MESURE ce que
+  // l'interface de l'outil occupe réellement (voir `measureHud`) ; les valeurs ci-dessous ne servent qu'en attendant.
   const north = tool === 'north';
-  const insets = useMemo<Insets>(
-    () =>
-      compact
-        ? { top: 96, right: 12, bottom: north ? 250 : 104, left: 12 }
-        : { top: 92, right: north ? 256 : 60, bottom: 64, left: 16 },
+  const staticInsets = useMemo<Insets>(
+    () => (compact ? { top: 50, right: 56, bottom: north ? 96 : 44, left: 8 } : { top: 92, right: north ? 256 : 60, bottom: 64, left: 16 }),
     [compact, north],
   );
+  const [hud, setHud] = useState<Insets | null>(null);
+  const insets = compact && hud ? hud : staticInsets;
 
-  const fitAll = useMemo(() => (size.width > 0 && size.height > 0 ? fitViewInsets(allBox, size, insets) : null), [allBox, size, insets]);
-  const fitFocus = useMemo(
-    () => (focusBox && size.width > 0 && size.height > 0 ? fitViewInsets(focusBox, size, insets) : null),
-    [focusBox, size, insets],
+  /** Vue qui cadre le contour (`focus`) ou tout le dessin (`all`) dans la place laissée libre. */
+  const fitOf = useCallback(
+    (kind: 'focus' | 'all', free: Insets): View | null => {
+      if (!(size.width > 0) || !(size.height > 0)) return null;
+      if (kind === 'all' || !focusBox) return fitViewInsets(allBox, size, free);
+      if (!compact) return fitViewInsets(inflateBBox(focusBox, 0.1), size, free);
+      const m = COMPACT_MARGIN[tool];
+      return fitViewInsets(focusBox, size, { top: free.top + m.y, right: free.right + m.x, bottom: free.bottom + m.y, left: free.left + m.x }, 0);
+    },
+    [allBox, focusBox, size, compact, tool],
   );
+
+  const fitAll = useMemo(() => fitOf('all', insets), [fitOf, insets]);
+  const fitFocus = useMemo(() => (focusBox ? fitOf('focus', insets) : null), [fitOf, focusBox, insets]);
   const limits = useMemo<ZoomLimits | undefined>(
     () => (fitAll ? { min: fitAll.scale * 0.2, max: fitAll.scale * 800 } : undefined),
     [fitAll],
@@ -181,9 +253,27 @@ export function PlanEditor(props: PlanEditorProps) {
   const limitsRef = useRef(limits);
   limitsRef.current = limits;
 
+  /**
+   * Règle d'ouverture : si le contour n'occupe qu'un coin de la feuille (plan avec cartouche, plusieurs vues), on
+   * s'ouvre sur lui. Sur un écran étroit, on le cadre dès qu'il laisse une large marge autour de lui.
+   */
+  const preferFocus = (): boolean => {
+    if (!focusBox) return false;
+    const allArea = (allBox.maxX - allBox.minX) * (allBox.maxY - allBox.minY);
+    const share = size.width > 0 && size.width < NARROW_STAGE_PX ? 0.6 : 0.2;
+    return allArea > 0 && polygonArea(storey.outline) < share * allArea;
+  };
+
+  /**
+   * Tant que l'utilisateur n'a pas bougé la vue, elle reste « automatique » : elle suit les changements d'outil,
+   * de marges et de taille. Un zoom ou un déplacement à la main y met fin (null).
+   */
+  const autoFit = useRef<AutoFit | null>(null);
+
   /** Applique une vue ; les changements d'une même image sont regroupés (un seul rendu React par image). */
-  const scheduleView = useCallback((next: View) => {
+  const scheduleView = useCallback((next: View, auto: AutoFit | null = null) => {
     viewRef.current = next;
+    autoFit.current = auto;
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
@@ -191,8 +281,9 @@ export function PlanEditor(props: PlanEditorProps) {
     });
   }, []);
 
-  const setViewNow = useCallback((next: View) => {
+  const setViewNow = useCallback((next: View, auto: AutoFit | null = null) => {
     viewRef.current = next;
+    autoFit.current = auto;
     setViewState(next);
   }, []);
 
@@ -220,32 +311,34 @@ export function PlanEditor(props: PlanEditorProps) {
     previousSize.current = size;
     if (fitted.current !== fitKey || !viewRef.current) {
       fitted.current = fitKey;
-      // Si le contour n'occupe qu'un coin de la feuille (plan avec cartouche, plusieurs vues), on s'ouvre sur lui.
-      const allArea = (allBox.maxX - allBox.minX) * (allBox.maxY - allBox.minY);
-      // Sur un écran étroit, chaque pixel compte : on cadre le contour dès qu'il laisse une large marge autour de lui.
-      const share = size.width > 0 && size.width < NARROW_STAGE_PX ? 0.6 : 0.2;
-      const outlineSmall = fitFocus && allArea > 0 && polygonArea(storey.outline) < share * allArea;
-      setViewNow(outlineSmall && fitFocus ? fitFocus : fitAll);
+      setViewNow(preferFocus() && fitFocus ? fitFocus : fitAll, 'auto');
       return;
     }
-    if (prev && (prev.width !== size.width || prev.height !== size.height)) {
+    // Vue encore automatique : l'effet suivant la recadre dans la nouvelle taille. Sinon on garde le centre.
+    if (!autoFit.current && prev && (prev.width !== size.width || prev.height !== size.height)) {
       setViewNow(panBy(viewRef.current, (size.width - prev.width) / 2, (size.height - prev.height) / 2));
     }
     // `fitAll` suit le contour pendant l'édition : seuls la feuille, l'étage et la taille doivent relancer cet effet.
   }, [fitKey, size.width, size.height, fitAll === null]);
 
-  // Les marges changent (outil « nord », passage en mode téléphone) : si la vue était encore un ajustement
-  // automatique — l'utilisateur ne l'a pas bougée — elle suit ; sinon on n'y touche pas.
-  const previousInsets = useRef(insets);
+  // L'outil, la taille ou la présentation (téléphone) changent : on mesure la place prise par l'interface du nouvel
+  // outil, et si la vue était encore automatique — l'utilisateur ne l'a pas bougée — elle se recadre dans la place
+  // libre ; sinon on n'y touche pas. Rien d'autre ne relance cet effet (pas les retouches du contour, ni un bandeau
+  // qui change de hauteur en cours de geste : le plan ne doit pas bouger sous le doigt).
+  const hasView = view !== null;
+  const hudKey = `${tool}|${storey.id}|${sheet?.id ?? ''}`;
   useLayoutEffect(() => {
-    const before = previousInsets.current;
-    previousInsets.current = insets;
+    const root = rootRef.current;
+    if (!root || !hasView) return;
+    const measured = compact ? measureHud(root) : null;
+    setHud((prev) => (sameInsets(prev, measured) ? prev : measured));
+    const kind = autoFit.current;
     const current = viewRef.current;
-    if (before === insets || !current || !fitAll) return;
-    if (sameView(current, fitViewInsets(allBox, size, before))) setViewNow(fitAll);
-    else if (focusBox && fitFocus && sameView(current, fitViewInsets(focusBox, size, before))) setViewNow(fitFocus);
-    // Seul un changement de marges doit relancer cet effet (pas chaque retouche du contour).
-  }, [insets]);
+    if (!kind || !current) return;
+    const focus = kind === 'focus' || (kind === 'auto' && preferFocus());
+    const target = fitOf(focus ? 'focus' : 'all', measured ?? staticInsets);
+    if (target && !sameView(current, target, 0.5)) setViewNow(target, kind);
+  }, [hudKey, compact, size.width, size.height, hasView, staticInsets]);
 
   useEffect(
     () => () => {
@@ -322,9 +415,15 @@ export function PlanEditor(props: PlanEditorProps) {
 
   /** « Ajuster » : cadre le contour ; un second appui montre toute la feuille. */
   const fit = (): void => {
-    if (!fitAll || !viewRef.current) return;
-    const target = fitFocus && !sameView(viewRef.current, fitFocus) ? fitFocus : fitAll;
-    scheduleView(target);
+    const root = rootRef.current;
+    if (!root || !viewRef.current) return;
+    // Mesure fraîche : l'interface de l'outil a pu changer de hauteur depuis le dernier cadrage.
+    const free = (compact ? measureHud(root) : null) ?? staticInsets;
+    const all = fitOf('all', free);
+    const focus = focusBox ? fitOf('focus', free) : null;
+    if (!all) return;
+    if (focus && !sameView(viewRef.current, focus)) scheduleView(focus, 'focus');
+    else scheduleView(all, 'all');
   };
 
   const focusSurface = useCallback(() => {
