@@ -954,6 +954,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 10px;
+  /* Laisse la barre du haut (collante) dégagée quand on ramène le plan à l'écran. */
+  scroll-margin-top: 110px;
 }
 
 .plan__stage {

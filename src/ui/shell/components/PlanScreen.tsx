@@ -504,6 +504,21 @@ export function PlanScreen() {
   const planStep = useShell((s) => s.planStep);
   const busy = useShell((s) => s.busy);
   const fileInput = useRef<HTMLInputElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const storeyId = storey?.id ?? null;
+
+  // Écran étroit : le détail de l'étape est SOUS le plan. Après une validation, on ramène le haut de l'écran
+  // (bandeau des étapes puis plan) sous les yeux, sinon l'étape suivante se jouerait hors champ.
+  const firstLayout = useRef(true);
+  useEffect(() => {
+    if (firstLayout.current) {
+      firstLayout.current = false;
+      return;
+    }
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    if (!window.matchMedia('(max-width: 999px)').matches) return;
+    body.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  }, [planStep, storeyId]);
 
   const sheet = storey ? findSheet(documents, storey.sheetId) : null;
   const steps = useMemo(() => (storey ? planSteps(project, storey, marks, sheet) : []), [project, storey, marks, sheet]);
@@ -538,7 +553,7 @@ export function PlanScreen() {
     <section className="plan" aria-label={tr('shell.steps.plan')}>
       <h1 className="visually-hidden">{tr('shell.plan.title', { name: storey.name })}</h1>
       <StoreyTabs project={project} storey={storey} />
-      <div className="plan__body" id="plan-panel" role="tabpanel" aria-labelledby={`tab-${storey.id}`}>
+      <div className="plan__body" id="plan-panel" role="tabpanel" aria-labelledby={`tab-${storey.id}`} ref={body}>
         <div className="plan__guide">
           <Checklist project={project} storey={storey} steps={steps} sheet={sheet} />
         </div>

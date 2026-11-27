@@ -95,6 +95,9 @@ function ToolView({ tool, ctx }: { tool: PlanTool; ctx: ToolContext }) {
   }
 }
 
+/** En dessous de cette largeur de la zone de plan (px), la vue s'ouvre de préférence sur le contour. */
+const NARROW_STAGE_PX = 640;
+
 export function PlanEditor(props: PlanEditorProps) {
   const { sheet, storey, tool, lang, onStoreyChange, onNorthChange, onToolDone } = props;
   const ghostStoreys = props.ghostStoreys;
@@ -219,7 +222,9 @@ export function PlanEditor(props: PlanEditorProps) {
       fitted.current = fitKey;
       // Si le contour n'occupe qu'un coin de la feuille (plan avec cartouche, plusieurs vues), on s'ouvre sur lui.
       const allArea = (allBox.maxX - allBox.minX) * (allBox.maxY - allBox.minY);
-      const outlineSmall = fitFocus && allArea > 0 && polygonArea(storey.outline) < 0.2 * allArea;
+      // Sur un écran étroit, chaque pixel compte : on cadre le contour dès qu'il laisse une large marge autour de lui.
+      const share = size.width > 0 && size.width < NARROW_STAGE_PX ? 0.6 : 0.2;
+      const outlineSmall = fitFocus && allArea > 0 && polygonArea(storey.outline) < share * allArea;
       setViewNow(outlineSmall && fitFocus ? fitFocus : fitAll);
       return;
     }

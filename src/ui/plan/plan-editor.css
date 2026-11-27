@@ -1181,6 +1181,10 @@
   gap: 3px 10px;
   font-size: 12px;
 }
+/* Petit écran : la légende ne garde que ce qui est présent sur le plan, pour ne pas le masquer. */
+.p2c-plan.is-compact .p2c-plan__legend li.is-empty {
+  display: none;
+}
 .p2c-plan.is-compact .p2c-plan__scalebar {
   display: none;
 }
