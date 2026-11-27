@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CPE pre-fill - UX spike</title>
+<!--
+  UX SPIKE ONLY. Single file, no dependencies, no network.
+  - The "plan reading result" is a hard-coded demo object (DEMO_PLAN): nothing is read from a real plan here.
+  - The U-values per construction period (PERIODS) are ILLUSTRATIVE PLACEHOLDERS, not official Luxembourg values.
+  - The geometry maths is a rectangular-box simplification, good enough to show live feedback, not a CPE method.
+-->
+<style>
+  :root { --bg:#f6f4ef; --card:#fff; --ink:#1f2933; --mut:#5f6b7a; --line:#d9d4c7; --acc:#0b6e69; --acc2:#e8f3f2;
+          --hi:#2e7d32; --mid:#b26a00; --lo:#b3261e; --heat:#f6c9a8; --cold:#cfe0f3; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.45 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  header { position:sticky; top:0; background:var(--card); border-bottom:1px solid var(--line); padding:8px 16px;
+           display:flex; gap:12px; align-items:center; flex-wrap:wrap; z-index:2; }
+  header .title { font-weight:700; margin-right:auto; }
+  button { font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--ink);
+           border-radius:8px; padding:8px 12px; }
+  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); font-weight:600; }
+  button.ghost { border-color:transparent; color:var(--acc); text-decoration:underline; padding:4px 6px; }
+  button[aria-pressed="true"], .opt.sel { outline:3px solid var(--acc); background:var(--acc2); }
+  button:disabled { opacity:.45; cursor:default; }
+  main { max-width:860px; margin:0 auto; padding:16px; }
+  .meters { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--mut); }
+  .meter { min-width:150px; }
+  .bar { height:8px; background:var(--line); border-radius:4px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:var(--acc); transition:width .35s; }
+  .bar.conf > i { background:var(--mid); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin:12px 0; }
+  h1 { font-size:24px; margin:0 0 6px; text-wrap:balance; }
+  .cap { color:var(--mut); font-size:13px; text-transform:uppercase; letter-spacing:.04em; }
+  .why { color:var(--mut); font-size:14px; margin:6px 0 14px; }
+  .opts { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:10px; margin:12px 0; }
+  .opt { text-align:left; min-height:64px; }
+  .opt small { display:block; color:var(--mut); }
+  .row { display:flex; gap:10px; align-items:center; padding:10px 0; border-top:1px solid var(--line); flex-wrap:wrap; }
+  .row:first-of-type { border-top:0; }
+  .row .k { width:170px; color:var(--mut); }
+  .row .v { flex:1; min-width:160px; font-weight:600; }
+  .chip { font-size:12px; border-radius:10px; padding:2px 8px; color:#fff; white-space:nowrap; }
+  .chip.hi { background:var(--hi); } .chip.mid { background:var(--mid); } .chip.lo { background:var(--lo); }
+  .chip.src { background:#e9e6dd; color:var(--ink); }
+  .nav { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+  .levels { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:12px; }
+  svg.plan { width:100%; height:auto; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  svg.plan rect.room { stroke:#333; stroke-width:.06; cursor:pointer; }
+  svg.plan rect.heated { fill:var(--heat); } svg.plan rect.unheated { fill:var(--cold); }
+  svg.plan text { font-size:.42px; pointer-events:none; }
+  .legend span { display:inline-block; width:14px; height:14px; vertical-align:-2px; border:1px solid #333; margin:0 4px 0 12px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th, td { text-align:left; padding:6px 8px; border-top:1px solid var(--line); vertical-align:top; }
+  td.num { font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  input[type=number], input[type=text] { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; width:110px; }
+  .compass { touch-action:none; cursor:grab; }
+  .live { font-size:14px; color:var(--mut); margin-top:8px; }
+  .toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 14px;
+           border-radius:8px; display:flex; gap:12px; align-items:center; }
+  .toast button { background:transparent; color:#fff; border-color:#fff; padding:4px 10px; }
+  .overflow { overflow-x:auto; }
+  :focus-visible { outline:3px solid #1a73e8; outline-offset:2px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="title" id="t-title"></span>
+  <div class="meters">
+    <div class="meter"><span id="t-comp"></span> <b id="m-comp-v"></b><div class="bar"><i id="m-comp"></i></div></div>
+    <div class="meter"><span id="t-conf"></span> <b id="m-conf-v"></b><div class="bar conf"><i id="m-conf"></i></div></div>
+  </div>
+  <button id="b-undo" type="button"></button>
+  <button id="b-expert" type="button" aria-pressed="false"></button>
+  <button id="b-lang" type="button"></button>
+</header>
+<main id="app" aria-live="polite"></main>
+
+<script>
+'use strict';
+/* ---------- i18n ---------- */
+const T = {
+  fr: { title:'CPE express - maquette', comp:'Complet', conf:'Confiance', undo:'Annuler', expert:'Mode expert', lang:'Deutsch',
+    start_h:'Déposez vos plans', start_p:'PDF, DWG/DXF ou IFC. Je lis tout ce que je peux, puis je vous pose quelques questions.',
+    demo:'Utiliser le plan de démonstration', found_h:'Voici ce que j\'ai lu sur le plan', found_p:'Vérifiez d\'un coup d\'oeil. Corrigez seulement ce qui est faux.',
+    allok:'Tout est juste', fix:'Corriger', done:'OK', next:'Continuer', back:'Retour', skip:'Je ne sais pas - valeur par défaut',
+    address:'Adresse', scale:'Échelle', levels:'Niveaux et hauteurs', north:'Nord', dwell:'Logements', plandate:'Date du plan',
+    hi:'sûr', mid:'à vérifier', lo:'incertain', src_plan:'plan', src_you:'vous', src_def:'défaut', src_calc:'calcul',
+    why:'Pourquoi cette question ? ', q:'Question', of:'sur',
+    q1:'Pour quelle occasion établissez-vous ce CPE ?', q1w:'Le plan décrit le bâtiment, pas la démarche administrative.',
+    q1a:'Bâtiment existant', q1as:'vente ou location', q1b:'Rénovation', q1bs:'transformation, extension', q1c:'Construction neuve', q1cs:'autorisation de bâtir',
+    q2:'Quand la maison a-t-elle été construite ?', q2w:'La date du plan est un indice, pas une preuve. L\'époque fixe les parois types par défaut.',
+    q2y:'Année exacte (facultatif)',
+    q3:'Est-ce bien la zone chauffée ?', q3w:'Le plan montre les pièces, pas si elles sont chauffées. Touchez une pièce pour changer.',
+    heated:'chauffé', unheated:'non chauffé', q3live:'Surface de référence An', q3vol:'Volume brut chauffé Ve',
+    q4:'Qu\'est-ce qui a été rénové depuis la construction ?', q4w:'Les plans d\'origine ne montrent pas les travaux ultérieurs.',
+    q4none:'Rien n\'a changé', r_win:'Fenêtres remplacées', r_roof:'Toiture / dernier plancher isolé', r_wall:'Façade isolée', r_floor:'Plafond de cave isolé',
+    year:'année', cm:'cm d\'isolant',
+    q5:'Comment la maison est-elle chauffée ?', q5w:'Un plan d\'architecte ne décrit pas la chaudière.',
+    h_gc:'Gaz à condensation', h_lt:'Gaz ou mazout basse température', h_old:'Ancienne chaudière mazout', h_hpa:'Pompe à chaleur air/eau', h_hpg:'Pompe à chaleur géothermique',
+    h_pel:'Pellets / bois', h_dh:'Chauffage urbain', h_el:'Électrique direct', age:'Âge du générateur', a1:'moins de 10 ans', a2:'10 à 20 ans', a3:'plus de 20 ans',
+    q6:'Comment la chaleur est-elle émise ?', q6w:'Les radiateurs figurent rarement sur les plans ; cela fixe les températures de l\'installation.',
+    e_rad:'Radiateurs', e_floor:'Chauffage au sol', e_mix:'Les deux',
+    q7:'Et l\'eau chaude ?', q7w:'Non visible sur le plan.', w_same:'Par le chauffage', w_el:'Boiler électrique séparé', w_hp:'Boiler thermodynamique',
+    q8:'Comment la maison est-elle ventilée ?', q8w:'Une VMC n\'apparaît que sur des plans techniques.', v_win:'Par les fenêtres', v_ex:'Extraction mécanique', v_hrv:'Double flux avec récupération',
+    n50:'Test d\'étanchéité (n50, 1/h) si disponible',
+    q9:'Y a-t-il du solaire sur le toit ?', q9w:'Souvent posé après les plans.', s_none:'Non', s_pv:'Photovoltaïque', s_th:'Solaire thermique', s_both:'Les deux', kwp:'kWc', m2:'m² capteurs',
+    res_h:'Premier jet prêt', res_p:'Valeurs dans l\'ordre de saisie de LuxEeB-Tool. Chaque valeur indique sa source.', copy:'Copier', copied:'Copié',
+    f_field:'Champ', f_val:'Valeur', f_src:'Source', undone:'Annulé', nothing:'Rien à annuler',
+    compass_h:'Tournez la boussole ou choisissez la direction du haut du plan', minus:'-15°', plus:'+15°', up:'Le haut du plan regarde vers' },
+  de: { title:'CPE Express - Prototyp', comp:'Vollständig', conf:'Vertrauen', undo:'Rückgängig', expert:'Expertenmodus', lang:'Français',
+    start_h:'Pläne hier ablegen', start_p:'PDF, DWG/DXF oder IFC. Ich lese alles, was ich kann, und stelle dann wenige Fragen.',
+    demo:'Demo-Plan verwenden', found_h:'Das habe ich im Plan gelesen', found_p:'Kurz prüfen. Nur korrigieren, was falsch ist.',
+    allok:'Alles richtig', fix:'Korrigieren', done:'OK', next:'Weiter', back:'Zurück', skip:'Weiß ich nicht - Standardwert',
+    address:'Adresse', scale:'Maßstab', levels:'Geschosse und Höhen', north:'Norden', dwell:'Wohneinheiten', plandate:'Plandatum',
+    hi:'sicher', mid:'bitte prüfen', lo:'unsicher', src_plan:'Plan', src_you:'Sie', src_def:'Standard', src_calc:'berechnet',
+    why:'Warum diese Frage? ', q:'Frage', of:'von',
+    q1:'Aus welchem Anlass erstellen Sie diesen Energiepass?', q1w:'Der Plan beschreibt das Gebäude, nicht das Verfahren.',
+    q1a:'Bestehendes Gebäude', q1as:'Verkauf oder Vermietung', q1b:'Sanierung', q1bs:'Umbau, Erweiterung', q1c:'Neubau', q1cs:'Baugenehmigung',
+    q2:'Wann wurde das Haus gebaut?', q2w:'Das Plandatum ist ein Hinweis, kein Beweis. Die Bauzeit bestimmt die typischen Bauteile.',
+    q2y:'Genaues Baujahr (optional)',
+    q3:'Ist das die beheizte Zone?', q3w:'Der Plan zeigt Räume, nicht ob sie beheizt sind. Raum antippen zum Ändern.',
+    heated:'beheizt', unheated:'unbeheizt', q3live:'Energiebezugsfläche An', q3vol:'Beheiztes Bruttovolumen Ve',
+    q4:'Was wurde seit dem Bau saniert?', q4w:'Originalpläne zeigen spätere Arbeiten nicht.',
+    q4none:'Nichts verändert', r_win:'Fenster ersetzt', r_roof:'Dach / oberste Decke gedämmt', r_wall:'Fassade gedämmt', r_floor:'Kellerdecke gedämmt',
+    year:'Jahr', cm:'cm Dämmung',
+    q5:'Wie wird das Haus beheizt?', q5w:'Ein Architektenplan beschreibt den Heizkessel nicht.',
+    h_gc:'Gas-Brennwert', h_lt:'Gas oder Öl Niedertemperatur', h_old:'Alter Ölkessel', h_hpa:'Luft/Wasser-Wärmepumpe', h_hpg:'Erdwärmepumpe',
+    h_pel:'Pellets / Holz', h_dh:'Fernwärme', h_el:'Elektro direkt', age:'Alter des Wärmeerzeugers', a1:'unter 10 Jahre', a2:'10 bis 20 Jahre', a3:'über 20 Jahre',
+    q6:'Wie wird die Wärme abgegeben?', q6w:'Heizkörper stehen selten im Plan; das bestimmt die Systemtemperaturen.',
+    e_rad:'Heizkörper', e_floor:'Fußbodenheizung', e_mix:'Beides',
+    q7:'Und das Warmwasser?', q7w:'Im Plan nicht sichtbar.', w_same:'Über die Heizung', w_el:'Separater Elektroboiler', w_hp:'Warmwasser-Wärmepumpe',
+    q8:'Wie wird gelüftet?', q8w:'Eine Lüftungsanlage steht nur in Haustechnikplänen.', v_win:'Über die Fenster', v_ex:'Abluftanlage', v_hrv:'Zu-/Abluft mit Wärmerückgewinnung',
+    n50:'Luftdichtheitstest (n50, 1/h), falls vorhanden',
+    q9:'Gibt es Solar auf dem Dach?', q9w:'Oft nach der Planung installiert.', s_none:'Nein', s_pv:'Photovoltaik', s_th:'Solarthermie', s_both:'Beides', kwp:'kWp', m2:'m² Kollektor',
+    res_h:'Erster Entwurf fertig', res_p:'Werte in der Eingabereihenfolge des LuxEeB-Tools. Jeder Wert zeigt seine Quelle.', copy:'Kopieren', copied:'Kopiert',
+    f_field:'Feld', f_val:'Wert', f_src:'Quelle', undone:'Rückgängig gemacht', nothing:'Nichts rückgängig zu machen',
+    compass_h:'Kompass drehen oder Richtung der Plan-Oberseite wählen', minus:'-15°', plus:'+15°', up:'Plan-Oberseite zeigt nach' }
+};
+const DIRS = { fr:['N','NE','E','SE','S','SO','O','NO'], de:['N','NO','O','SO','S','SW','W','NW'] };
+const t = k => (T[state.lang][k] ?? k);
+
+/* ---------- demo "plan reading" result (hard-coded) ---------- */
+const DEMO_PLAN = {
+  file:'demo_maison_1974.pdf',
+  address:{ v:'12, rue des Champs, L-7240 Bereldange', conf:.9 },
+  planYear:{ v:1974, conf:.8 }, scale:{ v:'1:100', conf:.95 }, northDeg:{ v:20, conf:.6 }, dwellings:{ v:1, conf:.85 },
+  footprint:{ w:10.24, d:9.24, conf:.9 },
+  levels:[
+    { id:'KG', n:{fr:'Sous-sol',de:'Kellergeschoss'}, h:2.45, rooms:[
+      {id:'k1', n:{fr:'Cave',de:'Keller'}, x:.3,y:.3,w:4.7,h:4.2, a:19.7, heated:false},
+      {id:'k2', n:{fr:'Chaufferie',de:'Heizraum'}, x:5.2,y:.3,w:4.7,h:2.6, a:12.2, heated:false},
+      {id:'k3', n:{fr:'Garage',de:'Garage'}, x:.3,y:4.7,w:5.6,h:4.2, a:23.5, heated:false},
+      {id:'k4', n:{fr:'Buanderie',de:'Waschküche'}, x:6.1,y:3.1,w:3.8,h:5.8, a:22.0, heated:false} ]},
+    { id:'EG', n:{fr:'Rez-de-chaussée',de:'Erdgeschoss'}, h:2.80, rooms:[
+      {id:'e1', n:{fr:'Séjour',de:'Wohnzimmer'}, x:.3,y:.3,w:5.6,h:5.6, a:31.4, heated:true},
+      {id:'e2', n:{fr:'Cuisine',de:'Küche'}, x:6.1,y:.3,w:3.8,h:3.7, a:14.1, heated:true},
+      {id:'e3', n:{fr:'Hall',de:'Diele'}, x:6.1,y:4.2,w:3.8,h:2.6, a:9.9, heated:true},
+      {id:'e4', n:{fr:'Bureau',de:'Büro'}, x:.3,y:6.1,w:5.6,h:2.8, a:15.7, heated:true},
+      {id:'e5', n:{fr:'WC',de:'WC'}, x:6.1,y:7.0,w:3.8,h:1.9, a:7.2, heated:true} ]},
+    { id:'OG', n:{fr:'Étage',de:'Obergeschoss'}, h:2.80, rooms:[
+      {id:'o1', n:{fr:'Chambre 1',de:'Zimmer 1'}, x:.3,y:.3,w:5.0,h:4.0, a:20.0, heated:true},
+      {id:'o2', n:{fr:'Chambre 2',de:'Zimmer 2'}, x:5.5,y:.3,w:4.4,h:4.0, a:17.6, heated:true},
+      {id:'o3', n:{fr:'Chambre 3',de:'Zimmer 3'}, x:.3,y:4.5,w:5.0,h:4.4, a:22.0, heated:true},
+      {id:'o4', n:{fr:'Salle de bain',de:'Bad'}, x:5.5,y:4.5,w:4.4,h:2.4, a:10.6, heated:true},
+      {id:'o5', n:{fr:'Palier',de:'Flur'}, x:5.5,y:7.1,w:4.4,h:1.8, a:7.9, heated:true} ]},
+    { id:'DG', n:{fr:'Grenier',de:'Speicher'}, h:2.20, rooms:[
+      {id:'d1', n:{fr:'Grenier',de:'Speicher'}, x:.3,y:.3,w:9.6,h:8.6, a:82.6, heated:false} ]}
+  ],
+  /* side = plan side the facade is drawn on (top/right/bottom/left); n = number of identical openings */
+  windows:[ {side:'bottom',w:1.26,h:1.385,n:6}, {side:'top',w:1.01,h:1.26,n:4}, {side:'left',w:1.26,h:1.385,n:2}, {side:'right',w:1.01,h:1.26,n:3} ],
+  door:{ side:'top', w:1.01, h:2.135 }
+};
+
+/* ILLUSTRATIVE PLACEHOLDER default U-values per construction period - NOT official Luxembourg values */
+const PERIODS = [
+  {id:'p1', lab:'< 1919',    y:1900, U:{wall:1.7, top:1.2, floor:1.2, win:2.8}},
+  {id:'p2', lab:'1919-1948', y:1935, U:{wall:1.6, top:1.1, floor:1.2, win:2.8}},
+  {id:'p3', lab:'1949-1968', y:1960, U:{wall:1.4, top:0.9, floor:1.0, win:2.8}},
+  {id:'p4', lab:'1969-1983', y:1975, U:{wall:1.0, top:0.6, floor:0.8, win:2.8}},
+  {id:'p5', lab:'1984-1994', y:1990, U:{wall:0.6, top:0.4, floor:0.6, win:2.6}},
+  {id:'p6', lab:'1995-2007', y:2000, U:{wall:0.45, top:0.3, floor:0.5, win:1.7}},
+  {id:'p7', lab:'2008-2016', y:2012, U:{wall:0.30, top:0.2, floor:0.35, win:1.3}},
+  {id:'p8', lab:'> 2016',    y:2020, U:{wall:0.17, top:0.13, floor:0.25, win:0.9}}
+];
+const periodOfYear = y => PERIODS.find((p,i) => i===PERIODS.length-1 || y < [1919,1949,1969,1984,1995,2008,2017][i]);
+
+/* ---------- state + undo ---------- */
+const state = { lang:'fr', expert:false, step:0, plan:null, confirmed:false, editing:null, answers:{}, toast:null };
+const history = [];
+const stats = { clicks:0, keys:0 };
+function commit(fn) { history.push(JSON.stringify({ step:state.step, plan:state.plan, confirmed:state.confirmed, answers:state.answers })); fn(state); state.toast=null; render(); }
+function undo() {
+  if (!history.length) { state.toast = t('nothing'); return render(); }
+  Object.assign(state, JSON.parse(history.pop())); state.editing=null; state.toast = t('undone'); render();
+}
+
+/* ---------- derived values: everything the result table shows ---------- */
+function sector(az) { return ((Math.round(az/45) % 8) + 8) % 8; }
+function derive() {
+  const p = state.plan, a = state.answers, out = [];
+  const F = (id, grp, v, unit, src, conf) => out.push({ id, grp, v, unit, src, conf });
+  if (!p) return out;
+  const ok = state.confirmed ? .97 : null;
+  F('address','A', p.address.v, '', p.address.src||'plan', ok ?? p.address.conf);
+  F('dwellings','A', p.dwellings.v, '', p.dwellings.src||'plan', ok ?? p.dwellings.conf);
+  F('occasion','A', a.occasion ?? null, '', 'you', 1);
+  const year = a.year ?? null, per = a.period ? PERIODS.find(x => x.id===a.period) : null;
+  F('year','A', year ?? (per ? per.lab : null), '', 'you', 1);
+  /* geometry */
+  const heatedLv = p.levels.filter(l => { const ar = l.rooms.reduce((s,r)=>s+r.a,0), h = l.rooms.filter(r=>r.heated).reduce((s,r)=>s+r.a,0); return h > ar/2; });
+  const An = p.levels.flatMap(l => l.rooms).filter(r => r.heated).reduce((s,r)=>s+r.a,0);
+  const H = heatedLv.reduce((s,l)=>s+l.h,0), fpA = p.footprint.w*p.footprint.d;
+  const zoneConf = a.zoneOk ? 1 : .55;
+  F('An','B', +An.toFixed(1), 'm²', 'plan', Math.min(zoneConf, p.footprint.conf));
+  F('Ve','B', +(fpA*H).toFixed(0), 'm³', 'calc', Math.min(zoneConf, .8));
+  const sides = { top:0, right:90, bottom:180, left:270 }, len = { top:p.footprint.w, bottom:p.footprint.w, left:p.footprint.d, right:p.footprint.d };
+  const wall = Array(8).fill(0), win = Array(8).fill(0);
+  for (const s in sides) wall[sector(p.northDeg.v + sides[s])] += len[s]*H;
+  for (const w of p.windows) win[sector(p.northDeg.v + sides[w.side])] += w.w*w.h*w.n;
+  const doorA = p.door.w*p.door.h; wall[sector(p.northDeg.v + sides[p.door.side])] -= doorA;
+  const nConf = Math.min(zoneConf, ok ?? p.northDeg.conf);
+  for (let i=0;i<8;i++) if (wall[i] > 0) { F('wall_'+i,'C', +(wall[i]-win[i]).toFixed(1), 'm²', 'calc', nConf); if (win[i]>0) F('win_'+i,'C', +win[i].toFixed(1), 'm²', 'plan', Math.min(nConf,.8)); }
+  F('door','C', +doorA.toFixed(1), 'm²', 'plan', .8);
+  const kgHeated = heatedLv.some(l => l.id==='KG'), dgHeated = heatedLv.some(l => l.id==='DG');
+  F(dgHeated ? 'roof' : 'topceil','C', +(dgHeated ? fpA/Math.cos(35*Math.PI/180) : fpA).toFixed(1), 'm²', 'calc', zoneConf);
+  F(kgHeated ? 'slab' : 'cellarceil','C', +fpA.toFixed(1), 'm²', 'calc', zoneConf);
+  /* constructions: default by period, overridden by renovation answers */
+  const U = per ? { ...per.U } : { wall:null, top:null, floor:null, win:null }, src = { wall:'def', top:'def', floor:'def', win:'def' }, r = a.reno || {};
+  const lam = 0.035, add = (u, cm) => +(1/(1/u + (cm/100)/lam)).toFixed(2);
+  if (per && r.wall) { U.wall = add(U.wall, r.wallCm ?? 12); src.wall='you'; }
+  if (per && r.roof) { U.top = add(U.top, r.roofCm ?? 16); src.top='you'; }
+  if (per && r.floor) { U.floor = add(U.floor, r.floorCm ?? 8); src.floor='you'; }
+  if (per && r.win) { U.win = periodOfYear(r.winYear ?? 2010).U.win; src.win='you'; }
+  const renoKnown = a.reno !== undefined;
+  for (const k of ['wall','top','floor','win']) F('U_'+k,'D', U[k], 'W/m²K', src[k], per ? (src[k]==='you' ? .8 : (renoKnown ? .55 : .35)) : 0);
+  F('dUwb','D', per ? 0.10 : null, 'W/m²K', 'def', .5);
+  /* systems */
+  F('vent','E', a.vent ?? null, '', 'you', 1);
+  F('n50','E', a.n50 ?? (a.vent ? (a.vent==='v_hrv' ? 1.5 : 4.0) : null), '1/h', a.n50 ? 'you' : 'def', a.n50 ? 1 : .4);
+  F('heatgen','F', a.heat ?? null, '', 'you', 1);
+  F('heatage','F', a.heatAge ?? null, '', 'you', 1);
+  F('emission','F', a.emission ?? (a.emissionSkipped && per ? (per.y >= 1995 ? 'e_floor' : 'e_rad') : null), '', a.emission ? 'you' : 'def', a.emission ? 1 : .5);
+  F('dhw','F', a.dhw ?? null, '', 'you', 1);
+  F('solar','F', a.solar ?? null, '', 'you', 1);
+  if (a.solar==='s_pv' || a.solar==='s_both') F('pv_kwp','F', a.kwp ?? 5, 'kWc', a.kwp ? 'you' : 'def', a.kwp ? 1 : .4);
+  if (a.solar==='s_th' || a.solar==='s_both') F('st_m2','F', a.stm2 ?? 6, 'm²', a.stm2 ? 'you' : 'def', a.stm2 ? 1 : .4);
+  return out;
+}
+const LABEL = {
+  fr:{ address:'Adresse', dwellings:'Nombre de logements', occasion:'Occasion', year:'Année / époque de construction', An:'Surface de référence énergétique An', Ve:'Volume brut chauffé Ve',
+       wall:'Mur extérieur', win:'Fenêtres', door:'Porte d\'entrée', roof:'Toiture', topceil:'Plancher haut vers grenier', slab:'Dalle sur sol', cellarceil:'Plafond de cave',
+       U_wall:'U mur', U_top:'U toiture / plancher haut', U_floor:'U plancher bas', U_win:'Uw fenêtres', dUwb:'Supplément ponts thermiques', vent:'Ventilation', n50:'Étanchéité n50',
+       heatgen:'Générateur de chaleur', heatage:'Âge du générateur', emission:'Émission', dhw:'Eau chaude sanitaire', solar:'Solaire', pv_kwp:'Puissance PV', st_m2:'Capteurs thermiques' },
+  de:{ address:'Adresse', dwellings:'Anzahl Wohneinheiten', occasion:'Anlass', year:'Baujahr / Bauzeit', An:'Energiebezugsfläche An', Ve:'Beheiztes Bruttovolumen Ve',
+       wall:'Außenwand', win:'Fenster', door:'Haustür', roof:'Dach', topceil:'Oberste Geschossdecke', slab:'Bodenplatte', cellarceil:'Kellerdecke',
+       U_wall:'U Außenwand', U_top:'U Dach / oberste Decke', U_floor:'U unterer Abschluss', U_win:'Uw Fenster', dUwb:'Wärmebrückenzuschlag', vent:'Lüftung', n50:'Luftdichtheit n50',
+       heatgen:'Wärmeerzeuger', heatage:'Alter Wärmeerzeuger', emission:'Wärmeabgabe', dhw:'Warmwasser', solar:'Solar', pv_kwp:'PV-Leistung', st_m2:'Kollektorfläche' } };
+function fieldLabel(id) { const m = id.match(/^(wall|win)_(\d)$/); return m ? LABEL[state.lang][m[1]] + ' ' + DIRS[state.lang][+m[2]] : (LABEL[state.lang][id] ?? id); }
+function fieldValue(f) { if (f.v === null || f.v === undefined) return '-'; const s = (typeof f.v === 'string' && T[state.lang][f.v]) ? t(f.v) : String(f.v).replace('.', ','); return f.unit ? s + ' ' + f.unit : s; }
+function meters() { const d = derive(); if (!d.length) return { comp:0, conf:0 }; const filled = d.filter(f => f.v !== null && f.v !== undefined);
+  return { comp: filled.length/d.length, conf: d.reduce((s,f)=> s + ((f.v===null||f.v===undefined) ? 0 : f.conf), 0)/d.length }; }
+
+/* ---------- steps ---------- */
+const QUESTIONS = ['q1','q2','q3','q4','q5','q6','q7','q8','q9'];
+const STEPS = ['start','found', ...QUESTIONS, 'result'];
+const h = (tag, attrs={}, ...kids) => { const e = document.createElement(tag); for (const k in attrs) { if (k==='on') for (const ev in attrs.on) e.addEventListener(ev, attrs.on[ev]); else if (attrs[k] !== false && attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]); } for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) e.append(c.nodeType ? c : document.createTextNode(c)); return e; };
+const go = d => commit(s => { s.step = Math.max(0, Math.min(STEPS.length-1, s.step + d)); s.editing=null; });
+const chip = c => h('span', { class:'chip ' + (c>=.85?'hi':c>=.6?'mid':'lo') }, t(c>=.85?'hi':c>=.6?'mid':'lo'));
+function opt(id, key, sub, selected, onPick) { return h('button', { type:'button', class:'opt' + (selected?' sel':''), 'data-opt':id, 'aria-pressed': String(!!selected), on:{ click:onPick } }, t(key), sub ? h('small', {}, sub) : null); }
+function qHead(n, qk, wk) { return [ h('div', { class:'cap' }, `${t('q')} ${n} ${t('of')} ${QUESTIONS.length}`), h('h1', { id:'q-title' }, t(qk)), h('p', { class:'why' }, h('b', {}, t('why')), t(wk)) ]; }
+function nav(canNext, extra) { return h('div', { class:'nav' }, h('button', { type:'button', id:'b-back', on:{ click:()=>go(-1) } }, t('back')), extra||null, h('button', { type:'button', class:'primary', id:'b-next', disabled: canNext?null:'', on:{ click:()=>go(1) } }, t('next'))); }
+const pick = (key, val, advance=true) => commit(s => { s.answers[key] = val; if (advance) s.step++; });
+
+function compass() {
+  const p = state.plan, deg = p.northDeg.v, set = v => commit(s => { s.plan.northDeg = { v:((Math.round(v)%360)+360)%360, conf:1, src:'you' }; });
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.setAttribute('viewBox','-60 -60 120 120'); svg.setAttribute('width','180'); svg.setAttribute('class','compass');
+  svg.setAttribute('tabindex','0'); svg.setAttribute('role','slider'); svg.setAttribute('aria-valuemin','0'); svg.setAttribute('aria-valuemax','359'); svg.setAttribute('aria-valuenow', String(deg)); svg.setAttribute('aria-label', t('north')); svg.id='compass';
+  /* plan "up" is fixed at the top of the widget; the north needle is drawn at -deg */
+  svg.innerHTML = `<circle r="55" fill="#fff" stroke="#333"/><rect x="-18" y="-14" width="36" height="28" fill="#f6c9a8" stroke="#333"/><text y="-20" text-anchor="middle" font-size="7">plan</text>
+    <g transform="rotate(${-deg})"><path d="M0,-52 L6,-34 L-6,-34 Z" fill="#b3261e"/><text y="-24" text-anchor="middle" font-size="10" font-weight="700" transform="rotate(${deg} 0 -28)">N</text></g>`;
+  let drag = false; const ang = ev => { const r = svg.getBoundingClientRect(); return Math.atan2(ev.clientX - (r.left + r.width/2), -(ev.clientY - (r.top + r.height/2))) * 180/Math.PI; };
+  svg.addEventListener('pointerdown', ev => { drag = true; svg.setPointerCapture?.(ev.pointerId); });
+  svg.addEventListener('pointerup', ev => { if (drag) { drag = false; set(-ang(ev)); } });
+  svg.addEventListener('keydown', ev => { if (ev.key==='ArrowLeft') set(deg-15); if (ev.key==='ArrowRight') set(deg+15); });
+  return h('div', {}, h('p', { class:'why' }, t('compass_h')), svg,
+    h('div', { class:'nav' }, h('button', { type:'button', id:'b-n-minus', on:{ click:()=>set(deg-15) } }, t('minus')), h('button', { type:'button', id:'b-n-plus', on:{ click:()=>set(deg+15) } }, t('plus')),
+      DIRS[state.lang].map((d,i) => h('button', { type:'button', 'data-dir':i, 'aria-pressed': String(sector(deg)===i), on:{ click:()=>set(i*45) } }, d))),
+    h('p', { class:'live', id:'north-live' }, `${t('up')} ${DIRS[state.lang][sector(deg)]} (${deg}°)`));
+}
+function planSvg(level, clickable) {
+  const p = state.plan, svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.setAttribute('viewBox', `0 0 ${p.footprint.w} ${p.footprint.d}`); svg.setAttribute('class','plan');
+  const outer = document.createElementNS(svg.namespaceURI,'rect'); outer.setAttribute('width', p.footprint.w); outer.setAttribute('height', p.footprint.d); outer.setAttribute('fill','#555'); svg.append(outer);
+  for (const r of level.rooms) { const e = document.createElementNS(svg.namespaceURI,'rect'); for (const k of ['x','y']) e.setAttribute(k, r[k]); e.setAttribute('width', r.w); e.setAttribute('height', r.h);
+    e.setAttribute('class','room ' + (r.heated?'heated':'unheated')); e.setAttribute('data-room', r.id); e.setAttribute('tabindex','0'); e.setAttribute('role','switch'); e.setAttribute('aria-checked', String(r.heated)); e.setAttribute('aria-label', r.n[state.lang]);
+    const toggle = () => commit(s => { const rr = s.plan.levels.find(l => l.id===level.id).rooms.find(x => x.id===r.id); rr.heated = !rr.heated; s.answers.zoneOk = true; });
+    if (clickable) { e.addEventListener('click', toggle); e.addEventListener('keydown', ev => { if (ev.key===' '||ev.key==='Enter') { ev.preventDefault(); toggle(); } }); }
+    const tx = document.createElementNS(svg.namespaceURI,'text'); tx.setAttribute('x', r.x + .15); tx.setAttribute('y', r.y + .6); tx.textContent = r.n[state.lang]; svg.append(e, tx); }
+  return h('div', {}, h('b', {}, level.n[state.lang]), svg);
+}
+const numInput = (id, val, onSet, ph) => h('input', { type:'number', id, value: val ?? '', placeholder: ph ?? '', step:'any', on:{ change: ev => onSet(ev.target.value === '' ? undefined : +ev.target.value) } });
+
+const VIEW = {
+  start: () => h('div', { class:'card' }, h('h1', {}, t('start_h')), h('p', { class:'why' }, t('start_p')),
+    h('button', { type:'button', class:'primary', id:'b-demo', on:{ click:()=>commit(s => { s.plan = JSON.parse(JSON.stringify(DEMO_PLAN)); s.step = 1; }) } }, t('demo'))),
+  found: () => { const p = state.plan, row = (key, val, conf, editor) => h('div', { class:'row', 'data-row':key }, h('span', { class:'k' }, t(key)), h('span', { class:'v' }, val), chip(state.confirmed ? 1 : conf),
+        editor ? h('button', { type:'button', class:'ghost', 'data-fix':key, on:{ click:()=>{ state.editing = state.editing===key ? null : key; render(); } } }, t(state.editing===key ? 'done' : 'fix')) : null,
+        state.editing===key && editor ? h('div', { style:'flex-basis:100%' }, editor()) : null);
+    return h('div', { class:'card' }, h('h1', {}, t('found_h')), h('p', { class:'why' }, t('found_p') + ' (' + p.file + ')'),
+      row('address', p.address.v, p.address.conf, () => h('input', { type:'text', id:'i-address', style:'width:100%', value:p.address.v, on:{ change: ev => commit(s => { s.plan.address = { v:ev.target.value, conf:1, src:'you' }; }) } })),
+      row('plandate', String(p.planYear.v), p.planYear.conf), row('scale', p.scale.v, p.scale.conf),
+      row('levels', p.levels.map(l => `${l.n[state.lang]} ${String(l.h).replace('.',',')} m`).join(' · '), .7),
+      row('north', `${t('up')} ${DIRS[state.lang][sector(p.northDeg.v)]}`, p.northDeg.conf, compass), row('dwell', String(p.dwellings.v), p.dwellings.conf),
+      h('div', { class:'nav' }, h('button', { type:'button', class:'primary', id:'b-allok', on:{ click:()=>commit(s => { s.confirmed = true; s.step++; s.editing=null; }) } }, t('allok')))); },
+  q1: () => h('div', { class:'card' }, qHead(1,'q1','q1w'), h('div', { class:'opts' }, [['q1a','q1as'],['q1b','q1bs'],['q1c','q1cs']].map(([k,s]) => opt(k, k, t(s), state.answers.occasion===k, ()=>pick('occasion', k)))), nav(!!state.answers.occasion)),
+  q2: () => { const guess = periodOfYear(state.plan.planYear.v + 1), cur = state.answers.period ?? guess.id;
+    return h('div', { class:'card' }, qHead(2,'q2','q2w'), h('div', { class:'opts' }, PERIODS.map(p => opt(p.id, p.lab, `U ${String(p.U.wall).replace('.',',')} W/m²K`, cur===p.id, ()=>commit(s => { s.answers.period = p.id; delete s.answers.year; })))),
+      h('label', {}, t('q2y') + ' ', numInput('i-year', state.answers.year, v => commit(s => { if (v) { s.answers.year = v; s.answers.period = periodOfYear(v).id; } else delete s.answers.year; }), String(state.plan.planYear.v + 1))),
+      h('div', { class:'nav' }, h('button', { type:'button', id:'b-back', on:{ click:()=>go(-1) } }, t('back')), h('button', { type:'button', class:'primary', id:'b-next', on:{ click:()=>commit(s => { s.answers.period = cur; s.step++; }) } }, t('next')))); },
+  q3: () => { const d = derive(), An = d.find(f => f.id==='An'), Ve = d.find(f => f.id==='Ve');
+    return h('div', { class:'card' }, qHead(3,'q3','q3w'), h('p', { class:'legend' }, h('span', { style:'background:var(--heat)' }), t('heated'), h('span', { style:'background:var(--cold)' }), t('unheated')),
+      h('div', { class:'levels' }, state.plan.levels.map(l => planSvg(l, true))), h('p', { class:'live', id:'zone-live' }, `${t('q3live')}: ${fieldValue(An)} · ${t('q3vol')}: ${fieldValue(Ve)}`),
+      h('div', { class:'nav' }, h('button', { type:'button', id:'b-back', on:{ click:()=>go(-1) } }, t('back')), h('button', { type:'button', class:'primary', id:'b-next', on:{ click:()=>commit(s => { s.answers.zoneOk = true; s.step++; }) } }, t('allok')))); },
+  q4: () => { const r = state.answers.reno || {}, tog = k => commit(s => { s.answers.reno = { ...(s.answers.reno||{}) }; s.answers.reno[k] = !s.answers.reno[k]; });
+    const item = (k, lab, extraKey, unit, def) => h('div', { class:'row' }, h('button', { type:'button', class:'opt' + (r[k]?' sel':''), 'data-opt':k, 'aria-pressed':String(!!r[k]), on:{ click:()=>tog(k) } }, t(lab)),
+        r[k] ? h('label', {}, t(unit) + ' ', numInput('i-'+extraKey, r[extraKey], v => commit(s => { s.answers.reno = { ...s.answers.reno, [extraKey]: v }; }), String(def))) : null);
+    return h('div', { class:'card' }, qHead(4,'q4','q4w'), item('win','r_win','winYear','year',2010), item('roof','r_roof','roofCm','cm',16), item('wall','r_wall','wallCm','cm',12), item('floor','r_floor','floorCm','cm',8),
+      h('div', { class:'nav' }, h('button', { type:'button', id:'b-back', on:{ click:()=>go(-1) } }, t('back')),
+        h('button', { type:'button', class:'primary', id:'b-next', on:{ click:()=>commit(s => { s.answers.reno = s.answers.reno || {}; s.step++; }) } }, Object.values(r).some(v => v===true) ? t('next') : t('q4none')))); },
+  q5: () => h('div', { class:'card' }, qHead(5,'q5','q5w'), h('div', { class:'opts' }, ['h_gc','h_lt','h_old','h_hpa','h_hpg','h_pel','h_dh','h_el'].map(k => opt(k, k, null, state.answers.heat===k, ()=>pick('heat', k, false)))),
+      state.answers.heat ? h('div', {}, h('b', {}, t('age')), h('div', { class:'opts' }, ['a1','a2','a3'].map(k => opt(k, k, null, state.answers.heatAge===k, ()=>pick('heatAge', k))))) : null, nav(!!state.answers.heat && !!state.answers.heatAge)),
+  q6: () => h('div', { class:'card' }, qHead(6,'q6','q6w'), h('div', { class:'opts' }, ['e_rad','e_floor','e_mix'].map(k => opt(k, k, null, state.answers.emission===k, ()=>pick('emission', k)))),
+      nav(!!state.answers.emission || !!state.answers.emissionSkipped, h('button', { type:'button', class:'ghost', id:'b-skip', on:{ click:()=>commit(s => { delete s.answers.emission; s.answers.emissionSkipped = true; s.step++; }) } }, t('skip')))),
+  q7: () => h('div', { class:'card' }, qHead(7,'q7','q7w'), h('div', { class:'opts' }, ['w_same','w_el','w_hp'].map(k => opt(k, k, null, state.answers.dhw===k, ()=>pick('dhw', k)))), nav(!!state.answers.dhw)),
+  q8: () => h('div', { class:'card' }, qHead(8,'q8','q8w'), h('div', { class:'opts' }, ['v_win','v_ex','v_hrv'].map(k => opt(k, k, null, state.answers.vent===k, ()=>pick('vent', k, false)))),
+      h('label', {}, t('n50') + ' ', numInput('i-n50', state.answers.n50, v => commit(s => { if (v===undefined) delete s.answers.n50; else s.answers.n50 = v; }))), nav(!!state.answers.vent)),
+  q9: () => { const a = state.answers, more = a.solar && a.solar !== 's_none';
+    return h('div', { class:'card' }, qHead(9,'q9','q9w'), h('div', { class:'opts' }, ['s_none','s_pv','s_th','s_both'].map(k => opt(k, k, null, a.solar===k, ()=>pick('solar', k, k==='s_none')))),
+      more && a.solar !== 's_th' ? h('label', {}, t('kwp') + ' ', numInput('i-kwp', a.kwp, v => commit(s => { s.answers.kwp = v; }), '5')) : null, ' ',
+      more && a.solar !== 's_pv' ? h('label', {}, t('m2') + ' ', numInput('i-stm2', a.stm2, v => commit(s => { s.answers.stm2 = v; }), '6')) : null, nav(!!a.solar)); },
+  result: () => h('div', { class:'card' }, h('h1', {}, t('res_h')), h('p', { class:'why' }, t('res_p')), fieldTable(false), h('div', { class:'nav' }, h('button', { type:'button', id:'b-back', on:{ click:()=>go(-1) } }, t('back'))))
+};
+function fieldTable(editable) {
+  const rows = derive().map(f => h('tr', { 'data-field':f.id }, h('td', {}, fieldLabel(f.id)), h('td', { class:'num' }, fieldValue(f)), h('td', {}, h('span', { class:'chip src' }, t('src_'+f.src)), ' ', (f.v===null||f.v===undefined) ? null : chip(f.conf)),
+    h('td', {}, h('button', { type:'button', class:'ghost', 'data-copy':f.id, on:{ click: ev => { const v = (f.v===null||f.v===undefined) ? '' : String(f.v).replace('.', ','); window.__lastCopied = v; navigator.clipboard?.writeText(v).catch(()=>{}); ev.target.textContent = t('copied'); } } }, t('copy')))));
+  return h('div', { class:'overflow' }, h('table', { id: editable ? 'expert-table' : 'result-table' }, h('thead', {}, h('tr', {}, h('th', {}, t('f_field')), h('th', {}, t('f_val')), h('th', {}, t('f_src')), h('th', {}))), h('tbody', {}, rows)));
+}
+function render() {
+  document.documentElement.lang = state.lang;
+  for (const [id,k] of [['t-title','title'],['t-comp','comp'],['t-conf','conf'],['b-undo','undo'],['b-expert','expert'],['b-lang','lang']]) document.getElementById(id).textContent = t(k);
+  document.getElementById('b-expert').setAttribute('aria-pressed', String(state.expert)); document.getElementById('b-undo').disabled = !history.length;
+  const m = meters(); for (const k of ['comp','conf']) { document.getElementById('m-'+k).style.width = Math.round(m[k]*100) + '%'; document.getElementById('m-'+k+'-v').textContent = Math.round(m[k]*100) + ' %'; }
+  const app = document.getElementById('app'); app.replaceChildren(VIEW[STEPS[state.step]]());
+  if (state.expert && state.plan && STEPS[state.step] !== 'result') app.append(h('div', { class:'card' }, h('div', { class:'cap' }, t('expert')), fieldTable(true)));
+  if (state.toast) app.append(h('div', { class:'toast', role:'status', id:'toast' }, state.toast));
+}
+document.getElementById('b-undo').addEventListener('click', undo);
+document.getElementById('b-expert').addEventListener('click', () => { state.expert = !state.expert; render(); });
+document.getElementById('b-lang').addEventListener('click', () => { state.lang = state.lang==='fr' ? 'de' : 'fr'; render(); });
+document.addEventListener('keydown', ev => { stats.keys++; if ((ev.ctrlKey||ev.metaKey) && ev.key==='z') { ev.preventDefault(); undo(); } });
+document.addEventListener('click', () => { stats.clicks++; }, true);
+/* hooks for the headless test */
+window.__state = state; window.__stats = stats; window.__derive = derive; window.__meters = meters; window.__STEPS = STEPS;
+window.__export = () => ({ generated:'ux-spike', lang:state.lang, fields: derive() });
+render();
+</script>
+</body>
+</html>

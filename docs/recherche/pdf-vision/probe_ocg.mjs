@@ -1,0 +1,14 @@
+import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import fs from 'node:fs';
+const doc = await getDocument({ data: new Uint8Array(fs.readFileSync('fixtures/layers_ocg.pdf')), verbosity: 0 }).promise;
+const occ = await doc.getOptionalContentConfig();
+const groups = [...occ].map(([id, g]) => [id, g.name]);
+console.log('pdf.js OCG groups:', JSON.stringify(groups));
+const page = await doc.getPage(1);
+const ol = await page.getOperatorList();
+const names = Object.fromEntries(Object.entries(OPS).map(([k, v]) => [v, k]));
+const seq = [];
+ol.fnArray.forEach((f, i) => { if (['beginMarkedContentProps', 'endMarkedContent', 'constructPath', 'showText'].includes(names[f])) seq.push(names[f] + (names[f] === 'beginMarkedContentProps' ? JSON.stringify(ol.argsArray[i]) : '')); });
+console.log(seq.join(' | '));
+const tc = await page.getTextContent({ includeMarkedContent: true });
+console.log('text items w/ marked content:', JSON.stringify(tc.items.map(i => i.str ?? (i.type + ':' + (i.id ?? '')))));
