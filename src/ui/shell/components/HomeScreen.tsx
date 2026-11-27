@@ -2,7 +2,7 @@
  * Accueil : grande zone de dépôt, exemple, grille vierge, reprise d'un projet.
  * Dit clairement que les fichiers ne quittent jamais l'ordinateur.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import { t } from '../../../i18n';
 import { readFileText } from '../browser';
@@ -59,6 +59,15 @@ export function HomeScreen() {
   const saved = useShell((s) => s.saved);
   const hasWork = useShell((s) => s.history.present.project.model.storeys.length > 0);
   const [over, setOver] = useState(false);
+  // « Effacer » le projet retrouvé demande une confirmation dans la page : c'est parfois la seule copie du travail.
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const keepButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirmDiscard) keepButton.current?.focus();
+  }, [confirmDiscard]);
+  useEffect(() => {
+    if (!saved) setConfirmDiscard(false);
+  }, [saved]);
   const depth = useRef(0);
   const planInput = useRef<HTMLInputElement>(null);
   const projectInput = useRef<HTMLInputElement>(null);
@@ -87,18 +96,45 @@ export function HomeScreen() {
       {saved ? (
         <div className="notice notice--info home__saved" role="region" aria-label={tr('shell.home.saved.title')}>
           <Icon name="folder" />
-          <div className="notice__body">
-            <strong>{tr('shell.home.saved.title')}</strong>
-            <span>{tr('shell.home.saved.text', { name: saved.name || tr('shell.home.saved.unnamed'), count: saved.storeys })}</span>
-          </div>
-          <div className="notice__actions">
-            <button type="button" className="btn btn--primary" onClick={() => store.getState().resumeSaved()} data-testid="resume-saved">
-              {tr('shell.home.saved.resume')}
-            </button>
-            <button type="button" className="btn btn--ghost" onClick={() => store.getState().discardSaved()}>
-              {tr('shell.home.saved.discard')}
-            </button>
-          </div>
+          {confirmDiscard ? (
+            <>
+              <div className="notice__body" role="alert" data-testid="discard-confirm">
+                <strong>{tr('shell.home.saved.discard.ask', { name: saved.name || tr('shell.home.saved.unnamed') })}</strong>
+                <span>{tr('shell.home.saved.discard.warn')}</span>
+              </div>
+              <div className="notice__actions">
+                <button type="button" className="btn btn--primary" onClick={() => setConfirmDiscard(false)} ref={keepButton} data-testid="discard-cancel">
+                  {tr('shell.home.saved.discard.keep')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--danger"
+                  onClick={() => {
+                    store.getState().discardSaved();
+                    store.getState().showToast(tr('shell.home.saved.discarded'), 'info');
+                  }}
+                  data-testid="discard-yes"
+                >
+                  {tr('shell.home.saved.discard.yes')}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="notice__body">
+                <strong>{tr('shell.home.saved.title')}</strong>
+                <span>{tr('shell.home.saved.text', { name: saved.name || tr('shell.home.saved.unnamed'), count: saved.storeys })}</span>
+              </div>
+              <div className="notice__actions">
+                <button type="button" className="btn btn--primary" onClick={() => store.getState().resumeSaved()} data-testid="resume-saved">
+                  {tr('shell.home.saved.resume')}
+                </button>
+                <button type="button" className="btn btn--ghost" onClick={() => setConfirmDiscard(true)} data-testid="discard-saved">
+                  {tr('shell.home.saved.discard')}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       ) : null}
 

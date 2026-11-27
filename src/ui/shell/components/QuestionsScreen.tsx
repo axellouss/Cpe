@@ -22,6 +22,7 @@ import type {
 } from '../../../core/types';
 import { ORIENTATIONS } from '../../../core/types';
 import { roofRidgeChoices } from '../../../engine';
+import { prefersReducedMotion } from '../browser';
 import { derive } from '../compute';
 import { fixed } from '../numbers';
 import {
@@ -253,6 +254,44 @@ const BOTTOM_KINDS: readonly BottomKind[] = ['slab-on-ground', 'above-unheated',
 const ROOF_SHAPES: readonly RoofShape[] = ['gable', 'hip', 'mono'];
 const PITCHES = [15, 25, 30, 35, 40, 45] as const;
 const KNEE_WALLS = [0, 0.5, 1, 1.5] as const;
+
+/** Ce qui manque à la question « toiture et plancher bas » pour pouvoir continuer, dans l'ordre de l'écran. */
+export type ClosureMissing = 'top' | 'roof' | 'bottom';
+
+export function closureMissing(project: Project): ClosureMissing | null {
+  const { top, bottom } = project.model;
+  // Toit incliné choisi (ou proposé par la maquette) : ses détails restent à confirmer par le bouton dédié.
+  if (top.kind === 'pitched-roof' && top.from === 'estimate') return 'roof';
+  if (top.from !== 'user') return 'top';
+  if (bottom.from !== 'user') return 'bottom';
+  return null;
+}
+
+const NEED_TARGET: Record<ClosureMissing, string> = { top: 'q-top', roof: 'q-roof-confirm', bottom: 'q-bottom' };
+
+/**
+ * Sous un « Continuer » grisé : dit CE QUI manque, et y mène. Sur un téléphone la confirmation de la toiture
+ * est hors de l'écran quand on arrive en bas de page ; « choisissez une réponse » ne suffisait pas, les cartes
+ * paraissant toutes choisies.
+ */
+function NeedHint({ missing, tr }: { missing: ClosureMissing | null; tr: PartProps['tr'] }) {
+  if (!missing) return <p className="question__need">{tr('shell.q.need')}</p>;
+  const reveal = (): void => {
+    const target = document.querySelector<HTMLElement>(`[data-testid="${NEED_TARGET[missing]}"]`);
+    if (!target) return;
+    target.scrollIntoView?.({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    const focusable = target.matches('button') ? target : target.querySelector<HTMLElement>('button, [tabindex]');
+    focusable?.focus({ preventScroll: true });
+  };
+  return (
+    <p className="question__need" role="status" data-testid="q-need" data-missing={missing}>
+      <span>{tr(`shell.q.need.${missing}`)}</span>{' '}
+      <button type="button" className="linklike" onClick={reveal} data-testid="q-need-go">
+        {tr(`shell.q.need.${missing}.go`)}
+      </button>
+    </p>
+  );
+}
 
 function ClosurePart({ project, tr, actions }: PartProps) {
   const lang = useShell((s) => s.lang);
@@ -802,7 +841,7 @@ export function QuestionsScreen() {
             </button>
           )}
         </footer>
-        {!canContinue ? <p className="question__need">{tr('shell.q.need')}</p> : null}
+        {!canContinue ? <NeedHint missing={id === 'closure' ? closureMissing(project) : null} tr={tr} /> : null}
         {fork ? <p className="question__need">{tr('shell.q.fork.hint', { count: countedQuestions(project).filter(isVisitNote).length })}</p> : null}
         {isVisitNote(id) && id !== 'identity' ? (
           <p className="question__need">

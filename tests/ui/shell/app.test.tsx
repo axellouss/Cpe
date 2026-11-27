@@ -199,6 +199,33 @@ describe('accueil', () => {
     expect(text()).toContain('Rez-de-chaussée');
   });
 
+  it('n’efface le projet retrouvé qu’après confirmation, et dit qu’il l’a fait', async () => {
+    const first = testStore();
+    first.store.getState().startBlank();
+    first.store.getState().answer({ projectName: 'Maison Weber' });
+    const m = await mount(testStore({}, first.storage.dump()));
+
+    // Premier toucher : rien n'est effacé, la page demande confirmation et met le bouton sûr sous le doigt.
+    await click('discard-saved');
+    expect(m.storage.getItem(STORAGE_KEYS.project)).not.toBeNull();
+    expect(q('discard-confirm').textContent).toContain('Effacer définitivement « Maison Weber » ?');
+    expect(q('discard-confirm').getAttribute('role')).toBe('alert');
+    expect(document.activeElement).toBe(q('discard-cancel'));
+
+    // « Garder » : retour à la proposition de reprise, projet intact.
+    await click('discard-cancel');
+    expect(has('discard-confirm')).toBe(false);
+    expect(has('resume-saved')).toBe(true);
+    expect(m.storage.getItem(STORAGE_KEYS.project)).not.toBeNull();
+
+    // « Oui, effacer » : le projet disparaît du poste, et un message le dit.
+    await click('discard-saved');
+    await click('discard-yes');
+    expect(m.storage.getItem(STORAGE_KEYS.project)).toBeNull();
+    expect(has('resume-saved')).toBe(false);
+    expect(q('toast').textContent).toContain('Projet effacé');
+  });
+
   it('explique un fichier Archicad : recette d’export, trois options, e-mail prêt à copier en français ou en allemand', async () => {
     const m = await mount();
     await act(async () => {
@@ -348,6 +375,45 @@ describe('plan', () => {
 });
 
 describe('questions', () => {
+  it('sous un « Continuer » grisé, dit ce qui manque et y mène : choix du haut, confirmation du toit, choix du bas', async () => {
+    await mount();
+    await click('start-blank');
+    await click('stub-trace');
+    await click('to-questions');
+    const missing = (): string | null => (has('q-need') ? q('q-need').getAttribute('data-missing') : null);
+    const disabled = (): boolean => (q('q-continue') as HTMLButtonElement).disabled;
+
+    // Rien de choisi : c'est la toiture qui manque.
+    expect(disabled()).toBe(true);
+    expect(missing()).toBe('top');
+    expect(q('q-need').textContent).toContain('Il manque la toiture');
+
+    // Toit incliné touché, plancher choisi : toutes les cartes paraissent répondues, mais le toit reste à confirmer.
+    await choose('q-top', 'pitched-roof');
+    await choose('q-bottom', 'slab-on-ground');
+    expect(disabled()).toBe(true);
+    expect(missing()).toBe('roof');
+    expect(q('q-need').textContent).toContain('reste à confirmer');
+    expect(q('q-need').getAttribute('role')).toBe('status');
+    // Le lien mène au bouton de confirmation (hors écran sur un téléphone) et lui donne le focus.
+    await click('q-need-go');
+    expect(document.activeElement).toBe(q('q-roof-confirm'));
+    await click('q-roof-confirm');
+    expect(has('q-need')).toBe(false);
+    expect(disabled()).toBe(false);
+  });
+
+  it('nomme le plancher bas quand lui seul manque', async () => {
+    await mount();
+    await click('start-blank');
+    await click('stub-trace');
+    await click('to-questions');
+    await choose('q-top', 'flat-roof');
+    expect(q('q-need').getAttribute('data-missing')).toBe('bottom');
+    await click('q-need-go');
+    expect(q('q-bottom').contains(document.activeElement)).toBe(true);
+  });
+
   it('une question par écran, avec sa raison ; les choix règlent le projet ; « je ne sais pas » fait avancer', async () => {
     const m = await mount();
     await click('start-blank');
