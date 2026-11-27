@@ -356,6 +356,17 @@ describe('enregistrement dans le navigateur', () => {
 });
 
 describe('changement de langue', () => {
+  it('ne donne jamais le même nom à deux étages, même quand un étage plus haut porte déjà le nom traduit', () => {
+    let project = house();
+    const first = project.model.storeys[0]!;
+    // Deux étages : « Rez-de-chaussée » (reconnu) et, au-dessus, un étage déjà nommé « Erdgeschoss ».
+    project = { ...project, model: { ...project.model, storeys: [{ ...first, name: 'Rez-de-chaussée' }, { ...first, id: 'storey-x', name: 'Erdgeschoss' }] } };
+    const de = relocalizeDefaults(project, 'fr', 'de');
+    const names = de.model.storeys.map((s) => s.name);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual(['Rez-de-chaussée', 'Erdgeschoss']);
+  });
+
   it('les noms par défaut suivent la langue ; un nom personnalisé ne change jamais', () => {
     let project = house();
     project = updateConstruction(project, DEFAULT_CONSTRUCTION_IDS.roof, { name: 'Toit ardoise' });

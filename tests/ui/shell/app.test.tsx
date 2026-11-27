@@ -337,8 +337,17 @@ describe('lecture', () => {
     expect(all('stack-row').map((row) => row.querySelector('input')?.value ?? '')).toContain('Erdgeschoss');
     expect(q('read-notes-lang').textContent).toContain('auf Französisch');
     expect(q('doc-card').querySelector('.doc__warnings')?.getAttribute('lang')).toBe('fr');
-    await click('lang-fr');
+    // Un geste relit le fichier dans la langue actuelle : il REMPLACE le document (pas de doublon), l'avis disparaît.
+    await click('reread-doc');
+    expect(all('doc-card')).toHaveLength(1);
+    expect(all('stack-row')).toHaveLength(2);
     expect(has('read-notes-lang')).toBe(false);
+    expect(m.store.getState().documents[0]!.readLang).toBe('de');
+    await click('lang-fr');
+    expect(has('read-notes-lang')).toBe(true);
+    await click('reread-doc');
+    expect(has('read-notes-lang')).toBe(false);
+    expect(all('doc-card')).toHaveLength(1);
     expect(text()).toContain('Dalle sur terre-plein');
 
     // Ajuster : renommer l'étage du haut (affiché en premier, comme une coupe).

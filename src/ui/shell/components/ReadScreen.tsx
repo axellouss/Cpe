@@ -163,9 +163,9 @@ function DocumentCard({ loaded, proposal }: { loaded: LoadedDocument; proposal: 
   const store = useShellStore();
   const doc = loaded.doc;
   const lang = useShell((s) => s.lang);
+  const busy = useShell((s) => s.busy);
   // Les remarques du lecteur sont rédigées dans la langue de l'interface AU MOMENT de la lecture.
   const notesLang: Lang = loaded.readLang ?? lang;
-  const hasReaderText = doc.warnings.length > 0 || doc.northAngle?.note !== undefined || doc.sheets.some((s) => s.detected.notes.length > 0 || s.metresPerUnit?.note !== undefined);
   return (
     <article className="card doc" aria-label={doc.fileName} data-testid="doc-card">
       <header className="doc__head">
@@ -206,9 +206,14 @@ function DocumentCard({ loaded, proposal }: { loaded: LoadedDocument; proposal: 
         <p className="doc__north muted">{tr('shell.read.north.none')}</p>
       )}
 
-      {hasReaderText && notesLang !== lang ? (
+      {notesLang !== lang ? (
         <p className="doc__lang muted" data-testid="read-notes-lang">
-          {tr(`shell.read.notesLang.${notesLang}`)}
+          <span>{tr(`shell.read.notesLang.${notesLang}`)}</span>{' '}
+          {loaded.rereadable ? (
+            <button type="button" className="linklike" onClick={() => void store.getState().rereadDocument(loaded.id)} disabled={busy} data-testid="reread-doc">
+              {tr('shell.read.reread')}
+            </button>
+          ) : null}
         </p>
       ) : null}
 

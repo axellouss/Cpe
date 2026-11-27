@@ -9,6 +9,7 @@ import {
   collectObjectUrls,
   combineDocuments,
   defaultStoreyName,
+  documentSignature,
   fileNameOfSheetId,
   findSheet,
   includedSheets,
@@ -40,6 +41,16 @@ describe('espace de noms des feuilles', () => {
     expect(findSheet([a, b], 'absent#p1')).toBeNull();
     expect(findSheet([a, b], null)).toBeNull();
     expect(allSheets([a, b])).toHaveLength(2);
+  });
+
+  it('donne la même empreinte au même fichier lu dans une autre langue (noms de feuilles traduits)', () => {
+    const fr = doc('maison.dxf', [sheet('cad-1', 'Rez-de-chaussée'), sheet('cad-2', 'Étage')]);
+    const de = doc('maison.dxf', [sheet('cad-1', 'Erdgeschoss'), sheet('cad-2', 'Obergeschoss')]);
+    expect(documentSignature(de, 1234)).toBe(documentSignature(fr, 1234));
+    // Un autre dessin du même nom garde une empreinte différente.
+    const other = doc('maison.dxf', [sheet('cad-1', 'Rez-de-chaussée', { outline: rect(1200, 900) })]);
+    expect(documentSignature(other, 1234)).not.toBe(documentSignature(fr, 1234));
+    expect(documentSignature(fr, 999)).not.toBe(documentSignature(fr, 1234));
   });
 
   it('ne retient que les adresses d’objets à libérer', () => {

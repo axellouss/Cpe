@@ -76,12 +76,14 @@ export function relocalizeDefaults(project: Project, from: Lang, to: Lang): Proj
     items.map((item) => (before.get(item.id) === item.name && after.has(item.id) ? { ...item, name: after.get(item.id)! } : item));
   const constructions = renamed(model.constructions, oldConstructions, newConstructions);
   const windowTypes = renamed(model.windowTypes, oldWindows, newWindows);
-  const taken = new Set<string>();
+  // Noms déjà pris, y compris par les étages qui viennent APRÈS : jamais deux étages du même nom.
+  const taken = new Set(model.storeys.map((s) => s.name));
   const storeys = model.storeys.map((s) => {
     const guess = guessStorey(s.name);
-    const next = guess && guess[from] === s.name && !taken.has(guess[to]) ? guess[to] : s.name;
-    taken.add(next);
-    return next === s.name ? s : { ...s, name: next };
+    if (!guess || guess[from] !== s.name || guess[to] === s.name || taken.has(guess[to])) return s;
+    taken.delete(s.name);
+    taken.add(guess[to]);
+    return { ...s, name: guess[to] };
   });
   const same = (a: readonly { name: string }[], b: readonly { name: string }[]): boolean => a.every((x, i) => x.name === b[i]!.name);
   if (same(constructions, model.constructions) && same(windowTypes, model.windowTypes) && same(storeys, model.storeys)) return project;

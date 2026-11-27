@@ -70,6 +70,8 @@ export interface LoadedDocument {
   signature?: string;
   /** Langue dans laquelle le lecteur a rédigé ses remarques (celle de l'interface au moment de la lecture). */
   readLang?: Lang;
+  /** Vrai si le fichier d'origine est encore sous la main : il peut être relu d'un geste (dans une autre langue). */
+  rereadable?: boolean;
 }
 
 /** Suivi de la lecture d'un fichier déposé. */

@@ -55,7 +55,9 @@ export function documentSignature(doc: PlanDocument, byteLength?: number): strin
   const r = (v: number): string => (Number.isFinite(v) ? v.toFixed(3) : '?');
   const sheets = doc.sheets.map((s) => {
     const b = s.bbox;
-    return [s.name, r(b.minX), r(b.minY), r(b.maxX), r(b.maxY), s.segments?.length ?? 0, s.detected.outline?.length ?? 0, s.detected.rooms.length].join(',');
+    // Pas le NOM de la feuille : le lecteur l'écrit dans la langue de la lecture, et le même fichier relu dans
+    // l'autre langue doit garder la même empreinte (il remplace alors l'ancien au lieu de s'ajouter à côté).
+    return [s.id, r(b.minX), r(b.minY), r(b.maxX), r(b.maxY), s.segments?.length ?? 0, s.detected.outline?.length ?? 0, s.detected.rooms.length].join(',');
   });
   return [byteLength ?? '?', doc.kind, doc.sheets.length, ...sheets].join('|');
 }

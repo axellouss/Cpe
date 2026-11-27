@@ -184,6 +184,8 @@ export interface ShellState {
   discardSaved(): void;
   newProject(): void;
   removeDocument(id: string): void;
+  /** Relit un document dont le fichier d'origine est encore sous la main (remarques dans la langue actuelle). */
+  rereadDocument(id: string): Promise<void>;
   dismissClosedFiles(): void;
 
   setProposal(proposal: Proposal): void;
@@ -290,6 +292,11 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
   const found = loadWorkspace(deps.storage);
   const saved = found && !isEmptyWorkspace(found) ? savedInfo(found) : null;
 
+  /**
+   * Fichiers d'origine des documents lus pendant cette session (références du navigateur, pas leur contenu) :
+   * ils permettent de relire un plan d'un geste, par exemple dans l'autre langue. Jamais enregistrés.
+   */
+  const sources = new Map<string, FileLike>();
   let toastSerial = 0;
   let celebrateSerial = 0;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -525,6 +532,11 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
               loaded = toLoadedDocument({ ...doc, fileName: renamed }, signature, get().lang);
               toast(tr('shell.read.sameName', { name: doc.fileName, renamed }), 'warn');
             }
+            // Le fichier reste relisible tant qu'il porte son propre nom (pas celui, distinct, d'un homonyme).
+            if (loaded.id === file.name) {
+              sources.set(loaded.id, file);
+              loaded = { ...loaded, rereadable: true };
+            }
             const previous = get().documents.find((d) => d.id === loaded.id);
             // Le même fichier redéposé remplace l'ancien : ses adresses d'objets sont libérées (sauf celles reprises).
             if (previous) for (const url of previous.urls) if (!loaded.urls.includes(url)) deps.revokeUrl(url);
@@ -646,6 +658,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       newProject() {
         const state = get();
         revokeAll(state.documents);
+        sources.clear();
         replaceWorkspace({ project: createEmptyProject(state.lang), marks: emptyMarks() }, 'shell.undo.newProject');
         clearWorkspace(deps.storage);
         lastSaved = null;
@@ -670,6 +683,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         const doc = state.documents.find((d) => d.id === id);
         if (!doc) return;
         for (const url of doc.urls) deps.revokeUrl(url);
+        sources.delete(id);
         const documents = state.documents.filter((d) => d.id !== id);
         const project = selectProject(state);
         set({
@@ -677,6 +691,13 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           proposal: documents.length > 0 ? proposeStoreys(documents, project, state.lang, state.proposal?.mode) : null,
           step: documents.length === 0 && state.step === 'read' ? 'home' : state.step,
         });
+      },
+
+      async rereadDocument(id) {
+        const file = sources.get(id);
+        if (!file || get().busy) return;
+        // Même fichier, même empreinte : la lecture remplace le document, dans la langue actuelle.
+        await get().ingestFiles([file]);
       },
 
       dismissClosedFiles() {
