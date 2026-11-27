@@ -103,23 +103,25 @@ function matchesAt(data: Uint8Array, at: number, text: string): boolean {
  * et des blancs), « END-ISO-10303-21; » en fin (blancs de fin ignorés). Un fichier qui a la tête sans la queue a
  * été tronqué : web-ifc l'ouvrirait quand même et l'on proposerait un bâtiment incomplet.
  */
+/** Portion finale du fichier où l'on cherche « END-ISO-10303-21; » (un commentaire d'export peut la suivre). */
+const TRAILER_SEARCH_BYTES = 256 * 1024;
+
 export function stepShape(data: Uint8Array): { header: boolean; trailer: boolean } {
   let start = 0;
   if (data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) start = 3;
   while (start < data.length && start < 4096 && isPadding(data[start]!)) start++;
-  let end = data.length;
-  // Blancs de fin, et commentaires « /* … */ » qu'un logiciel d'export ajoute parfois après la fin du fichier :
-  // ils ne font pas d'un fichier complet un fichier tronqué.
-  for (;;) {
-    while (end > 0 && isPadding(data[end - 1]!)) end--;
-    if (!(end >= 4 && data[end - 1] === 0x2f && data[end - 2] === 0x2a)) break; // ne finit pas par « */ »
-    let open = end - 4;
-    const floor = Math.max(start, end - 4096);
-    while (open >= floor && !(data[open] === 0x2f && data[open + 1] === 0x2a)) open--;
-    if (open < floor) break; // pas de « /* » à portée : on ne devine pas
-    end = open;
+  // La fin se cherche dans la queue du fichier, quoi qui la suive : blancs, commentaire « /* … */ » d'un logiciel
+  // d'export, octets de remplissage. Un fichier TRONQUÉ, lui, ne contient cette fin nulle part ; un fichier complet
+  // suivi d'autre chose n'est pas « incomplet ».
+  let trailer = false;
+  const floor = Math.max(start, data.length - TRAILER_SEARCH_BYTES);
+  for (let at = data.length - STEP_TRAILER.length; at >= floor; at--) {
+    if (matchesAt(data, at, STEP_TRAILER)) {
+      trailer = true;
+      break;
+    }
   }
-  return { header: matchesAt(data, start, STEP_HEADER), trailer: end > start && matchesAt(data, end - STEP_TRAILER.length, STEP_TRAILER) };
+  return { header: matchesAt(data, start, STEP_HEADER), trailer };
 }
 
 /** Modèle IFC ouvert dans une instance web-ifc déjà initialisée. */

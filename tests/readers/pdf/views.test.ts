@@ -417,3 +417,45 @@ describe('aucun texte ne laisse voir un paramètre non rempli', () => {
     }
   });
 });
+
+/** Un plan 10 × 8 m au 1:100 en trait fin à (px, py), ses pièces sans surface, dans un cadre de vue qui porte son titre. */
+function framedHairlinePlan(px: number, py: number, rooms: [string, number, number][], title: string): { segs: RawSeg[]; texts: RawText[] } {
+  const k = ppm(100);
+  const line = 0.5;
+  const thin = (segs: RawSeg[]): RawSeg[] => segs.map((s) => ({ ...s, w: line }));
+  const segs = thin([
+    ...shell(px, py, 10, 8, 100),
+    ...partition(px, py, 100, [6, 0.4], [6, 7.6]),
+    // Cadre de la vue : il enveloppe le plan et son titre.
+    ...rect(px - 20, py - 20, px + 10 * k + 20, py + 8 * k + 60, line),
+  ]);
+  const texts = rooms.map(([name, x, y]) => text(name, px + x * k, py + y * k));
+  // Titre DANS le cadre, plus gros que les étiquettes de pièces.
+  texts.push(text(title, px + 5 * k, py + 8 * k + 35, 12));
+  return { segs, texts };
+}
+
+describe('page « tout en trait fin » à plusieurs plans que l’on ne sait pas séparer', () => {
+  it('deux plans encadrés et reliés, titres dans leur cadre : la page le dit, la liste des pièces mêle les niveaux', () => {
+    const a = framedHairlinePlan(80, 200, [['Séjour', 3, 3], ['Cuisine', 8, 3]], 'Rez-de-chaussée');
+    const b = framedHairlinePlan(560, 200, [['Chambre 1', 3, 3], ['Chambre 2', 8, 3]], 'Étage');
+    // Un trait relie les deux cadres : une seule région de dessin, pas de découpage possible.
+    const link = seg(80 + 10 * ppm(100) + 20, 300, 560 - 20, 300, 0.5);
+    const texts = [...a.texts, ...b.texts, text('Échelle 1:100', 1000, 790, 9)];
+    const { doc } = analysePdf([page([...a.segs, ...b.segs, link], texts)], 'deux.pdf');
+    expect(doc.sheets).toHaveLength(1);
+    expect(doc.sheets[0]!.detected.rooms.map((r) => r.name).sort()).toEqual(['Chambre 1', 'Chambre 2', 'Cuisine', 'Séjour']);
+    expect(doc.warnings.some((w) => /Plusieurs niveaux/i.test(w))).toBe(true);
+    expect(doc.sheets[0]!.detected.notes.some((n) => /plusieurs niveaux/i.test(n))).toBe(true);
+  });
+
+  it('un seul plan, à côté d’un tableau dont une case dit « Étage » à la taille du texte courant : pas d’avertissement', () => {
+    const a = framedHairlinePlan(80, 200, [['Séjour', 3, 3], ['Cuisine', 8, 3]], 'Rez-de-chaussée');
+    // Tableau des surfaces : un cadre, des lignes, et le mot « Étage » dans une case, à la taille des étiquettes.
+    const table: RawSeg[] = [...rect(700, 200, 1000, 320, 0.5), seg(700, 230, 1000, 230, 0.5), seg(700, 260, 1000, 260, 0.5), seg(700, 290, 1000, 290, 0.5), seg(850, 200, 850, 320, 0.5)];
+    const texts = [...a.texts, text('Étage', 775, 215), text('Surface', 925, 215), text('Échelle 1:100', 1000, 790, 9)];
+    const { doc } = analysePdf([page([...a.segs, ...table], texts)], 'un.pdf');
+    expect(doc.warnings.some((w) => /Plusieurs niveaux/i.test(w))).toBe(false);
+    expect(doc.sheets.flatMap((s) => s.detected.notes).some((n) => /plusieurs niveaux/i.test(n))).toBe(false);
+  });
+});

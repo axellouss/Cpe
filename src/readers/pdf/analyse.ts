@@ -1192,12 +1192,6 @@ function hairlineViews(page: RawPage, rooms: readonly DetectedRoom[], den: numbe
     const areaM2 = (b.maxX - b.minX) * (b.maxY - b.minY) * mpp * mpp;
     return { ring: rings[i]!, bbox: b, areaM2, kind, title, titleNearby: title !== null, storey, texts: textIdx, segs: owned[i]!.segs, unsupportedM: 0 };
   });
-  // Une région qui en enveloppe une autre (cadre d'un tableau autour d'un plan, légende englobante) n'est pas un
-  // second plan : on garde la région intérieure.
-  const wraps = (a: BBox, b: BBox): boolean => a.minX <= b.minX && a.minY <= b.minY && a.maxX >= b.maxX && a.maxY >= b.maxY;
-  for (const v of views) {
-    if (v.kind === 'plan' && views.some((w) => w !== v && w.kind === 'plan' && wraps(v.bbox, w.bbox))) v.kind = 'other';
-  }
   const inRegion = (r: DetectedRoom, v: View): boolean => !!r.at && rectDistance(r.at.x, r.at.y, v.bbox) === 0;
   // Étiquettes écrites dans une coupe, une façade ou un plan de situation : pas des pièces d'un étage.
   const notPlan = views.filter((v) => v.kind !== 'plan' && (v.kind === 'section' || v.title !== null));
@@ -1320,6 +1314,18 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
     (t) => Math.abs(t.angle) < 1 && t.s.length <= 40 && !SECTION_RE.test(fold(t.s)) && guessStorey(t.s) !== null && (!looksLikeRoomName(t.s) || PLAN_RE.test(fold(t.s))),
   );
 
+  /**
+   * Rangs des niveaux TITRÉS sur la page : un nom de niveau court, hors cartouche, qui n'est pas une cote de
+   * niveau, et qui est soit écrit hors de tout dessin, soit nettement plus gros que les étiquettes de pièces.
+   */
+  const levelTitleRanks = (inDrawing: (t: RawText) => boolean): Set<number> => {
+    const labelSizes = page.texts.filter((t) => looksLikeRoomName(t.s)).map((t) => t.size).sort((a, b) => a - b);
+    const labelSize = labelSizes.length > 0 ? labelSizes[Math.floor(labelSizes.length / 2)]! : 0;
+    const isTitle = (t: RawText): boolean => !inDrawing(t) || (labelSize > 0 && t.size >= 1.15 * labelSize);
+    const titles = pageStoreys.filter((t) => !isTitleBlockText(t.s) && !LEVEL_RE.test(t.s) && t.s.trim().split(/\s+/).length <= 4 && isTitle(t));
+    return new Set(titles.map((t) => guessStorey(t.s)!.rank));
+  };
+
   if (scale.den === null || !walls) {
     // Pas d'échelle, ou pas de murs reconnaissables : la page entière, avec ce que le texte donne.
     const rooms = allRooms();
@@ -1392,12 +1398,13 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
       kept = split.kept;
       if (split.dropped.length > 0) notes.push(msg(lang, 'pdf.note.rooms.section', { rooms: split.dropped.join(', ') }));
       // Plusieurs niveaux titrés sur la page (titres des régions, ou à défaut textes hors cartouche) : la liste les mêle.
-      // Comptent : les titres des régions reconnues comme plans, et les titres de niveau écrits SEULS hors de tout
-      // dessin (deux plans reliés par un trait). Pas un mot dans une légende, une colonne de tableau ou une coupe.
+      // Comptent : les titres des régions reconnues comme plans, et les TITRES de niveau de la page — un nom de
+      // niveau court, écrit hors de tout dessin (deux plans reliés par un trait) ou nettement plus gros que les
+      // étiquettes de pièces (titre posé dans le cadre de sa vue). Ne comptent pas : un mot d'une légende, une
+      // colonne de tableau ou une étiquette de coupe, écrits dans un dessin à la taille du texte courant.
       const titled = split.views.filter((v) => v.kind === 'plan' && v.storey !== null).map((v) => v.storey!.rank);
       const inDrawing = (t: RawText): boolean => split.views.some((v) => rectDistance(t.cx, t.cy, v.bbox) === 0);
-      const standalone = pageStoreys.filter((t) => !isTitleBlockText(t.s) && !LEVEL_RE.test(t.s) && t.s.trim().split(/\s+/).length <= 3 && !inDrawing(t));
-      const levels = new Set([...titled, ...standalone.map((t) => guessStorey(t.s)!.rank)]);
+      const levels = new Set([...titled, ...levelTitleRanks(inDrawing)]);
       if (levels.size > 1 && kept.length > 0) {
         warnings.push(say('pdf.warn.views.wholePage'));
         notes.push(msg(lang, 'pdf.note.rooms.wholePage'));
@@ -1443,7 +1450,15 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
     }
     warnings.push(say('pdf.warn.noOutline'));
     mixedPageWarning();
-    result.drafts.push(wholeSheet(pageScale, allRooms(), [msg(lang, 'pdf.note.outline.none')]));
+    const pageRooms = allRooms();
+    const pageNotes = [msg(lang, 'pdf.note.outline.none')];
+    // Aucun contour, et la page titre plusieurs niveaux : la liste des pièces les mêle — il faut le dire, sinon
+    // An additionnerait deux étages sur un seul.
+    if (pageRooms.length > 0 && levelTitleRanks(() => true).size > 1) {
+      warnings.push(say('pdf.warn.views.wholePage'));
+      pageNotes.push(msg(lang, 'pdf.note.rooms.wholePage'));
+    }
+    result.drafts.push(wholeSheet(pageScale, pageRooms, pageNotes));
     return result;
   }
 

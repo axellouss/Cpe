@@ -116,7 +116,7 @@ export const PROVENANCES: readonly Provenance[] = ['plan', 'calc', 'default', 'e
  */
 export function roomAreaNote(note: string | undefined, lang: Lang): string {
   if (!note) return '';
-  const m = /^(\d+[.,]\d+) \/ (\d+[.,]\d+)$/.exec(note.trim());
+  const m = /^(\d+(?:[.,]\d+)?) \/ (\d+(?:[.,]\d+)?)$/.exec(note.trim());
   if (!m) return note;
   return t(lang, 'export.note.roomAreaMeasured', { stated: m[1]!.replace('.', ','), measured: m[2]!.replace('.', ',') });
 }

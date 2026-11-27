@@ -174,6 +174,25 @@ describe('createStorey : une feuille → un étage proposé', () => {
 });
 
 describe('rescaleStorey : poser la règle après coup', () => {
+  it('la remarque « surface écrite / mesurée » suit la nouvelle mesure, et disparaît quand les deux concordent', () => {
+    // Séjour : 30 m² écrits, mais 4 000 000 unités² mesurées → 40 m² à l'échelle lue (1 unité = 1 cm).
+    const src = sheet('p', 'RDC', { metresPerUnit: { value: 0.01, from: 'estimate' } });
+    src.detected = { notes: [], outline: rect(1000, 800), openings: [], rooms: [{ name: 'Séjour', statedArea: 30, measuredArea: 40, heatedGuess: 'yes' }] };
+    const raw = createStorey(src, 'RDC', emptyModel());
+    expect(raw.rooms[0]!.area).toEqual({ value: 40, from: 'plan', note: '30,00 / 40,00' });
+
+    // Règle posée : l'unité vaut en réalité 5 mm → la pièce mesure 10 m² ; la remarque le dit, sans valeur périmée.
+    const half = rescaleStorey(raw, { value: 0.005, from: 'user' });
+    expect(half.rooms[0]!.area).toEqual({ value: 10, from: 'plan', note: '30,00 / 10,00' });
+
+    // Échelle qui réconcilie la mesure et la surface écrite (√0,75 cm) : plus de divergence, plus de remarque.
+    const agreed = rescaleStorey(raw, { value: 0.01 * Math.sqrt(0.75), from: 'user' });
+    expect(agreed.rooms[0]!.area.value).toBeCloseTo(30, 2);
+    expect(agreed.rooms[0]!.area.note).toBeUndefined();
+    // L'étage d'origine n'est pas modifié.
+    expect(raw.rooms[0]!.area.note).toBe('30,00 / 40,00');
+  });
+
   it('les largeurs mesurées avec une échelle inconnue suivent la nouvelle échelle ; les largeurs lues ou saisies ne bougent pas', () => {
     const src = groundFloorSheet();
     src.metresPerUnit = null; // échelle inconnue à la lecture : les 120 unités de la fenêtre deviennent « 120 m »

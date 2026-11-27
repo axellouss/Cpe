@@ -20,6 +20,10 @@ describe('forme STEP vue aux deux bouts du fichier', () => {
     // Un commentaire ajouté après la fin par le logiciel d'export ne fait pas un fichier tronqué.
     expect(stepShape(bytes(`${maisonText.trimEnd()}\n/* exporté par l'outil X */\n`))).toEqual({ header: true, trailer: true });
     expect(stepShape(bytes(`${maisonText.trimEnd()}\n/* un */\r\n/* deux */  `))).toEqual({ header: true, trailer: true });
+    // Long commentaire, ou n'importe quel texte après la fin : le fichier est complet quand même.
+    expect(stepShape(bytes(`${maisonText.trimEnd()}\n/* ${'x'.repeat(5000)} */\n`))).toEqual({ header: true, trailer: true });
+    expect(stepShape(bytes(`${maisonText.trimEnd()}\n/* un /* imbriqué */\n`))).toEqual({ header: true, trailer: true });
+    expect(stepShape(bytes(`${maisonText.trimEnd()}\nGARBAGE\n`))).toEqual({ header: true, trailer: true });
     // … mais un commentaire au bout d'un fichier coupé ne le rend pas complet.
     expect(stepShape(bytes(`${maisonText.slice(0, Math.floor(maisonText.length / 2))}\n/* fin */`))).toEqual({ header: true, trailer: false });
   });

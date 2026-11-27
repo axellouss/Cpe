@@ -199,6 +199,18 @@ const ROOM_AREA_MISMATCH = 0.05;
  * surface habitable au-dessus de 1,80 ou 2,00 m sous rampant, typiquement — et c'est la mesure (faces intérieures,
  * hauteur libre ≥ 1,00 m quand le lecteur la connaît) qui est retenue, avec les deux valeurs en note.
  */
+/** Remarque « surface écrite / surface mesurée », en virgule décimale (français comme allemand). */
+function areaMismatchNote(stated: number, measured: number): string {
+  const text = (v: number): string => round(v, 2).toFixed(2).replace('.', ',');
+  return `${text(stated)} / ${text(measured)}`;
+}
+
+/** Surface écrite sur le plan, relue dans une remarque « écrite / mesurée » ; null si la remarque est autre chose. */
+function statedAreaOfNote(note: string | undefined): number | null {
+  const m = /^(\d+(?:[.,]\d+)?) \/ \d+(?:[.,]\d+)?$/.exec(note?.trim() ?? '');
+  return m ? Number(m[1]!.replace(',', '.')) : null;
+}
+
 export function pickRoomArea(
   stated: number | undefined,
   measured: number | undefined,
@@ -206,8 +218,7 @@ export function pickRoomArea(
   const s = stated !== undefined && stated > 0 ? stated : undefined;
   const m = measured !== undefined && measured > 0 ? measured : undefined;
   if (s !== undefined && m !== undefined && Math.abs(s - m) / m > ROOM_AREA_MISMATCH) {
-    // Virgule décimale, en français comme en allemand : la remarque est reprise telle quelle dans le relevé.
-    return { value: round(m, 2), note: `${round(s, 2).toFixed(2).replace('.', ',')} / ${round(m, 2).toFixed(2).replace('.', ',')}`, measured: true };
+    return { value: round(m, 2), note: areaMismatchNote(s, m), measured: true };
   }
   return { value: s ?? m ?? 0, measured: s === undefined && m !== undefined };
 }
@@ -391,7 +402,14 @@ export function rescaleStorey(storey: Storey, metresPerUnit: Sourced<number>): S
       // Seules les surfaces mesurées sur le dessin (`sheetArea`) dépendent de l'échelle ; une surface écrite sur le
       // plan ne bouge pas, même si elle vaut à peu près l'aire du polygone.
       if (!changed || r.area.from === 'user' || r.sheetArea === undefined) return r;
-      return { ...r, area: { ...r.area, value: round(r.sheetArea * next * next, 2) } };
+      const value = round(r.sheetArea * next * next, 2);
+      // La remarque « écrite / mesurée » suit la nouvelle mesure ; elle disparaît quand les deux concordent enfin
+      // (sinon le relevé affirmerait « mesurée : 40 m², retenue » à côté d'une pièce de 10 m²).
+      const stated = statedAreaOfNote(r.area.note);
+      if (stated === null) return { ...r, area: { ...r.area, value } };
+      const area: Sourced<number> = { value, from: r.area.from };
+      if (value > 0 && Math.abs(stated - value) / value > ROOM_AREA_MISMATCH) area.note = areaMismatchNote(stated, value);
+      return { ...r, area };
     }),
   };
 }
