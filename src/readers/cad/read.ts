@@ -200,7 +200,10 @@ export async function readCadInProcess(data: ArrayBuffer, fileName: string, kind
     throw err;
   }
   const t1 = Date.now();
-  if (raw.segCount === 0 && raw.texts.length === 0) throw new Error(msg('cad.error.empty', { kind: kind.toUpperCase() }));
+  if (raw.segCount === 0 && raw.texts.length === 0) {
+    // Rien de lu ET des objets endommagés : le fichier est abîmé, pas vide.
+    throw new Error(msg(raw.stats.damagedObjects > 0 ? `cad.error.unreadable.${kind}` : 'cad.error.empty', { kind: kind.toUpperCase() }));
+  }
 
   const warnings: string[] = [];
 

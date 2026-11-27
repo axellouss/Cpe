@@ -685,7 +685,8 @@ export async function readDrawing(
   await pause();
 
   const model = doc.modelSpace;
-  if (!model) throw new CadReadError('espace objet absent', 'empty');
+  // Un fichier abîmé dont l'espace objet a disparu n'est pas un « dessin vide » : il est illisible.
+  if (!model) throw new CadReadError('espace objet absent', damagedObjects > 0 ? 'unreadable' : 'empty');
 
   const flat = new Flattener(doc, offLayers);
   const root: Ctx = { m: IDENTITY, layerCtx: -1, insert: -1, depth: 0, kind: -1, dim: false, path: [] };

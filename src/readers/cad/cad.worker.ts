@@ -2,6 +2,7 @@
  * Worker de lecture DWG / DXF : décodage et analyse hors du fil principal (voir offthread.ts).
  * Un worker lit UN fichier puis est arrêté par le fil principal.
  */
+import { msg } from './messages';
 import type { CadWorkerReply, CadWorkerRequest } from './offthread';
 import { readCadInProcess } from './read';
 
@@ -29,10 +30,11 @@ scope.onmessage = (event) => {
       for (const sheet of doc.sheets) if (sheet.segments) transfer.push(sheet.segments.buffer as ArrayBuffer);
       try {
         scope.postMessage({ type: 'done', doc, details }, transfer);
-      } catch (err) {
+      } catch {
         // Résultat impossible à transmettre (objet non clonable) : sans ce rattrapage, le rejet resterait muet
-        // et le fil principal attendrait son chien de garde.
-        fail(err);
+        // et le fil principal attendrait son chien de garde. Le texte brut de l'erreur (en anglais) n'est pas
+        // montré : l'expert lit le message « illisible », dans la langue de la lecture.
+        fail(new Error(msg(`cad.error.unreadable.${kind}`)));
       }
     },
     fail,
