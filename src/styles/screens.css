@@ -1344,6 +1344,46 @@
   }
 }
 
+/*
+ * Écran étroit (téléphone, tablette en portrait) : le plan d'abord. La liste des étapes reste en bandeau au-dessus
+ * du plan ; l'explication de l'étape et les boutons passent dessous, pour que le plan soit visible sans défiler.
+ */
+@media (max-width: 999px) {
+  .plan__guide,
+  .plan__guide > .guide {
+    display: contents;
+  }
+
+  .guide__head {
+    order: 1;
+  }
+
+  .checklist {
+    order: 2;
+  }
+
+  .plan__stage {
+    order: 3;
+  }
+
+  .guide__detail {
+    order: 4;
+  }
+
+  .guide__foot {
+    order: 5;
+  }
+
+  .plan__side {
+    order: 6;
+  }
+
+  .plan__editor-wrap {
+    height: 56vh;
+    min-height: 340px;
+  }
+}
+
 @media (min-width: 1000px) {
   .app--plan {
     height: 100vh;
