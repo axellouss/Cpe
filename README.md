@@ -80,7 +80,10 @@ Elles suivent le règlement grand-ducal du 9 juin 2021 et le manuel de LuxEeB-To
   dire ouest en français et est (Ost) en allemand.
 - **Contour chauffé** : un garage accolé ou un abri est hors de l'enveloppe. Le logiciel le retire du contour qu'il
   propose et marque le mur de séparation « contre un local non chauffé » ; un geste suffit pour le réintégrer. Une
-  chaufferie ou un local technique reste dans le contour : c'est à l'expert de dire s'il est dans l'enveloppe isolée.
+  chaufferie ou un local technique reste dans le contour : un local non conditionné situé dans l'enveloppe isolée
+  compte dans A et Ve, pas dans An ; s'il est hors de l'enveloppe, l'expert le retire d'un geste.
+- **Échelle** : l'échelle écrite dans un cartouche n'est qu'un indice (un PDF « ajusté à la page » la rend fausse).
+  Poser la règle sur une cote connue fait foi, et tout ce qui a été mesuré sur le dessin suit la nouvelle échelle.
 
 ## Limites connues
 
@@ -97,9 +100,11 @@ Elles suivent le règlement grand-ducal du 9 juin 2021 et le manuel de LuxEeB-To
 - **Pas de reconnaissance de caractères** : un scan ou un PDF dont le texte est vectorisé ne livre ni échelle ni pièces.
 - **Les hauteurs se lisent rarement sur un plan.** Sans coupe ni maquette, les hauteurs d'étage sont des valeurs par
   défaut signalées comme telles.
-- **Toitures** : toit plat, plafond sous grenier froid, toits à une, deux ou quatre pentes sur plan simple. Lucarnes,
-  toits mansardés et toitures à plusieurs faîtages se saisissent en lignes manuelles. La règle du 1,00 m sous rampant
-  n'est pas calculée géométriquement à partir d'un PDF ou d'un DXF.
+- **Toitures** : toit plat, plafond sous grenier froid, toits à une, deux ou quatre pentes sur plan simple. Le sens
+  du faîtage est proposé, jamais deviné en silence : tant qu'il n'est pas confirmé, les murs sous toiture, les pans et
+  le volume sont marqués « estimation ». Sur un contour non rectangulaire ils restent approchés. Lucarnes, toits
+  mansardés et toitures à plusieurs faîtages se saisissent en lignes manuelles. La règle du 1,00 m sous rampant n'est
+  pas calculée géométriquement à partir d'un PDF ou d'un DXF (elle l'est à partir d'une maquette IFC).
 - **Étages non superposables** (plans à des origines différentes) : les retraits et porte-à-faux sont estimés par
   différence de surfaces.
 - **Textes allemands** : rédigés avec soin, pas encore relus par un expert germanophone.
