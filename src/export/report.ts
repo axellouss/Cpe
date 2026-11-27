@@ -178,7 +178,7 @@ function roomsBlock(project: Project, lang: Lang): string {
     .map((s) => {
       const rows = s.rooms.map(
         (r) =>
-          `<tr>${td(r.name)}<td class="num">${sourcedNumber(r.area, lang)}</td>${td(yesNoText(lang, r.heated) ?? '')}${td(r.needsReview ? (yesNoText(lang, true) ?? '') : '')}</tr>`,
+          `<tr>${td(r.name.trim() || t(lang, 'export.report.room.unnamed'))}<td class="num">${sourcedNumber(r.area, lang)}</td>${td(yesNoText(lang, r.heated) ?? '')}${td(r.needsReview ? (yesNoText(lang, true) ?? '') : '')}</tr>`,
       );
       return `<h3>${e(s.name)}</h3>${tableHtml(headers, rows, t(lang, 'export.report.room.none'))}`;
     })

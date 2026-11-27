@@ -102,7 +102,7 @@ export function sheetsToCsv(sheets: LuxeebSheets, project: Project, lang: Lang):
       lines.push(
         line([
           storey.name,
-          room.name,
+          room.name.trim() || t(lang, 'export.report.room.unnamed'),
           luxeebNumber(room.area.value),
           yesNoText(lang, room.heated) ?? '',
           room.needsReview ? (yesNoText(lang, true) ?? '') : '',

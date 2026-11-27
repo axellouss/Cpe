@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Lang } from '../../src/core/types';
-import { buildGuide, sheetsToCsv } from '../../src/export';
+import { buildGuide, buildReportHtml, sheetsToCsv } from '../../src/export';
 import { registerMessages } from '../../src/i18n';
 import { makeProject, makeSheets } from './fixtures';
 
@@ -221,6 +221,18 @@ describe('sheetsToCsv — contenu', () => {
     const de = tableAfter(rowsOf(sheetsToCsv(sheets, makeProject(), 'de')), 'Plausibilitätsprüfungen');
     expect(de[1]).toEqual(['Blockierend', 'test.csv', 'RDC; "neuf": Fläche von 68,4 m² geschätzt.']);
     expect(de[2]).toEqual(['Hinweis', 'test.inconnu', 'Prüfung „test.inconnu“ (Details: ratio = 0,5)']);
+  });
+});
+
+describe('pièces sans nom (face fermée sans étiquette reconnue)', () => {
+  it('portent un libellé lisible dans le CSV et dans le dossier, en français comme en allemand', () => {
+    const project = makeProject();
+    const storey = project.model.storeys[0]!;
+    storey.rooms = [...storey.rooms, { id: 'r-sans-nom', name: '', area: { value: 9.5, from: 'plan' }, heated: false, needsReview: true }];
+    expect(sheetsToCsv(makeSheets(), project, 'fr')).toContain(';(pièce sans nom);9,50;');
+    expect(sheetsToCsv(makeSheets(), project, 'de')).toContain(';(Raum ohne Namen);9,50;');
+    expect(buildReportHtml(makeSheets(), project, 'fr')).toContain('<td>(pièce sans nom)</td>');
+    expect(buildReportHtml(makeSheets(), project, 'de')).toContain('<td>(Raum ohne Namen)</td>');
   });
 });
 
