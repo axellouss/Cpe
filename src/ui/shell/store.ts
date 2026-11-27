@@ -18,7 +18,7 @@ import { t } from '../../i18n';
 import { readPlanFile, UnsupportedFormatError } from '../../readers';
 import type { FileLike } from '../../readers';
 import type { PlanTool } from '../plan';
-import { browserStorage, clearWorkspace, dropLegacyEntered, initialLang, loadWorkspace, parseWorkspace, saveLang, saveWorkspace } from './autosave';
+import { browserStorage, clearWorkspace, dropLegacyEntered, initialLang, loadPosition, loadWorkspace, parseWorkspace, saveLang, savePosition, saveWorkspace } from './autosave';
 import type { StorageLike } from './autosave';
 import { dropStoreyMarks, firstOpenStep, markPlanStep, nextOpenStep, sameScaleStoreyIds, stepOfTool, storeySteps } from './checklist';
 import {
@@ -87,7 +87,8 @@ export interface ShellDeps {
 }
 
 const SAMPLE_PATH = './samples/maison-exemple.dxf';
-const SAMPLE_NAME = 'maison-exemple.dxf';
+/** Nom du plan d'exemple fourni avec l'application : un projet né de lui peut le recharger d'un geste. */
+export const SAMPLE_NAME = 'maison-exemple.dxf';
 
 async function fetchSampleFromServer(): Promise<FileLike> {
   const response = await fetch(SAMPLE_PATH);
@@ -621,9 +622,19 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           return;
         }
         lastSaved = workspace;
+        // Lue AVANT de changer d'écran : l'abonnement qui retient la position réécrirait la clé.
+        const position = loadPosition(deps.storage);
         set({ history: createHistory(workspace), saved: null, proposal: null, saveState: 'saved' });
-        if (workspace.project.model.storeys.length > 0) enterPlan(null);
-        else set({ step: 'questions', question: FIRST_QUESTION, questionPart: null });
+        const storeys = workspace.project.model.storeys;
+        if (storeys.length === 0) {
+          set({ step: 'questions', question: position?.step === 'questions' ? position.question : FIRST_QUESTION, questionPart: null });
+          return;
+        }
+        // On reprend là où l'on s'était arrêté : résultat, question en cours, ou plan de l'étage affiché.
+        const storeyId = storeys.some((s) => s.id === position?.storeyId) ? position!.storeyId : null;
+        enterPlan(storeyId);
+        if (position?.step === 'result') set({ step: 'result' });
+        else if (position?.step === 'questions') set({ step: 'questions', question: position.question, questionPart: null });
       },
 
       discardSaved() {
@@ -972,6 +983,13 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         pendingSave = null;
       },
     };
+  });
+
+  // La position dans le parcours accompagne le projet enregistré (jamais celle de l'accueil avant une reprise).
+  store.subscribe((state, previous) => {
+    if (state.step === previous.step && state.storeyId === previous.storeyId && state.question === previous.question) return;
+    if (state.saved !== null || isEmptyWorkspace(state.history.present)) return;
+    savePosition(deps.storage, { step: state.step, storeyId: state.storeyId, question: state.question });
   });
 
   return store;

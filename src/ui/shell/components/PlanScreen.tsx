@@ -28,7 +28,7 @@ import { confirmStoreyHeight, excludeRoomFromEnvelope, restoreStoreyFootprint, s
 import type { HeightKind } from '../modelOps';
 import { fixed, unitLength } from '../numbers';
 import { isQuestionComplete, REQUIRED_QUESTIONS } from '../questions';
-import { currentStorey, selectMarks, selectProject, useShell, useShellStore } from '../store';
+import { currentStorey, SAMPLE_NAME, selectMarks, selectProject, useShell, useShellStore } from '../store';
 import { AnimatedNumber, Badge, NumberField, ProvenanceTag, useAnnounce, useT } from './common';
 import type { BadgeTone, Translate } from './common';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -702,6 +702,7 @@ export function PlanScreen() {
   }
 
   const missingSheet = storey.sheetId !== null && sheet === null;
+  const fromSample = missingSheet && fileNameOfSheetId(storey.sheetId ?? '') === SAMPLE_NAME;
   const state = store.getState();
 
   return (
@@ -719,9 +720,15 @@ export function PlanScreen() {
               <Icon name="file" />
               <div className="notice__body">
                 <strong>{tr('shell.plan.missing.title')}</strong>
-                <span>{tr('shell.plan.missing.text', { file: fileNameOfSheetId(storey.sheetId ?? '') })}</span>
+                <span>{tr(fromSample ? 'shell.plan.missing.sample' : 'shell.plan.missing.text', { file: fileNameOfSheetId(storey.sheetId ?? '') })}</span>
               </div>
               <div className="notice__actions">
+                {fromSample ? (
+                  // Le plan d'exemple est fourni avec l'application : inutile de demander un fichier que l'on n'a jamais eu.
+                  <button type="button" className="btn btn--primary btn--small" onClick={() => void store.getState().loadSample()} disabled={busy} data-testid="reload-sample">
+                    {tr('shell.plan.missing.reloadSample')}
+                  </button>
+                ) : null}
                 <input
                   ref={fileInput}
                   className="visually-hidden"

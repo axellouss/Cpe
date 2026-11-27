@@ -609,6 +609,62 @@ describe('navigation', () => {
     expect(selectProject(store.getState()).model.storeys).toHaveLength(1);
   });
 
+  it('« Reprendre » ramène là où l’on s’était arrêté : résultat, question en cours, ou plan de l’étage affiché', async () => {
+    provide(houseDoc());
+    const first = testStore();
+    await first.store.getState().ingestFiles([file('maison.dxf')]);
+    first.store.getState().acceptProposal();
+    const [ground, upper] = selectProject(first.store.getState()).model.storeys;
+
+    // Arrêt sur le plan du second étage.
+    first.store.getState().selectStorey(upper!.id);
+    let next = testStore({}, first.storage.dump());
+    next.store.getState().resumeSaved();
+    expect(next.store.getState()).toMatchObject({ step: 'plan', storeyId: upper!.id });
+
+    // Arrêt sur une note de visite.
+    first.store.getState().jumpTo({ step: 'questions', question: 'windows', part: null });
+    next = testStore({}, first.storage.dump());
+    next.store.getState().resumeSaved();
+    expect(next.store.getState()).toMatchObject({ step: 'questions', question: 'windows' });
+
+    // Arrêt sur le résultat : on y revient, et l'étage courant reste connu pour retourner au plan.
+    first.store.getState().goTo('result');
+    next = testStore({}, first.storage.dump());
+    expect(next.store.getState().step).toBe('home');
+    next.store.getState().resumeSaved();
+    expect(next.store.getState()).toMatchObject({ step: 'result', storeyId: upper!.id });
+
+    // Position illisible, ou étage disparu : on rouvre le plan du premier étage, comme avant.
+    const broken = { ...first.storage.dump(), [STORAGE_KEYS.position]: '{"step":"ailleurs","storeyId":42}' };
+    next = testStore({}, broken);
+    next.store.getState().resumeSaved();
+    expect(next.store.getState()).toMatchObject({ step: 'plan', storeyId: ground!.id });
+    const gone = { ...first.storage.dump(), [STORAGE_KEYS.position]: JSON.stringify({ step: 'plan', storeyId: 'storey-inconnu', question: 'closure' }) };
+    next = testStore({}, gone);
+    next.store.getState().resumeSaved();
+    expect(next.store.getState()).toMatchObject({ step: 'plan', storeyId: ground!.id });
+
+    // Effacer ou repartir de zéro oublie aussi la position.
+    first.store.getState().newProject();
+    expect(first.storage.getItem(STORAGE_KEYS.position)).toBeNull();
+  });
+
+  it('la position de l’accueil avant reprise n’écrase pas celle du projet retrouvé', async () => {
+    provide(houseDoc());
+    const first = testStore();
+    await first.store.getState().ingestFiles([file('maison.dxf')]);
+    first.store.getState().acceptProposal();
+    first.store.getState().goTo('result');
+    const second = testStore({}, first.storage.dump());
+    // Naviguer sans reprendre (questions du projet vide) ne touche pas la position enregistrée.
+    second.store.getState().goTo('questions');
+    expect(JSON.parse(second.storage.getItem(STORAGE_KEYS.position)!)).toMatchObject({ step: 'result' });
+    second.store.getState().goTo('home');
+    second.store.getState().resumeSaved();
+    expect(second.store.getState().step).toBe('result');
+  });
+
   it('changer de langue à l’écran de lecture traduit les étages proposés, sauf ceux que l’expert a renommés', async () => {
     provide(houseDoc());
     const { store } = testStore();

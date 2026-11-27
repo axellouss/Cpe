@@ -6,12 +6,13 @@
 import type { Lang } from '../../core/types';
 import { parseProject, serializeProject } from '../../export';
 import { emptyMarks } from './types';
-import type { Marks, PlanStepKey, QuestionId, Workspace } from './types';
+import type { Marks, PlanStepKey, QuestionId, Step, Workspace } from './types';
 import { PLAN_STEP_KEYS } from './types';
 
 export const STORAGE_KEYS = {
   project: 'plan2cpe.project.v1',
   marks: 'plan2cpe.marks.v1',
+  position: 'plan2cpe.position.v1',
   lang: 'plan2cpe.lang',
 } as const;
 
@@ -207,7 +208,39 @@ export function loadWorkspace(storage: StorageLike | null): Workspace | null {
 export function clearWorkspace(storage: StorageLike | null): void {
   remove(storage, STORAGE_KEYS.project);
   remove(storage, STORAGE_KEYS.marks);
+  remove(storage, STORAGE_KEYS.position);
   remove(storage, LEGACY_ENTERED_KEY);
+}
+
+// ───────────────────────────── Position dans le parcours ─────────────────────────────
+
+/** Où l'expert en était : « Reprendre » l'y ramène au lieu de rouvrir toujours le plan du premier étage. */
+export interface SavedPosition {
+  step: Step;
+  storeyId: string | null;
+  question: QuestionId;
+}
+
+const STEPS: readonly Step[] = ['home', 'read', 'plan', 'questions', 'result'];
+
+export function savePosition(storage: StorageLike | null, position: SavedPosition): void {
+  write(storage, STORAGE_KEYS.position, JSON.stringify(position));
+}
+
+/** Position relue avec prudence ; null si absente ou incohérente. */
+export function loadPosition(storage: StorageLike | null): SavedPosition | null {
+  const raw = read(storage, STORAGE_KEYS.position);
+  if (!raw) return null;
+  try {
+    const data: unknown = JSON.parse(raw);
+    if (!isRecord(data)) return null;
+    const step = STEPS.find((s) => s === data.step);
+    const question = QUESTION_IDS.find((q) => q === data.question);
+    if (!step || !question) return null;
+    return { step, storeyId: typeof data.storeyId === 'string' && data.storeyId.length < 200 ? data.storeyId : null, question };
+  } catch {
+    return null;
+  }
 }
 
 /** Efface l'ancienne clé des coches (voir LEGACY_ENTERED_KEY). Sans effet si elle n'existe pas. */

@@ -199,6 +199,44 @@ describe('accueil', () => {
     expect(text()).toContain('Rez-de-chaussée');
   });
 
+  /** Projet construit à partir d'un fichier, puis repris à un autre démarrage (sans ses plans). */
+  async function resumedFrom(name: string, loaded: string[]): Promise<void> {
+    readers.documents.set(name, houseDoc(name));
+    const first = testStore();
+    await first.store.getState().ingestFiles([{ name, arrayBuffer: async () => new ArrayBuffer(4) }]);
+    first.store.getState().acceptProposal();
+    await mount(
+      testStore(
+        {
+          fetchSample: async () => {
+            loaded.push('exemple');
+            return { name: 'maison-exemple.dxf', arrayBuffer: async () => new ArrayBuffer(4) };
+          },
+        },
+        first.storage.dump(),
+      ),
+    );
+    await click('resume-saved');
+  }
+
+  it('projet né de l’exemple, repris sans son plan : propose de recharger l’exemple', async () => {
+    const loaded: string[] = [];
+    await resumedFrom('maison-exemple.dxf', loaded);
+    expect(text()).toContain('Fond de plan non chargé');
+    expect(text()).toContain('plan d’exemple fourni');
+    await click('reload-sample');
+    expect(loaded).toEqual(['exemple']);
+    // Le fond retrouve ses étages : la remarque disparaît.
+    expect(text()).not.toContain('Fond de plan non chargé');
+  });
+
+  it('projet né d’un fichier de l’expert, repris sans son plan : demande de le redéposer, sans bouton d’exemple', async () => {
+    await resumedFrom('maison.dxf', []);
+    expect(text()).toContain('Fond de plan non chargé');
+    expect(text()).toContain('Redéposez « maison.dxf »');
+    expect(has('reload-sample')).toBe(false);
+  });
+
   it('n’efface le projet retrouvé qu’après confirmation, et dit qu’il l’a fait', async () => {
     const first = testStore();
     first.store.getState().startBlank();
