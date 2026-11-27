@@ -468,7 +468,7 @@ function Downloads({ sheets, project }: { sheets: LuxeebSheets; project: Project
   // Dans une page hôte, c'est elle qui enregistre : « voyez vos téléchargements » ne serait pas juste.
   const doneKey = (): string => (isHosted() ? 'shell.result.download.saved' : 'shell.result.download.done');
   const csv = (): void => void save('csv', () => sheetsToCsv(sheets, project, lang), true, doneKey(), 'ok');
-  const json = (): void => void save('project', () => serializeWorkspace({ project, marks }), true, doneKey(), 'ok');
+  const json = (): void => void save('project', () => serializeWorkspace({ project, marks }, lang), true, doneKey(), 'ok');
   const report = (): void => {
     try {
       const html = buildReportHtml(sheets, project, lang, { date: new Date(), sources: documents.map((d) => d.doc.fileName) });

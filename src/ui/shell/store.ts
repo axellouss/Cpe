@@ -19,7 +19,7 @@ import { readPlanFile, UnsupportedFormatError } from '../../readers';
 import type { FileLike } from '../../readers';
 import type { PlanTool } from '../plan';
 import { browserStorage, clearWorkspace, dropLegacyEntered, initialLang, loadPosition, loadWorkspace, parseWorkspace, saveLang, savePosition, saveWorkspace } from './autosave';
-import type { StorageLike } from './autosave';
+import type { StorageLike, StoredWorkspace } from './autosave';
 import { dropStoreyMarks, firstOpenStep, markPlanStep, nextOpenStep, sameScaleStoreyIds, stepOfTool, storeySteps } from './checklist';
 import {
   applyProposal,
@@ -322,7 +322,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         set({ saveState: 'off' });
         return;
       }
-      const result = saveWorkspace(deps.storage, workspace);
+      const result = saveWorkspace(deps.storage, workspace, get().lang);
       if (result.ok) {
         lastSaved = workspace;
         if (get().saveState !== 'saved') set({ saveState: 'saved' });
@@ -403,10 +403,15 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       });
     };
 
-    /** Noms par défaut (niveaux reconnus, types de parois) d'un projet venu d'ailleurs, mis dans la langue actuelle. */
-    const inCurrentLang = (workspace: Workspace): Workspace => {
+    /**
+     * Noms par défaut (niveaux reconnus, types de parois) d'un projet enregistré dans une AUTRE langue, mis dans la
+     * langue actuelle. `from` = langue enregistrée avec le projet ; inconnue (ancien fichier) ou identique : on ne
+     * touche à rien — sinon un étage que l'expert a lui-même nommé « Obergeschoss » serait rebaptisé à chaque reprise.
+     */
+    const inCurrentLang = (workspace: Workspace, from: Lang | null): Workspace => {
       const lang = get().lang;
-      const project = relocalizeDefaults(workspace.project, lang === 'fr' ? 'de' : 'fr', lang);
+      if (from === null || from === lang) return workspace;
+      const project = relocalizeDefaults(workspace.project, from, lang);
       return project === workspace.project ? workspace : { ...workspace, project };
     };
 
@@ -616,14 +621,15 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
 
       openProjectText(json) {
         let opened: Workspace;
+        let stored: StoredWorkspace;
         try {
-          opened = parseWorkspace(json);
+          stored = parseWorkspace(json);
         } catch (error) {
           toast(projectFileErrorMessage(error, get().lang), 'warn');
           return false;
         }
         // Un projet enregistré dans l'autre langue prend les noms par défaut de la langue actuelle.
-        opened = inCurrentLang(opened);
+        opened = inCurrentLang({ project: stored.project, marks: stored.marks }, stored.lang);
         const project = opened.project;
         // Les coches « saisi dans LuxEeB-Tool » viennent du fichier ouvert, avec ses autres repères.
         replaceWorkspace(opened, 'shell.undo.openProject');
@@ -646,9 +652,11 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         // Lue AVANT de changer d'écran : l'abonnement qui retient la position réécrirait la clé.
         const position = loadPosition(deps.storage);
         // Projet enregistré dans l'autre langue : ses noms par défaut suivent la langue actuelle.
-        const current = inCurrentLang(workspace);
+        const asSaved: Workspace = { project: workspace.project, marks: workspace.marks };
+        const current = inCurrentLang(asSaved, workspace.lang);
         set({ history: createHistory(current), saved: null, proposal: null, saveState: 'saved' });
-        if (current !== workspace) scheduleSave(current);
+        // Langue changée (ou jamais enregistrée) : on réécrit le projet avec la langue actuelle.
+        if (current !== asSaved || workspace.lang !== get().lang) scheduleSave(current);
         const storeys = workspace.project.model.storeys;
         if (storeys.length === 0) {
           set({ step: 'questions', question: position?.step === 'questions' ? position.question : FIRST_QUESTION, questionPart: null });

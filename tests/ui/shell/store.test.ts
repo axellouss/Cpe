@@ -673,7 +673,9 @@ describe('navigation', () => {
     const first = selectProject(source.store.getState()).model.storeys[0]!;
     source.store.getState().renameStorey(selectProject(source.store.getState()).model.storeys[1]!.id, 'Niveau des chambres');
     const state = source.store.getState();
-    const json = serializeWorkspace({ project: selectProject(state), marks: selectMarks(state) });
+    // Le fichier de projet porte la langue de ses noms par défaut.
+    const json = serializeWorkspace({ project: selectProject(state), marks: selectMarks(state) }, state.lang);
+    expect((JSON.parse(json) as { lang: string }).lang).toBe('fr');
 
     // Ouverture du fichier dans une interface allemande.
     const opened = testStore({ languages: ['de-LU'] });
@@ -690,6 +692,54 @@ describe('navigation', () => {
     expect(currentStorey(resumed.store.getState())?.id).toBe(first.id);
     // … et c'est cette version qui est enregistrée.
     expect(resumed.storage.getItem(STORAGE_KEYS.project)).toContain('Erdgeschoss');
+  });
+
+  it('sans changement de langue, reprendre ou rouvrir ne rebaptise jamais un étage nommé par l’expert comme un nom par défaut de l’autre langue', async () => {
+    provide(houseDoc());
+    const first = testStore();
+    await first.store.getState().ingestFiles([file('maison.dxf')]);
+    first.store.getState().acceptProposal();
+    const upper = selectProject(first.store.getState()).model.storeys[1]!;
+    // Interface française ; l'expert (bilingue) nomme l'étage « Obergeschoss ».
+    first.store.getState().renameStorey(upper.id, 'Obergeschoss');
+    const names = (t: ReturnType<typeof testStore>): string[] => selectProject(t.store.getState()).model.storeys.map((s) => s.name);
+    expect(names(first)).toEqual(['Rez-de-chaussée', 'Obergeschoss']);
+    expect((JSON.parse(first.storage.getItem(STORAGE_KEYS.marks)!) as { lang: string }).lang).toBe('fr');
+
+    // Reprise en français : rien ne change.
+    const resumed = testStore({}, first.storage.dump());
+    resumed.store.getState().resumeSaved();
+    expect(names(resumed)).toEqual(['Rez-de-chaussée', 'Obergeschoss']);
+
+    // Fichier rouvert en français : rien ne change non plus.
+    const state = first.store.getState();
+    const json = serializeWorkspace({ project: selectProject(state), marks: selectMarks(state) }, 'fr');
+    const opened = testStore();
+    expect(opened.store.getState().openProjectText(json)).toBe(true);
+    expect(names(opened)).toEqual(['Rez-de-chaussée', 'Obergeschoss']);
+
+    // Ancien fichier, sans langue enregistrée, ouvert en allemand : on ne devine pas, les noms restent tels quels.
+    const old = serializeWorkspace({ project: selectProject(state), marks: selectMarks(state) });
+    expect(JSON.parse(old)).not.toHaveProperty('lang');
+    const german = testStore({ languages: ['de-LU'] });
+    expect(german.store.getState().openProjectText(old)).toBe(true);
+    expect(names(german)).toEqual(['Rez-de-chaussée', 'Obergeschoss']);
+  });
+
+  it('une reprise dans une autre langue réécrit le projet avec sa nouvelle langue', async () => {
+    provide(houseDoc());
+    const first = testStore();
+    await first.store.getState().ingestFiles([file('maison.dxf')]);
+    first.store.getState().acceptProposal();
+    const second = testStore({}, first.storage.dump());
+    second.store.getState().setLang('de');
+    second.store.getState().resumeSaved();
+    expect((JSON.parse(second.storage.getItem(STORAGE_KEYS.marks)!) as { lang: string }).lang).toBe('de');
+    // Une reprise suivante, toujours en allemand, ne retraduit rien.
+    const third = testStore({}, second.storage.dump());
+    expect(third.store.getState().lang).toBe('de');
+    third.store.getState().resumeSaved();
+    expect(selectProject(third.store.getState()).model.storeys.map((s) => s.name)).toEqual(['Erdgeschoss', 'Obergeschoss']);
   });
 
   it('changer de langue à l’écran de lecture traduit les étages proposés, sauf ceux que l’expert a renommés', async () => {

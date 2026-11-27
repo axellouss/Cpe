@@ -138,10 +138,22 @@ export function sanitizeMarks(raw: unknown): Marks {
  * qu'un projet rouvert ne redemande pas de confirmer ce qui l'était déjà. Lève une ProjectFileError si le projet
  * n'est pas enregistrable.
  */
-export function serializeWorkspace(workspace: Workspace): string {
+export function serializeWorkspace(workspace: Workspace, lang?: Lang): string {
   const data = JSON.parse(serializeProject(workspace.project)) as Record<string, unknown>;
   data.marks = workspace.marks;
+  // Langue des noms par défaut (niveaux, types de parois) : sans elle, on ne saurait pas, à la réouverture dans
+  // l'autre langue, distinguer un nom par défaut à traduire d'un nom choisi par l'expert.
+  if (lang) data.lang = lang;
   return JSON.stringify(data, null, 2);
+}
+
+/** Espace de travail relu, avec la langue de ses noms par défaut quand elle a été enregistrée (sinon null). */
+export interface StoredWorkspace extends Workspace {
+  lang: Lang | null;
+}
+
+function storedLang(value: unknown): Lang | null {
+  return value === 'fr' || value === 'de' ? value : null;
 }
 
 /**
@@ -149,18 +161,22 @@ export function serializeWorkspace(workspace: Workspace): string {
  * les repères sont relus avec prudence et limités aux étages qui existent. Un fichier sans repères (ancien, ou
  * écrit à la main) s'ouvre avec tout « à confirmer ».
  */
-export function parseWorkspace(json: string): Workspace {
+export function parseWorkspace(json: string): StoredWorkspace {
   const project = parseProject(json);
   let marks = emptyMarks();
+  let lang: Lang | null = null;
   try {
     const raw: unknown = JSON.parse(json.replace(/^\uFEFF/, ''));
-    if (isRecord(raw)) marks = sanitizeMarks(raw.marks);
+    if (isRecord(raw)) {
+      marks = sanitizeMarks(raw.marks);
+      lang = storedLang(raw.lang);
+    }
   } catch {
     marks = emptyMarks();
   }
   const known = new Set(project.model.storeys.map((s) => s.id));
   for (const id of Object.keys(marks.plan)) if (!known.has(id)) delete marks.plan[id];
-  return { project, marks };
+  return { project, marks, lang };
 }
 
 // ───────────────────────────── Projet ─────────────────────────────
@@ -172,7 +188,7 @@ export interface SaveResult {
 }
 
 /** Écrit le projet et ses repères. Ne lève jamais : le résultat dit si l'écriture a réussi. */
-export function saveWorkspace(storage: StorageLike | null, workspace: Workspace): SaveResult {
+export function saveWorkspace(storage: StorageLike | null, workspace: Workspace, lang?: Lang): SaveResult {
   if (!storage) return { ok: false, error: null };
   let json: string;
   try {
@@ -180,26 +196,31 @@ export function saveWorkspace(storage: StorageLike | null, workspace: Workspace)
   } catch (error) {
     return { ok: false, error };
   }
-  const ok = write(storage, STORAGE_KEYS.project, json) && write(storage, STORAGE_KEYS.marks, JSON.stringify(workspace.marks));
+  // La langue des noms par défaut voyage avec les repères (voir serializeWorkspace).
+  const marks = lang ? { ...workspace.marks, lang } : workspace.marks;
+  const ok = write(storage, STORAGE_KEYS.project, json) && write(storage, STORAGE_KEYS.marks, JSON.stringify(marks));
   return { ok, error: ok ? null : new Error('storage-write-failed') };
 }
 
 /** Relit le projet enregistré ; null s'il n'y en a pas ou s'il est illisible (on repart alors d'un projet vide). */
-export function loadWorkspace(storage: StorageLike | null): Workspace | null {
+export function loadWorkspace(storage: StorageLike | null): StoredWorkspace | null {
   const json = read(storage, STORAGE_KEYS.project);
   if (!json) return null;
   try {
     const project = parseProject(json);
     let marks = emptyMarks();
+    let lang: Lang | null = null;
     const rawMarks = read(storage, STORAGE_KEYS.marks);
     if (rawMarks) {
       try {
-        marks = sanitizeMarks(JSON.parse(rawMarks));
+        const parsed: unknown = JSON.parse(rawMarks);
+        marks = sanitizeMarks(parsed);
+        if (isRecord(parsed)) lang = storedLang(parsed.lang);
       } catch {
         marks = emptyMarks();
       }
     }
-    return { project, marks };
+    return { project, marks, lang };
   } catch {
     return null;
   }
