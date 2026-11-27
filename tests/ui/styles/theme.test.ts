@@ -4,11 +4,18 @@
  * Les valeurs sombres sont écrites deux fois (sous la requête du système et sous data-theme) :
  * ce test garantit que les deux copies restent identiques et complètes.
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const read = (path: string): string => readFileSync(resolve(__dirname, '../../..', path), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+// Feuilles de styles lues sur le disque (sans dépendre des types de Node, absents du projet).
+interface FsLike {
+  readFileSync(path: string | URL): Uint8Array;
+}
+const fsModule = 'node:fs';
+const fs = (await import(/* @vite-ignore */ fsModule)) as FsLike;
+
+/** Texte d'une feuille de styles du projet, sans ses commentaires. */
+const read = (path: string): string =>
+  new TextDecoder().decode(fs.readFileSync(new URL(`../../../${path}`, import.meta.url))).replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** Corps du bloc qui suit `selector {`, accolades imbriquées comprises. */
 function blockAfter(css: string, opener: string): string {
