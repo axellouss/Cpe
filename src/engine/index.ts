@@ -89,9 +89,11 @@ export { DEFAULT_CONSTRUCTION_IDS, DEFAULT_WINDOW_TYPE_ID } from './defaults';
 export { FINDING_CODES, findingText, type FindingCode } from './messages';
 export { weakest } from './provenance';
 export {
+  carryOverFromPrevious,
   excludeRoomFromOutline,
   proposeHeatedOutline,
   unheatedRoomsInsideOutline,
+  type CarryOver,
   type HeatedOutlineProposal,
 } from './heatedOutline';
 

@@ -51,7 +51,7 @@
 
 /* Le nom de la ligne (Bauteil, Bezeichnung…) est le seul texte long : il reçoit la place que les nombres laissent. */
 .gtable__table th.gtable__head--lead {
-  width: 24%;
+  width: 20%;
 }
 
 .gtable__term {
@@ -63,6 +63,7 @@
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 500;
+  text-wrap: balance;
 }
 
 .gtable__main > td {
@@ -120,8 +121,13 @@
 }
 
 .gtable__main > .gtable__rowcopy {
-  padding-right: 6px;
   text-align: right;
+}
+
+/* La dernière colonne (copie de la ligne, ou la source s'il n'y en a pas) ne colle pas au bord du cadre. */
+.gtable__table th:last-child,
+.gtable__main > td:last-child {
+  padding-right: 8px;
 }
 
 .gtable__rowcopy .copy {

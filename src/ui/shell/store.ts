@@ -12,7 +12,7 @@ import { createStore } from 'zustand/vanilla';
 import type { StoreApi } from 'zustand/vanilla';
 import { createContext, useContext } from 'react';
 import type { BottomKind, Lang, Project, ProjectAnswers, Storey, TopClosure } from '../../core/types';
-import { createEmptyProject } from '../../engine';
+import { carryOverFromPrevious, createEmptyProject } from '../../engine';
 import { projectFileErrorMessage } from '../../export';
 import { t } from '../../i18n';
 import { readPlanFile, UnsupportedFormatError } from '../../readers';
@@ -710,8 +710,25 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
 
       storeyChanged(next) {
         const tool = get().planStep;
+        // Contour retracé ou sommet supprimé : les réglages de façade et les ouvertures de l'ancien contour sont
+        // reportés sur le nouveau quand le mur est resté en place ; ce qui est réellement perdu est dit.
+        const previous = findStorey(selectProject(get()), next.id);
+        const carried = previous ? carryOverFromPrevious(previous, next) : { storey: next, lostOpenings: 0, lostBoundaries: 0 };
+        const lost = carried.lostOpenings > 0 || carried.lostBoundaries > 0;
         // Un glissement envoie des dizaines de versions par seconde : elles fusionnent en un seul pas.
-        updateProject((p) => replaceStorey(p, next), { key: `storey:${next.id}:${tool}`, label: `shell.undo.plan.${tool}`, window: 250 });
+        apply(
+          (ws) => {
+            const project = replaceStorey(ws.project, carried.storey);
+            if (!lost) return project === ws.project ? ws : { ...ws, project };
+            // Des façades ou des ouvertures ont disparu : ces deux étapes ne sont plus « faites ».
+            const steps = { ...ws.marks.plan[next.id] };
+            delete steps.boundary;
+            delete steps.opening;
+            return { project, marks: { ...ws.marks, plan: { ...ws.marks.plan, [next.id]: steps } } };
+          },
+          { key: `storey:${next.id}:${tool}`, label: `shell.undo.plan.${tool}`, window: 250 },
+        );
+        if (lost) toast(tr('shell.plan.outline.lost', { openings: carried.lostOpenings, boundaries: carried.lostBoundaries }), 'warn');
       },
 
       northChanged(angle) {

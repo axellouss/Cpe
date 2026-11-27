@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { polygonArea, edgeEnds } from '../../src/core/geometry';
 import type { DetectedRoom, Vec2 } from '../../src/core/types';
-import { excludeRoomFromOutline, proposeHeatedOutline, remapOpenings, unheatedRoomsInsideOutline } from '../../src/engine/heatedOutline';
+import {
+  carryOverFromPrevious,
+  excludeRoomFromOutline,
+  proposeHeatedOutline,
+  remapOpenings,
+  unheatedRoomsInsideOutline,
+} from '../../src/engine/heatedOutline';
 import { createEmptyProject, createStorey, deriveSheets, restoreFootprint, roomsOutsideOutline } from '../../src/engine';
 import type { Storey } from '../../src/core/types';
 
@@ -270,5 +276,68 @@ describe('proposeHeatedOutline', () => {
     const p = proposeHeatedOutline(outline, rooms, 1);
     expect(p?.removed.map((r) => r.name)).toEqual(['Garage']);
     expect(p?.kept).toEqual(['Chaufferie']);
+  });
+});
+
+describe('contour retracé : rien ne se perd en silence', () => {
+  const base = (): Storey => ({
+    id: 's1',
+    name: 'RDC',
+    sheetId: null,
+    outline: rect(0, 0, 10, 8),
+    // haut : extérieur · droite : mitoyen chauffé · bas : extérieur (type « brique ») · gauche : contre terre
+    edges: [
+      { boundary: 'outside', constructionId: null },
+      { boundary: 'heated', constructionId: null },
+      { boundary: 'outside', constructionId: 'brique' },
+      { boundary: 'ground', constructionId: null },
+    ],
+    metresPerUnit: { value: 1, from: 'user' },
+    grossHeight: { value: 2.8, from: 'user' },
+    clearHeight: { value: 2.5, from: 'user' },
+    openings: [
+      { id: 'o1', edgeIndex: 0, kind: 'window', width: 1.2, height: 1.35, count: 1, position: 0.3, windowTypeId: null, from: 'plan' },
+      { id: 'o2', edgeIndex: 2, kind: 'door', width: 1, height: 2.1, count: 1, position: 0.5, windowTypeId: null, from: 'user' },
+    ],
+    rooms: [],
+    netAreaOverride: null,
+  });
+  /** Ce que rend l'éditeur après « Retracer » : nouveau contour, façades remises à zéro, ouvertures retirées. */
+  const retraced = (outline: Vec2[]): Storey => ({
+    ...base(),
+    outline,
+    edges: outline.map(() => ({ boundary: 'outside' as const, constructionId: null })),
+    openings: [],
+  });
+
+  it('le même rectangle redessiné à 3 cm près garde ses façades et ses ouvertures', () => {
+    const r = carryOverFromPrevious(base(), retraced(rect(0.03, 0.02, 10.03, 8.02)));
+    expect(r.lostOpenings).toBe(0);
+    expect(r.lostBoundaries).toBe(0);
+    expect(r.storey.edges.map((e) => `${e.boundary}:${e.constructionId ?? '-'}`)).toEqual(['outside:-', 'heated:-', 'outside:brique', 'ground:-']);
+    expect(r.storey.openings.map((o) => [o.id, o.edgeIndex])).toEqual([['o1', 0], ['o2', 2]]);
+    expect(r.storey.openings[0]!.position).toBeCloseTo(0.297, 2);
+  });
+
+  it('un mur réellement déplacé perd son réglage et ses ouvertures, et le compte est rendu', () => {
+    // La façade du bas recule de 2 m (8 → 6) : sa porte et son type de mur n'ont plus de mur.
+    const r = carryOverFromPrevious(base(), retraced(rect(0, 0, 10, 6)));
+    expect(r.lostOpenings).toBe(1);
+    expect(r.lostBoundaries).toBe(1);
+    expect(r.storey.openings.map((o) => o.id)).toEqual(['o1']);
+    // Les deux murs latéraux, raccourcis mais restés en place, gardent leur réglage.
+    expect(r.storey.edges.map((e) => e.boundary)).toEqual(['outside', 'heated', 'outside', 'ground']);
+    expect(r.storey.edges[2]!.constructionId).toBeNull();
+  });
+
+  it('ne touche à rien quand le contour n’a pas changé, ni à ce que l’éditeur a déjà conservé', () => {
+    const same = base();
+    expect(carryOverFromPrevious(same, { ...same, name: 'autre' }).storey.name).toBe('autre');
+    // Sommet glissé : l'éditeur garde arêtes et ouvertures ; rien n'est dupliqué.
+    const dragged: Storey = { ...base(), outline: [{ x: 0, y: 0 }, { x: 10.5, y: 0 }, { x: 10.5, y: 8 }, { x: 0, y: 8 }] };
+    const r = carryOverFromPrevious(base(), dragged);
+    expect(r.storey.openings).toHaveLength(2);
+    expect(r.storey.edges.map((e) => e.boundary)).toEqual(['outside', 'heated', 'outside', 'ground']);
+    expect(r.lostOpenings + r.lostBoundaries).toBe(0);
   });
 });

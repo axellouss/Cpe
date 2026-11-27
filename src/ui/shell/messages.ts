@@ -291,6 +291,7 @@ export const SHELL_MESSAGES: Dictionary = {
     'shell.read.noStorey': 'Aucun étage : cochez « Étage chauffé » sur au moins une feuille.',
     'shell.read.rebound': 'Fonds de plan retrouvés — étages concernés : {count}.',
     'shell.read.sameName': 'Un autre fichier nommé « {name} » était déjà chargé : celui-ci est ajouté à côté, sous le nom « {renamed} ».',
+    'shell.plan.outline.lost': 'Contour modifié : {openings} ouverture(s) et {boundaries} réglage(s) de façade n’ont plus de mur et ont été retirés. Revoyez « Derrière chaque façade » et « Fenêtres et portes ».',
 
     // ── Fermetures, milieux, catégories ──
     'shell.top.flat-roof': 'Toiture plate',
@@ -1003,6 +1004,7 @@ export const SHELL_MESSAGES: Dictionary = {
     'shell.read.noStorey': 'Kein Geschoss: Haken Sie bei mindestens einem Blatt „Beheiztes Geschoss“ an.',
     'shell.read.rebound': 'Planhintergründe wiedergefunden — betroffene Geschosse: {count}.',
     'shell.read.sameName': 'Eine andere Datei mit dem Namen „{name}“ war bereits geladen: Diese wird daneben unter dem Namen „{renamed}“ hinzugefügt.',
+    'shell.plan.outline.lost': 'Umriss geändert: {openings} Öffnung(en) und {boundaries} Fassadeneinstellung(en) haben keine Wand mehr und wurden entfernt. Prüfen Sie „Hinter jeder Fassade“ und „Fenster und Türen“ erneut.',
 
     // ── Abschlüsse, Umgebung, Kategorien ──
     'shell.top.flat-roof': 'Flachdach',

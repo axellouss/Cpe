@@ -459,3 +459,86 @@ export function unheatedRoomsBeside(storey: Storey): Room[] {
     (r) => !r.heated && !r.needsReview && r.polygon && r.polygon.length >= 3 && !pointInPolygon(centroid(r.polygon), storey.outline),
   );
 }
+
+// ───────────────────────────── Contour retracé : ne rien perdre en silence ─────────────────────────────
+
+/** Deux murs tracés à moins de cela l'un de l'autre sont le même mur (m). */
+const SAME_WALL_TOL_M = 0.1;
+
+export interface CarryOver {
+  storey: Storey;
+  /** Ouvertures de l'ancien contour qui n'ont trouvé aucun mur dans le nouveau. */
+  lostOpenings: number;
+  /** Façades qui portaient un réglage (mitoyen, terre, local non chauffé, type de mur) et n'ont pas de suite. */
+  lostBoundaries: number;
+}
+
+function sameOutline(a: readonly Vec2[], b: readonly Vec2[]): boolean {
+  return a.length === b.length && a.every((p, i) => p.x === b[i]!.x && p.y === b[i]!.y);
+}
+
+function isPlainEdge(e: StoreyEdge | undefined): boolean {
+  return !e || (e.boundary === 'outside' && e.constructionId === null);
+}
+
+/**
+ * Après un contour RETRACÉ ou un sommet supprimé, l'éditeur ne reconnaît une façade que si ses deux extrémités
+ * n'ont pas bougé : un mur redessiné à 3 cm près perdait son réglage (mitoyen, contre terre…) et ses fenêtres.
+ * Cette fonction reprend, pour chaque arête du nouveau contour encore « par défaut », le réglage de l'ancienne
+ * arête qu'elle recouvre (même droite à 10 cm près, sur plus de la moitié de sa longueur), et repose sur le
+ * nouveau contour les ouvertures de l'ancien qui n'y figurent plus. Elle compte ce qui reste perdu, pour que
+ * l'application le DISE au lieu de laisser les étapes cochées.
+ */
+export function carryOverFromPrevious(previous: Storey, next: Storey): CarryOver {
+  const scale = next.metresPerUnit.value;
+  if (previous.outline.length < 3 || next.outline.length < 3 || !(scale > 0) || sameOutline(previous.outline, next.outline)) {
+    return { storey: next, lostOpenings: 0, lostBoundaries: 0 };
+  }
+  const tol = SAME_WALL_TOL_M / scale;
+
+  // Arête d'origine recouverte par chaque nouvelle arête (ou -1).
+  const sourceOf: number[] = next.outline.map((_, j) => {
+    const [a, b] = edgeEnds(next.outline, j);
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    let best = -1;
+    let bestCover = 0;
+    for (const s of stretchesOnOutline(a, b, previous.outline, tol)) {
+      const cover = (s.hi - s.lo) * len;
+      if (cover > bestCover) {
+        bestCover = cover;
+        best = s.source;
+      }
+    }
+    return bestCover > 0.5 * len ? best : -1;
+  });
+
+  const edges: StoreyEdge[] = next.outline.map((_, j) => {
+    const mine = next.edges[j];
+    const old = sourceOf[j]! >= 0 ? previous.edges[sourceOf[j]!] : undefined;
+    // Un réglage posé sur le nouveau contour prime ; sinon on reprend celui de l'ancien mur.
+    return !isPlainEdge(mine) || !old ? (mine ? { ...mine } : { boundary: 'outside', constructionId: null }) : { ...old };
+  });
+
+  const kept = new Set(next.openings.map((o) => o.id));
+  const openings: Opening[] = next.openings.map((o) => ({ ...o }));
+  let lostOpenings = 0;
+  for (const o of previous.openings) {
+    if (kept.has(o.id)) continue;
+    if (o.edgeIndex < 0 || o.edgeIndex >= previous.outline.length) continue;
+    const [a, b] = edgeEnds(previous.outline, o.edgeIndex);
+    const at = { x: a.x + (b.x - a.x) * o.position, y: a.y + (b.y - a.y) * o.position };
+    let best: { index: number; t: number; distance: number } | null = null;
+    for (let j = 0; j < next.outline.length; j++) {
+      const [p, q] = edgeEnds(next.outline, j);
+      const cl = closestOnSegment(at, p, q);
+      if (cl.distance <= tol && (!best || cl.distance < best.distance)) best = { index: j, t: cl.t, distance: cl.distance };
+    }
+    if (best) openings.push({ ...o, edgeIndex: best.index, position: best.t });
+    else lostOpenings += 1;
+  }
+
+  // Réglages perdus : façades réglées avant, moins celles qui le sont encore (reprises ici ou gardées par l'éditeur).
+  const settled = (list: readonly StoreyEdge[]): number => list.filter((e) => !isPlainEdge(e)).length;
+  const lostBoundaries = Math.max(0, settled(previous.edges) - settled(edges));
+  return { storey: { ...next, edges, openings }, lostOpenings, lostBoundaries };
+}

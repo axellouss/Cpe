@@ -170,3 +170,37 @@ describe('opérations sur le modèle', () => {
     expect(deriveSheets(stale, 'fr').envelope.filter((r) => r.kind === 'wall').some((r) => r.elementName === 'Mur ancien')).toBe(false);
   });
 });
+
+describe('contour retracé dans l’éditeur', () => {
+  it('les étapes « façades » et « ouvertures » ne restent pas cochées quand des murs ont disparu', async () => {
+    const d = doc('maison.dxf', [sheet('s', 'Rez-de-chaussée', { outline: rect(1000, 800), detected: { openings: [{ kind: 'window', a: { x: 300, y: 0 }, b: { x: 420, y: 0 }, width: 1.2, exterior: true }] } })]);
+    const { store } = testStore();
+    readers.queue.push(d);
+    await store.getState().ingestFiles([file('maison.dxf')]);
+    store.getState().acceptProposal();
+    const s = () => store.getState();
+    const storey = () => selectProject(s()).model.storeys[0]!;
+    for (const step of ['scale', 'outline', 'boundary', 'opening'] as const) {
+      s().selectPlanStep(step);
+      s().confirmPlanStep(step);
+    }
+    expect(s().history.present.marks.plan[storey().id]).toMatchObject({ boundary: true, opening: true });
+    expect(storey().openings).toHaveLength(1);
+
+    // L'éditeur rend un contour retracé 3 cm à côté, façades et ouvertures remises à zéro : tout est reporté.
+    const moved = rect(1000, 800).map((p) => ({ x: p.x + 3, y: p.y + 2 }));
+    s().storeyChanged({ ...storey(), outline: moved, edges: moved.map(() => ({ boundary: 'outside' as const, constructionId: null })), openings: [] });
+    expect(storey().openings).toHaveLength(1);
+    expect(s().history.present.marks.plan[storey().id]).toMatchObject({ boundary: true, opening: true });
+
+    // Contour réellement différent (façade du haut reculée de 3 m) : la fenêtre n'a plus de mur, on le dit.
+    const smaller = [{ x: 0, y: 300 }, { x: 1000, y: 300 }, { x: 1000, y: 800 }, { x: 0, y: 800 }];
+    s().storeyChanged({ ...storey(), outline: smaller, edges: smaller.map(() => ({ boundary: 'outside' as const, constructionId: null })), openings: [] });
+    expect(storey().openings).toHaveLength(0);
+    const marks = s().history.present.marks.plan[storey().id] ?? {};
+    expect(marks.boundary).toBeUndefined();
+    expect(marks.opening).toBeUndefined();
+    expect(marks.outline).toBe(true);
+    expect(s().toast?.text).toContain('1 ouverture');
+  });
+});
