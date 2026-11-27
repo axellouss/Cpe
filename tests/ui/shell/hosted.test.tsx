@@ -210,6 +210,7 @@ describe('écran « Résultat » dans une page hôte', () => {
     expect(m.store.getState().toast?.text).toContain('Fichier préparé');
     await press('download-json');
     await press('download-report');
+    expect(m.store.getState().toast?.text).toContain('Dossier enregistré'); // et non « fenêtre bloquée » : rien n'a été tenté
     expect(saved).toEqual(['plan2cpe-maison-test-releve.csv', 'plan2cpe-maison-test.json', 'plan2cpe-maison-test-dossier.html']);
     expect(opened).toEqual([]);
     expect(anchorClicks).toEqual([]);

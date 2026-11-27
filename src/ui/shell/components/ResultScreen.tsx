@@ -469,9 +469,10 @@ function Downloads({ sheets, project }: { sheets: LuxeebSheets; project: Project
     try {
       const html = buildReportHtml(sheets, project, lang, { date: new Date(), sources: documents.map((d) => d.doc.fileName) });
       // Dans une page hôte, aucune fenêtre ne s'ouvre : le dossier est enregistré, à ouvrir puis imprimer.
-      if (!isHosted() && openPrintable(html)) return;
-      // Fenêtre bloquée par le navigateur : le dossier est proposé en téléchargement, à ouvrir puis imprimer.
-      void save('report', () => html, false, 'shell.result.report.blocked', 'info');
+      const hosted = isHosted();
+      if (!hosted && openPrintable(html)) return;
+      // Ailleurs, on n'arrive ici que si le navigateur a bloqué la fenêtre : le dossier est alors téléchargé.
+      void save('report', () => html, false, hosted ? 'shell.result.report.saved' : 'shell.result.report.blocked', 'info');
     } catch (error) {
       toast(projectFileErrorMessage(error, lang), 'warn');
     }
