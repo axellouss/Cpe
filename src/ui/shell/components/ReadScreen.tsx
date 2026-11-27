@@ -91,7 +91,7 @@ function SheetRow({ doc, sheet, proposal }: { doc: PlanDocument; sheet: PlanShee
         <div className="facts__row">
           <dt>{tr('shell.read.outline')}</dt>
           <dd>
-            <span className="facts__value">{summary.hasOutline ? tr('shell.read.outline.found', { points: d.outline?.length ?? 0 }) : tr('shell.read.outline.none')}</span>
+            <span className="facts__value">{summary.hasOutline ? tr('shell.read.outline.found', { points: summary.outlinePoints }) : tr('shell.read.outline.none')}</span>
             {summary.leftOutside.length > 0 ? (
               <span className="facts__note" data-testid="read-left-outside">
                 {tr('shell.read.outline.heated', { rooms: summary.leftOutside.join(', ') })}
@@ -144,11 +144,11 @@ function SheetRow({ doc, sheet, proposal }: { doc: PlanDocument; sheet: PlanShee
         ) : null}
       </dl>
 
-      {d.notes.length > 0 ? (
+      {summary.notes.length > 0 ? (
         <details className="sheet__notes">
-          <summary>{tr('shell.read.notes', { count: d.notes.length })}</summary>
+          <summary>{tr('shell.read.notes', { count: summary.notes.length })}</summary>
           <ul lang="fr">
-            {d.notes.map((note, i) => (
+            {summary.notes.map((note, i) => (
               <li key={i}>{note}</li>
             ))}
           </ul>

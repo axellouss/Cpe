@@ -205,8 +205,62 @@ describe('résumés affichés', () => {
       hasOutline: true,
       leftOutside: [],
       keptInside: [],
+      outlinePoints: 4,
+      notes: ['Calque des murs : MUR.'],
     });
-    expect(summarizeSheet(sheet('x', 'vide', { outline: null }))).toMatchObject({ roomCount: 0, hasOutline: false });
+    expect(summarizeSheet(sheet('x', 'vide', { outline: null }))).toMatchObject({ roomCount: 0, hasOutline: false, outlinePoints: 0, notes: [] });
+  });
+
+  it('garage accolé : annonce le contour chauffé proposé, et tait la consigne du lecteur déjà suivie', () => {
+    // Maison 10 × 8 m avec un garage de 3 × 6 m accolé à droite, dessinée en centimètres.
+    const footprint = [
+      { x: 0, y: 0 },
+      { x: 1300, y: 0 },
+      { x: 1300, y: 600 },
+      { x: 1000, y: 600 },
+      { x: 1000, y: 800 },
+      { x: 0, y: 800 },
+    ];
+    // Le garage s'appuie sur le mur de la maison (face extérieure à x = 1000) : pas de mur à lui de ce côté.
+    const garage = [
+      { x: 1000, y: 20 },
+      { x: 1280, y: 20 },
+      { x: 1280, y: 580 },
+      { x: 1000, y: 580 },
+    ];
+    const living = [
+      { x: 30, y: 30 },
+      { x: 980, y: 30 },
+      { x: 980, y: 770 },
+      { x: 30, y: 770 },
+    ];
+    const notes = (lang: 'fr' | 'de'): string[] => [
+      'Calque des murs : MUR.',
+      lang === 'fr'
+        ? 'Le contour englobe « Garage » (probablement non chauffé) : à retirer du contour si hors volume chauffé.'
+        : 'Der Umriss schließt « Garage » ein (vermutlich unbeheizt): aus dem Umriss entfernen, falls außerhalb des beheizten Volumens.',
+    ];
+    for (const lang of ['fr', 'de'] as const) {
+      const s = sheet('g', 'Rez-de-chaussée', {
+        outline: footprint,
+        detected: {
+          rooms: [
+            { name: 'Séjour', statedArea: 70, polygon: living, heatedGuess: 'yes' },
+            { name: 'Garage', statedArea: 14.5, polygon: garage, heatedGuess: 'no' },
+          ],
+          notes: notes(lang),
+        },
+      });
+      const summary = summarizeSheet(s);
+      expect(summary.leftOutside, lang).toEqual(['Garage']);
+      // Le contour annoncé est celui qui sera proposé, pas l'emprise lue (6 points) : un rectangle, avec un point
+      // de plus là où le mur passe de « contre le garage » à « extérieur ».
+      expect(summary.outlinePoints, lang).toBe(5);
+      expect(summary.notes, lang).toEqual(['Calque des murs : MUR.']);
+    }
+    // Sans proposition de retrait (pas d'échelle), la remarque du lecteur reste : elle est encore à suivre.
+    const noScale = sheet('g2', 'Rez-de-chaussée', { outline: footprint, scale: null, detected: { rooms: [{ name: 'Garage', polygon: garage, heatedGuess: 'no' }], notes: notes('fr') } });
+    expect(summarizeSheet(noScale).notes).toHaveLength(2);
   });
 
   it('nomme les étages par défaut selon leur rang, sans doublon', () => {

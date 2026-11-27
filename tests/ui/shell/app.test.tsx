@@ -226,6 +226,18 @@ describe('accueil', () => {
     expect(q('toast').textContent).toContain('Projet effacé');
   });
 
+  it('fichier Archicad déposé avec un plan lisible : le dialogue dit que l’autre a été lu', async () => {
+    const m = await mount();
+    readers.documents.set('maison.dxf', houseDoc());
+    await act(async () => {
+      await m.store.getState().ingestFiles([
+        { name: 'villa.pln', arrayBuffer: async () => new ArrayBuffer(4) },
+        { name: 'maison.dxf', arrayBuffer: async () => new ArrayBuffer(4) },
+      ]);
+    });
+    expect(q('closed-others-read').textContent).toContain('ont été lus normalement');
+  });
+
   it('explique un fichier Archicad : recette d’export, trois options, e-mail prêt à copier en français ou en allemand', async () => {
     const m = await mount();
     await act(async () => {
@@ -234,6 +246,8 @@ describe('accueil', () => {
     const dialog = q('closed-dialog');
     expect(dialog.getAttribute('role')).toBe('dialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
+    // Déposé seul : le dialogue ne prétend pas que d'autres fichiers ont été lus.
+    expect(has('closed-others-read')).toBe(false);
     const content = dialog.textContent ?? '';
     expect(content).toContain('ne se lit que dans Archicad');
     expect(content).toContain('Enregistrer sous');
@@ -270,7 +284,9 @@ describe('lecture', () => {
     const card = q('doc-card').textContent ?? '';
     expect(card).toContain('maison.dxf');
     expect(card).toContain('1 unité du dessin = 1 cm');
-    expect(card).toContain('confirmée');
+    // À la lecture, l'échelle est « lue sur le plan » ; « confirmée » reste le geste de l'expert, sur le plan.
+    expect(card).toContain('lue sur le plan');
+    expect(card).not.toContain('confirmée');
     expect(card).toContain('3 lues, 52,5 m² au total');
     expect(card).toContain('à trancher : 1');
     expect(card).toContain('azimut 340°');

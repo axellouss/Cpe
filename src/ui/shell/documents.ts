@@ -10,6 +10,7 @@
 import type { BottomKind, Lang, PlanDocument, PlanSheet, Project, Sourced } from '../../core/types';
 import { basementSheetIds, createEmptyProject, createStorey, modelFromDocument, proposeHeatedOutline, proposeTopClosure } from '../../engine';
 import { t } from '../../i18n';
+import { isOutlineUnheatedNote } from '../../readers/notes';
 import { guessStorey } from '../../semantics/labels';
 import type { LoadedDocument } from './types';
 
@@ -375,6 +376,10 @@ export interface SheetSummary {
   leftOutside: string[];
   /** Locaux non chauffés d'après leur nom, restés dans le contour : à trancher par l'expert. */
   keptInside: string[];
+  /** Nombre de points du contour qui sera proposé : le contour chauffé s'il diffère de l'emprise lue. */
+  outlinePoints: number;
+  /** Remarques du lecteur à montrer : sans celle qui demande de retirer un local que la proposition retire déjà. */
+  notes: string[];
 }
 
 export function summarizeSheet(sheet: PlanSheet): SheetSummary {
@@ -389,5 +394,9 @@ export function summarizeSheet(sheet: PlanSheet): SheetSummary {
     hasOutline: (d.outline?.length ?? 0) >= 3,
     leftOutside: proposal?.removed.map((r) => r.name || '?') ?? [],
     keptInside: proposal?.kept.map((name) => name || '?') ?? [],
+    outlinePoints: (proposal?.outline ?? d.outline)?.length ?? 0,
+    // La consigne « à retirer du contour » est déjà suivie quand la proposition laisse ces locaux dehors
+    // et qu'il n'en reste aucun à trancher à l'intérieur.
+    notes: proposal && proposal.removed.length > 0 && proposal.kept.length === 0 ? d.notes.filter((note) => !isOutlineUnheatedNote(note)) : d.notes,
   };
 }

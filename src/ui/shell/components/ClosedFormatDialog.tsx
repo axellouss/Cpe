@@ -30,6 +30,8 @@ export function ClosedFormatDialog() {
   const tr = useT();
   const store = useShellStore();
   const files = useShell((s) => s.closedFiles);
+  // D'autres fichiers du même dépôt ont-ils été lus ? Sinon la phrase qui le dit serait fausse.
+  const othersRead = useShell((s) => s.reading.some((r) => r.status === 'done'));
   const lang = useShell((s) => s.lang);
   const [mailLang, setMailLang] = useState<Lang>(lang);
   const file = files[0];
@@ -96,7 +98,11 @@ export function ClosedFormatDialog() {
         </p>
         <textarea className="mail__body" readOnly rows={12} value={mail.body} lang={mailLang} aria-label={tr('shell.closed.mail.title')} data-testid="mail-body" />
       </div>
-      <p className="muted">{tr('shell.closed.honest')}</p>
+      {othersRead ? (
+        <p className="muted" data-testid="closed-others-read">
+          {tr('shell.closed.honest')}
+        </p>
+      ) : null}
     </Dialog>
   );
 }

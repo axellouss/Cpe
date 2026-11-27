@@ -536,15 +536,20 @@ ul.notice {
   min-width: 0;
 }
 
+/* Les composés allemands (« Wärmeschutzverglasung ») doivent se couper dans la carte, pas en sortir. */
 .choice__title {
   font-weight: 650;
   line-height: 1.25;
+  overflow-wrap: anywhere;
+  hyphens: auto;
 }
 
 .choice__sub {
   color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.3;
+  overflow-wrap: anywhere;
+  hyphens: auto;
 }
 
 .choice__icon {
@@ -590,11 +595,23 @@ ul.notice {
   display: none;
 }
 
+/* Le rappel de la touche du clavier n'a pas de sens au doigt, et y prenait la place du texte. */
+@media (pointer: coarse) {
+  .choice__key {
+    display: none;
+  }
+}
+
 .choice--picto {
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
   text-align: center;
+}
+
+/* Dans une carte à pictogramme, la pastille de touche garde sa taille au lieu de s'étirer en boîte vide. */
+.choice--picto .choice__key {
+  align-self: center;
 }
 
 .choice__picto {
