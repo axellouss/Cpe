@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Project } from '../../../src/core/types';
 import { createEmptyProject, createStorey, DEFAULT_CONSTRUCTION_IDS, DEFAULT_WINDOW_TYPE_ID, deriveSheets } from '../../../src/engine';
-import { serializeProject } from '../../../src/export';
+import { parseProject, serializeProject } from '../../../src/export';
 import {
   browserStorage,
   clearWorkspace,
@@ -12,9 +12,11 @@ import {
   loadEntered,
   loadWorkspace,
   memoryStorage,
+  parseWorkspace,
   sanitizeMarks,
   saveEntered,
   saveWorkspace,
+  serializeWorkspace,
   STORAGE_KEYS,
 } from '../../../src/ui/shell/autosave';
 import {
@@ -267,6 +269,30 @@ describe('enregistrement dans le navigateur', () => {
     const result = saveWorkspace(memoryStorage(), { project: broken, marks: emptyMarks() });
     expect(result.ok).toBe(false);
     expect(result.error).toBeInstanceOf(Error);
+  });
+
+  it('fichier projet : les validations voyagent avec le projet, et un fichier sans elles s’ouvre « à confirmer »', () => {
+    const project = house();
+    const first = project.model.storeys[0]!.id;
+    const marks = {
+      ...emptyMarks(),
+      plan: { [first]: { outline: true as const, boundary: true as const }, 'etage-disparu': { outline: true as const } },
+      questions: { year: 'answered' as const },
+      yearFromPeriod: true,
+    };
+    const json = serializeWorkspace({ project, marks });
+    // Le fichier reste un projet du contrat : `parseProject` le relit sans broncher.
+    expect(parseProject(json)).toEqual(JSON.parse(JSON.stringify(project)));
+    const opened = parseWorkspace(json);
+    expect(opened.project).toEqual(JSON.parse(JSON.stringify(project)));
+    // Les repères d'un étage qui n'existe pas sont écartés.
+    expect(opened.marks).toEqual({ ...marks, plan: { [first]: { outline: true, boundary: true } } });
+    // Ancien fichier (sans repères), repères illisibles : tout est « à confirmer », sans erreur.
+    expect(parseWorkspace(serializeProject(project)).marks).toEqual(emptyMarks());
+    const odd = JSON.parse(json) as Record<string, unknown>;
+    odd.marks = 'n’importe quoi';
+    expect(parseWorkspace(JSON.stringify(odd)).marks).toEqual(emptyMarks());
+    expect(() => parseWorkspace('{"bonjour":1}')).toThrow();
   });
 
   it('se méfie de ce qu’il relit', () => {

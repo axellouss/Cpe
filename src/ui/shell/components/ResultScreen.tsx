@@ -10,12 +10,13 @@
 import { useMemo } from 'react';
 import type { Finding, LuxeebSheets, Project, Severity } from '../../../core/types';
 import { findingText } from '../../../engine';
-import { buildReportHtml, exportFileName, EXPORT_MIME, guideDisclaimer, PASTE_EOL, projectFileErrorMessage, serializeProject, sheetsToCsv } from '../../../export';
+import { buildReportHtml, exportFileName, EXPORT_MIME, guideDisclaimer, PASTE_EOL, projectFileErrorMessage, sheetsToCsv } from '../../../export';
 import type { GuideItem, GuideSection, GuideTable } from '../../../export';
+import { serializeWorkspace } from '../autosave';
 import { downloadText, openPrintable } from '../browser';
 import { derive, guide } from '../compute';
 import { jumpLabelKey, jumpTargetFor } from '../jump';
-import { selectProject, useShell, useShellStore } from '../store';
+import { selectMarks, selectProject, useShell, useShellStore } from '../store';
 import { AnimatedNumber, Badge, CopyButton, ProvenanceTag, useT } from './common';
 import type { BadgeTone } from './common';
 import { Icon } from './icons';
@@ -322,6 +323,7 @@ function Downloads({ sheets, project }: { sheets: LuxeebSheets; project: Project
   const tr = useT();
   const store = useShellStore();
   const lang = useShell((s) => s.lang);
+  const marks = useShell(selectMarks);
   const documents = useShell((s) => s.documents);
   const toast = store.getState().showToast;
 
@@ -335,7 +337,8 @@ function Downloads({ sheets, project }: { sheets: LuxeebSheets; project: Project
   };
 
   const csv = (): void => guard(() => downloadText(exportFileName(project, 'csv'), EXPORT_MIME.csv, sheetsToCsv(sheets, project, lang)), 'shell.result.download.done');
-  const json = (): void => guard(() => downloadText(exportFileName(project, 'project'), EXPORT_MIME.project, serializeProject(project)), 'shell.result.download.done');
+  const json = (): void =>
+    guard(() => downloadText(exportFileName(project, 'project'), EXPORT_MIME.project, serializeWorkspace({ project, marks })), 'shell.result.download.done');
   const report = (): void => {
     try {
       const html = buildReportHtml(sheets, project, lang, { date: new Date(), sources: documents.map((d) => d.doc.fileName) });

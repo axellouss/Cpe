@@ -13,12 +13,12 @@ import type { StoreApi } from 'zustand/vanilla';
 import { createContext, useContext } from 'react';
 import type { BottomKind, Lang, Project, ProjectAnswers, Storey, TopClosure } from '../../core/types';
 import { createEmptyProject } from '../../engine';
-import { parseProject, projectFileErrorMessage } from '../../export';
+import { projectFileErrorMessage } from '../../export';
 import { t } from '../../i18n';
 import { readPlanFile, UnsupportedFormatError } from '../../readers';
 import type { FileLike } from '../../readers';
 import type { PlanTool } from '../plan';
-import { browserStorage, clearWorkspace, initialLang, loadEntered, loadWorkspace, saveEntered, saveLang, saveWorkspace } from './autosave';
+import { browserStorage, clearWorkspace, initialLang, loadEntered, loadWorkspace, parseWorkspace, saveEntered, saveLang, saveWorkspace } from './autosave';
 import type { StorageLike } from './autosave';
 import { dropStoreyMarks, firstOpenStep, markPlanStep, nextOpenStep, planSteps, stepOfTool } from './checklist';
 import {
@@ -528,14 +528,15 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       },
 
       openProjectText(json) {
-        let project: Project;
+        let opened: Workspace;
         try {
-          project = parseProject(json);
+          opened = parseWorkspace(json);
         } catch (error) {
           toast(projectFileErrorMessage(error, get().lang), 'warn');
           return false;
         }
-        replaceWorkspace({ project, marks: emptyMarks() }, 'shell.undo.openProject');
+        const project = opened.project;
+        replaceWorkspace(opened, 'shell.undo.openProject');
         set({ saved: null, proposal: null });
         const state = get();
         if (project.model.storeys.length > 0) enterPlan(null);

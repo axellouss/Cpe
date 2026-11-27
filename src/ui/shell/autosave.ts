@@ -109,6 +109,38 @@ export function sanitizeMarks(raw: unknown): Marks {
   return marks;
 }
 
+// ───────────────────────────── Fichier projet (.json) ─────────────────────────────
+
+/**
+ * Texte du fichier projet téléchargé : le projet du contrat, plus les repères de validation (champ `marks`) pour
+ * qu'un projet rouvert ne redemande pas de confirmer ce qui l'était déjà. Lève une ProjectFileError si le projet
+ * n'est pas enregistrable.
+ */
+export function serializeWorkspace(workspace: Workspace): string {
+  const data = JSON.parse(serializeProject(workspace.project)) as Record<string, unknown>;
+  data.marks = workspace.marks;
+  return JSON.stringify(data, null, 2);
+}
+
+/**
+ * Fichier projet → espace de travail. Le projet est validé par `parseProject` (qui lève une ProjectFileError) ;
+ * les repères sont relus avec prudence et limités aux étages qui existent. Un fichier sans repères (ancien, ou
+ * écrit à la main) s'ouvre avec tout « à confirmer ».
+ */
+export function parseWorkspace(json: string): Workspace {
+  const project = parseProject(json);
+  let marks = emptyMarks();
+  try {
+    const raw: unknown = JSON.parse(json.replace(/^\uFEFF/, ''));
+    if (isRecord(raw)) marks = sanitizeMarks(raw.marks);
+  } catch {
+    marks = emptyMarks();
+  }
+  const known = new Set(project.model.storeys.map((s) => s.id));
+  for (const id of Object.keys(marks.plan)) if (!known.has(id)) delete marks.plan[id];
+  return { project, marks };
+}
+
 // ───────────────────────────── Projet ─────────────────────────────
 
 export interface SaveResult {
