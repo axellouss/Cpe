@@ -109,6 +109,18 @@ const PROVENANCE_RANK: Record<Provenance, number> = { estimate: 0, default: 1, p
 export const PROVENANCES: readonly Provenance[] = ['plan', 'calc', 'default', 'estimate', 'user'];
 
 /** Vrai si la valeur est bien l'une des cinq provenances du contrat (les données viennent parfois de loin). */
+/**
+ * Remarque d'une surface de pièce. Le moteur note « écrite / mesurée » (« 74,51 / 94,05 ») quand la surface écrite
+ * sur le plan contredit la mesure et que la mesure est retenue : dit en toutes lettres pour le relevé et le dossier.
+ * Toute autre remarque est rendue telle quelle.
+ */
+export function roomAreaNote(note: string | undefined, lang: Lang): string {
+  if (!note) return '';
+  const m = /^(\d+[.,]\d+) \/ (\d+[.,]\d+)$/.exec(note.trim());
+  if (!m) return note;
+  return t(lang, 'export.note.roomAreaMeasured', { stated: m[1]!.replace('.', ','), measured: m[2]!.replace('.', ',') });
+}
+
 export function isProvenance(value: unknown): value is Provenance {
   return typeof value === 'string' && (PROVENANCES as readonly string[]).includes(value);
 }

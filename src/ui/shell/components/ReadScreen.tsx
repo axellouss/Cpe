@@ -15,6 +15,7 @@ import {
   summarizeSheet,
   toggleProposalSheet,
 } from '../documents';
+import { isNoNorthNote } from '../../../readers/notes';
 import type { Proposal, SheetProposal } from '../documents';
 import { fixed, rounded, unitLength } from '../numbers';
 import { selectProject, useShell, useShellStore } from '../store';
@@ -166,6 +167,8 @@ function DocumentCard({ loaded, proposal }: { loaded: LoadedDocument; proposal: 
   const busy = useShell((s) => s.busy);
   // Les remarques du lecteur sont rédigées dans la langue de l'interface AU MOMENT de la lecture.
   const notesLang: Lang = loaded.readLang ?? lang;
+  // « Pas de flèche du nord » : dit une seule fois, à la ligne du nord ci-dessous.
+  const warnings = doc.northAngle ? doc.warnings : doc.warnings.filter((w) => !isNoNorthNote(w));
   return (
     <article className="card doc" aria-label={doc.fileName} data-testid="doc-card">
       <header className="doc__head">
@@ -181,9 +184,9 @@ function DocumentCard({ loaded, proposal }: { loaded: LoadedDocument; proposal: 
         </button>
       </header>
 
-      {doc.warnings.length > 0 ? (
+      {warnings.length > 0 ? (
         <ul className="notice notice--warn doc__warnings" lang={notesLang} aria-label={tr('shell.read.warnings')}>
-          {doc.warnings.map((w, i) => (
+          {warnings.map((w, i) => (
             <li key={i}>{w}</li>
           ))}
         </ul>

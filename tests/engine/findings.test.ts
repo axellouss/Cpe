@@ -475,6 +475,13 @@ describe('détails de quelques contrôles', () => {
     expect(codes(deriveSheets(sound({ grossHeight: 4.5 }), 'fr'))).not.toContain('height.implausible');
   });
 
+  it('sans contour utilisable, un volume de 0 m³ n’est pas « lu sur le plan »', () => {
+    const empty = deriveSheets(sound({}, []), 'fr');
+    expect(empty.totals.ve).toBe(0);
+    expect(empty.totals.veFrom).toBe('estimate');
+    expect(empty.volumes.every((v) => v.from === 'estimate')).toBe(true);
+  });
+
   it('An mesurée sur le dessin ne vaut pas mieux que l’échelle : estimée tant que l’échelle l’est ; une surface écrite n’en dépend pas', () => {
     // Pièces MESURÉES (surface en unités de feuille) sur un plan dont l'échelle n'est qu'une estimation.
     const measured = [

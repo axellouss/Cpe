@@ -199,7 +199,7 @@ const ROOM_AREA_MISMATCH = 0.05;
  * surface habitable au-dessus de 1,80 ou 2,00 m sous rampant, typiquement — et c'est la mesure (faces intérieures,
  * hauteur libre ≥ 1,00 m quand le lecteur la connaît) qui est retenue, avec les deux valeurs en note.
  */
-function pickRoomArea(
+export function pickRoomArea(
   stated: number | undefined,
   measured: number | undefined,
 ): { value: number; note?: string; measured: boolean } {

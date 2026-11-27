@@ -9,18 +9,7 @@
 import type { EnvelopeRow, Lang, LuxeebSheets, Project, Provenance, Sourced, Storey } from '../core/types';
 import { t } from '../i18n';
 import { enumText, projectFacts, yesNoText } from './answers';
-import {
-  cleanText,
-  compactNumber,
-  escapeHtml,
-  isProvenance,
-  luxeebNumber,
-  luxeebOrientation,
-  PROVENANCES,
-  provenanceLabel,
-  provenanceTag,
-  weakestProvenance,
-} from './format';
+import { cleanText, compactNumber, escapeHtml, isProvenance, luxeebNumber, luxeebOrientation, provenanceLabel, PROVENANCES, provenanceTag, roomAreaNote, weakestProvenance } from './format';
 import { buildGuide, ENVELOPE_AZIMUTH_COLUMN, guideDisclaimer } from './guide';
 import type { GuideTable } from './index';
 import { LUXEEB_ENVELOPE, LUXEEB_SHEET } from './luxeeb-terms';
@@ -178,7 +167,7 @@ function roomsBlock(project: Project, lang: Lang): string {
     .map((s) => {
       const rows = s.rooms.map(
         (r) =>
-          `<tr>${td(r.name.trim() || t(lang, 'export.report.room.unnamed'))}<td class="num">${sourcedNumber(r.area, lang)}</td>${td(yesNoText(lang, r.heated) ?? '')}${td(r.needsReview ? (yesNoText(lang, true) ?? '') : '')}</tr>`,
+          `<tr>${td(r.name.trim() || t(lang, 'export.report.room.unnamed'))}<td class="num">${sourcedNumber(r.area.note ? { ...r.area, note: roomAreaNote(r.area.note, lang) } : r.area, lang)}</td>${td(yesNoText(lang, r.heated) ?? '')}${td(r.needsReview ? (yesNoText(lang, true) ?? '') : '')}</tr>`,
       );
       return `<h3>${e(s.name)}</h3>${tableHtml(headers, rows, t(lang, 'export.report.room.none'))}`;
     })

@@ -178,12 +178,14 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     // Échelle ou sommet non fini (NaN, infini) : l'étage est inutilisable, et le dit par un constat bloquant.
     const finite = Number.isFinite(s) && s > 0 && storey.outline.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
     const poly = finite ? scalePolygon(storey.outline, s) : [];
+    const usable = poly.length >= 3;
     return {
       storey,
       poly,
       area: finite ? polygonArea(poly) : 0,
-      usable: poly.length >= 3,
-      geometryFrom: weakest('plan', storey.metresPerUnit.from),
+      usable,
+      // Sans contour utilisable, rien n'a été « lu sur le plan » : un volume de 0 m³ ne doit pas en porter l'étiquette.
+      geometryFrom: usable ? weakest('plan', storey.metresPerUnit.from) : 'estimate',
     };
   });
   const topGeometry = geometries[geometries.length - 1];

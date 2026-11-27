@@ -668,6 +668,8 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         // On reprend là où l'on s'était arrêté : résultat, question en cours, ou plan de l'étage affiché.
         const storeyId = storeys.some((s) => s.id === position?.storeyId) ? position!.storeyId : null;
         enterPlan(storeyId);
+        // … et sur l'étape du plan qui était ouverte, si l'étage est bien celui que l'on retrouve.
+        if (storeyId !== null && position?.planStep) set({ planStep: position.planStep });
         if (position?.step === 'result') set({ step: 'result' });
         else if (position?.step === 'questions') set({ step: 'questions', question: position.question, questionPart: null });
       },
@@ -1050,9 +1052,9 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
 
   // La position dans le parcours accompagne le projet enregistré (jamais celle de l'accueil avant une reprise).
   store.subscribe((state, previous) => {
-    if (state.step === previous.step && state.storeyId === previous.storeyId && state.question === previous.question) return;
+    if (state.step === previous.step && state.storeyId === previous.storeyId && state.question === previous.question && state.planStep === previous.planStep) return;
     if (state.saved !== null || isEmptyWorkspace(state.history.present)) return;
-    savePosition(deps.storage, { step: state.step, storeyId: state.storeyId, question: state.question });
+    savePosition(deps.storage, { step: state.step, storeyId: state.storeyId, question: state.question, planStep: state.planStep });
   });
 
   return store;

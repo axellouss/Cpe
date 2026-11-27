@@ -622,6 +622,12 @@ describe('navigation', () => {
     next.store.getState().resumeSaved();
     expect(next.store.getState()).toMatchObject({ step: 'plan', storeyId: upper!.id });
 
+    // … et l'étape du plan qui était ouverte est retrouvée elle aussi.
+    first.store.getState().selectPlanStep('north');
+    next = testStore({}, first.storage.dump());
+    next.store.getState().resumeSaved();
+    expect(next.store.getState()).toMatchObject({ step: 'plan', storeyId: upper!.id, planStep: 'north' });
+
     // Arrêt sur une note de visite.
     first.store.getState().jumpTo({ step: 'questions', question: 'windows', part: null });
     next = testStore({}, first.storage.dump());

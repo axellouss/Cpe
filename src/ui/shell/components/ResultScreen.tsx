@@ -10,7 +10,7 @@
  * automatique (l'outil n'a pas de fonction d'import : l'expert copie, colle et relit).
  */
 import { useMemo } from 'react';
-import type { Finding, LuxeebSheets, Project, Severity } from '../../../core/types';
+import type { Finding, LuxeebSheets, Project, Provenance, Severity } from '../../../core/types';
 import { findingText } from '../../../engine';
 import { buildReportHtml, exportFileName, EXPORT_MIME, guideDisclaimer, PASTE_EOL, projectFileErrorMessage, sheetsToCsv } from '../../../export';
 import type { ExportFileKind, GuideItem, GuideRow, GuideSection, GuideTable } from '../../../export';
@@ -178,15 +178,19 @@ function FindingsPanel({ findings, project }: { findings: readonly Finding[]; pr
 
 // ───────────────────────────── Chiffres de contrôle ─────────────────────────────
 
-function KeyFigures({ sheets }: { sheets: LuxeebSheets }) {
+function KeyFigures({ sheets, sections }: { sheets: LuxeebSheets; sections: readonly GuideSection[] }) {
   const tr = useT();
   const T = sheets.totals;
-  const figures: { key: string; value: number; unit: string; digits: number; from?: 'an' | 've' }[] = [
-    { key: 'an', value: T.an, unit: 'm²', digits: 1, from: 'an' },
-    { key: 've', value: T.ve, unit: 'm³', digits: 1, from: 've' },
-    { key: 'envelope', value: T.envelopeArea, unit: 'm²', digits: 1 },
-    { key: 'windows', value: T.windowArea, unit: 'm²', digits: 1 },
-    { key: 'aOverVe', value: T.aOverVe, unit: '1/m', digits: 2 },
+  // Chaque chiffre-clé porte la provenance de la valeur de contrôle correspondante du guide : sans étiquette,
+  // une enveloppe calculée sur des hauteurs par défaut passerait ici pour un fait.
+  const check = sections.find((s) => s.key === 'check')?.items ?? [];
+  const fromOf = (key: string): Provenance | null => check.find((item) => item.key === key)?.from ?? null;
+  const figures: { key: string; value: number; unit: string; digits: number; from: Provenance | null }[] = [
+    { key: 'an', value: T.an, unit: 'm²', digits: 1, from: T.anFrom },
+    { key: 've', value: T.ve, unit: 'm³', digits: 1, from: T.veFrom },
+    { key: 'envelope', value: T.envelopeArea, unit: 'm²', digits: 1, from: fromOf('check.envelopeGross') },
+    { key: 'windows', value: T.windowArea, unit: 'm²', digits: 1, from: fromOf('check.windowArea') },
+    { key: 'aOverVe', value: T.aOverVe, unit: '1/m', digits: 2, from: fromOf('check.aOverVe') },
   ];
   return (
     <dl className="figures" aria-label={tr('shell.result.figures')}>
@@ -196,7 +200,7 @@ function KeyFigures({ sheets }: { sheets: LuxeebSheets }) {
           <dd>
             <AnimatedNumber value={f.value} digits={f.digits} />
             <span className="metric__unit"> {f.unit}</span>
-            {f.from ? <ProvenanceTag from={f.from === 'an' ? T.anFrom : T.veFrom} /> : null}
+            {f.from ? <ProvenanceTag from={f.from} /> : null}
           </dd>
         </div>
       ))}
@@ -555,7 +559,7 @@ export function ResultScreen() {
 
       <UnconfirmedSteps />
       <FindingsPanel findings={sheets.findings} project={project} />
-      <KeyFigures sheets={sheets} />
+      <KeyFigures sheets={sheets} sections={sections ?? []} />
 
       {sections ? (
         <div className="result__layout">

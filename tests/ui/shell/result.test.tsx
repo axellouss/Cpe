@@ -137,6 +137,23 @@ afterEach(async () => {
   }
 });
 
+describe('résultat — chiffres-clés', () => {
+  it('chaque chiffre-clé porte sa provenance : une enveloppe calculée sur des hauteurs par défaut ne passe pas pour un fait', async () => {
+    const m = await mount();
+    const figures = Array.from(document.querySelectorAll<HTMLElement>('.figures__item'));
+    expect(figures).toHaveLength(5);
+    // An, Ve, enveloppe A, fenêtres, A/Ve : tous étiquetés.
+    for (const figure of figures) expect(figure.querySelector('.tag'), figure.textContent ?? '').not.toBeNull();
+    // Hauteurs d'étage par défaut : l'enveloppe, Ve et A/Ve le disent, comme les valeurs de contrôle du guide.
+    const tagOf = (i: number): string => figures[i]!.querySelector('.tag')!.className;
+    expect(tagOf(1)).toContain('tag--default');
+    expect(tagOf(2)).toContain('tag--default');
+    expect(tagOf(4)).toContain('tag--default');
+    const check = buildGuide(derive(selectProject(m.store.getState()), 'fr').sheets!, selectProject(m.store.getState()), 'fr').find((s) => s.key === 'check')!;
+    expect(check.items.find((i) => i.key === 'check.envelopeGross')!.from).toBe('default');
+  });
+});
+
 describe('résultat — grille aux colonnes de LuxEeB-Tool', () => {
   it('ne met dans la grille de l’enveloppe que les colonnes de l’outil, dans son ordre, entre la coche et la source', async () => {
     await mount();

@@ -222,6 +222,19 @@ describe('résumés affichés', () => {
     expect(summarizeSheet(sheet('x', 'vide', { outline: null }))).toMatchObject({ roomCount: 0, hasOutline: false, outlinePoints: 0, notes: [] });
   });
 
+  it('additionne les surfaces RETENUES : la mesure quand elle contredit la surface écrite, comme le modèle', () => {
+    // Galerie sous rampant : 74,51 m² écrits (surface habitable), 94,05 m² mesurés → c'est la mesure qui comptera.
+    const s = sheet('g', 'Combles', {
+      detected: {
+        rooms: [
+          { name: 'Galerie', statedArea: 74.51, measuredArea: 94.05, heatedGuess: 'yes' },
+          { name: 'Bain', statedArea: 6.2, measuredArea: 6.25, heatedGuess: 'yes' },
+        ],
+      },
+    });
+    expect(summarizeSheet(s).roomArea).toBeCloseTo(94.05 + 6.2, 2);
+  });
+
   it('garage accolé : annonce le contour chauffé proposé, et tait la consigne du lecteur déjà suivie', () => {
     // Maison 10 × 8 m avec un garage de 3 × 6 m accolé à droite, dessinée en centimètres.
     const footprint = [

@@ -6,7 +6,7 @@
 import type { Lang, LuxeebSheets, Project } from '../core/types';
 import { t } from '../i18n';
 import { projectFacts, yesNoText } from './answers';
-import { excelSafeText, luxeebNumber, provenanceLabel } from './format';
+import { excelSafeText, luxeebNumber, provenanceLabel, roomAreaNote } from './format';
 import { buildGuide } from './guide';
 import type { GuideTable } from './index';
 import { LUXEEB_SHEET } from './luxeeb-terms';
@@ -107,7 +107,7 @@ export function sheetsToCsv(sheets: LuxeebSheets, project: Project, lang: Lang):
           yesNoText(lang, room.heated) ?? '',
           room.needsReview ? (yesNoText(lang, true) ?? '') : '',
           provenanceLabel(room.area.from, lang),
-          room.area.note ?? '',
+          roomAreaNote(room.area.note, lang),
         ]),
       );
     }

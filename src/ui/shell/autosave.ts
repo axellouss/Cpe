@@ -240,6 +240,8 @@ export interface SavedPosition {
   step: Step;
   storeyId: string | null;
   question: QuestionId;
+  /** Étape du plan ouverte ; absente d'un ancien enregistrement. */
+  planStep?: PlanStepKey;
 }
 
 const STEPS: readonly Step[] = ['home', 'read', 'plan', 'questions', 'result'];
@@ -258,7 +260,10 @@ export function loadPosition(storage: StorageLike | null): SavedPosition | null 
     const step = STEPS.find((s) => s === data.step);
     const question = QUESTION_IDS.find((q) => q === data.question);
     if (!step || !question) return null;
-    return { step, storeyId: typeof data.storeyId === 'string' && data.storeyId.length < 200 ? data.storeyId : null, question };
+    const position: SavedPosition = { step, storeyId: typeof data.storeyId === 'string' && data.storeyId.length < 200 ? data.storeyId : null, question };
+    const planStep = PLAN_STEP_KEYS.find((k) => k === data.planStep);
+    if (planStep) position.planStep = planStep;
+    return position;
   } catch {
     return null;
   }

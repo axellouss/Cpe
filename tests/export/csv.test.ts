@@ -236,6 +236,25 @@ describe('pièces sans nom (face fermée sans étiquette reconnue)', () => {
   });
 });
 
+describe('surface écrite contredite par la mesure', () => {
+  it('le relevé et le dossier le disent en toutes lettres, avec la virgule décimale, dans la langue de l’export', () => {
+    const project = makeProject();
+    const storey = project.model.storeys[0]!;
+    storey.rooms = [...storey.rooms, { id: 'r-galerie', name: 'Galerie', area: { value: 94.05, from: 'plan', note: '74,51 / 94,05' }, heated: true, needsReview: false }];
+    const fr = sheetsToCsv(makeSheets(), project, 'fr');
+    expect(fr).toContain('surface écrite sur le plan : 74,51 m² ; mesurée : 94,05 m², retenue');
+    expect(fr).not.toContain('74,51 / 94,05');
+    expect(sheetsToCsv(makeSheets(), project, 'de')).toContain('im Plan angegebene Fläche: 74,51 m²; gemessen: 94,05 m², übernommen');
+    expect(buildReportHtml(makeSheets(), project, 'fr')).toContain('surface écrite sur le plan : 74,51 m² ; mesurée : 94,05 m², retenue');
+    // Ancien projet, remarque notée avec des points : même phrase.
+    storey.rooms[storey.rooms.length - 1]!.area.note = '74.51 / 94.05';
+    expect(sheetsToCsv(makeSheets(), project, 'fr')).toContain('74,51 m² ; mesurée : 94,05 m²');
+    // Une autre remarque est rendue telle quelle.
+    storey.rooms[storey.rooms.length - 1]!.area.note = 'relevé sur place';
+    expect(sheetsToCsv(makeSheets(), project, 'fr')).toContain('relevé sur place');
+  });
+});
+
 describe('sheetsToCsv — textes hostiles', () => {
   it('met entre guillemets les cellules qui contiennent un point-virgule ou un guillemet', () => {
     const project = makeProject();

@@ -8,7 +8,7 @@
  * ce qui permet de retrouver le fond de plan d'un projet rouvert.
  */
 import type { BottomKind, Lang, PlanDocument, PlanSheet, Project, Sourced } from '../../core/types';
-import { basementSheetIds, createEmptyProject, createStorey, modelFromDocument, proposeHeatedOutline, proposeTopClosure } from '../../engine';
+import { basementSheetIds, createEmptyProject, createStorey, modelFromDocument, pickRoomArea, proposeHeatedOutline, proposeTopClosure } from '../../engine';
 import { t } from '../../i18n';
 import { isOutlineUnheatedNote } from '../../readers/notes';
 import { guessStorey } from '../../semantics/labels';
@@ -409,7 +409,9 @@ export function summarizeSheet(sheet: PlanSheet): SheetSummary {
   const proposal = d.outline && sheet.metresPerUnit ? proposeHeatedOutline(d.outline, d.rooms, sheet.metresPerUnit.value) : null;
   return {
     roomCount: d.rooms.length,
-    roomArea: d.rooms.reduce((sum, r) => sum + (r.statedArea ?? r.measuredArea ?? 0), 0),
+    // La surface RETENUE pour chaque pièce (la mesure quand elle contredit la surface écrite), comme dans le modèle :
+    // le total annoncé ici est celui que l'on retrouvera dans le résultat.
+    roomArea: d.rooms.reduce((sum, r) => sum + pickRoomArea(r.statedArea, r.measuredArea).value, 0),
     roomsToDecide: d.rooms.filter((r) => r.heatedGuess === 'ask').length,
     windowCount: d.openings.filter((o) => o.kind !== 'door' && o.exterior !== false).length,
     doorCount: d.openings.filter((o) => o.kind === 'door' && o.exterior !== false).length,

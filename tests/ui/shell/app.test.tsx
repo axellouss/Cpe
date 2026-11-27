@@ -275,6 +275,21 @@ describe('accueil', () => {
     expect(document.activeElement).toBe(q('plan-input'));
   });
 
+  it('« pas de flèche du nord » n’est dit qu’une fois, à la ligne du nord', async () => {
+    const m = await mount();
+    const base = houseDoc();
+    const { northAngle: _north, ...withoutNorth } = base;
+    void _north;
+    readers.documents.set('maison.dxf', { ...withoutNorth, warnings: ['Pas de flèche du nord trouvée : indiquez l’orientation.', '2 plans trouvés dans le même dessin.'] } as PlanDocument);
+    await act(async () => {
+      await m.store.getState().ingestFiles([{ name: 'maison.dxf', arrayBuffer: async () => new ArrayBuffer(4) }]);
+    });
+    const card = q('doc-card').textContent ?? '';
+    expect(card).toContain('Nord non trouvé dans ce fichier');
+    expect(card).not.toContain('Pas de flèche du nord trouvée');
+    expect(card).toContain('2 plans trouvés dans le même dessin.');
+  });
+
   it('fichier Archicad déposé avec un plan lisible : le dialogue dit que l’autre a été lu', async () => {
     const m = await mount();
     readers.documents.set('maison.dxf', houseDoc());

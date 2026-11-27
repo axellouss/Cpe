@@ -12,26 +12,36 @@ import { CAD_MESSAGES } from './cad/messages';
 import { PDF_MESSAGES } from './pdf/messages';
 
 const UNHEATED_KEYS = ['cad.note.outline.unheated', 'pdf.note.outline.unheated'] as const;
+/** « Pas de flèche du nord trouvée » : l'écran de lecture le dit déjà lui-même, à sa place (ligne du nord). */
+const NO_NORTH_KEYS = ['cad.warn.north.none'] as const;
 
-function templates(): RegExp[] {
+function templates(keys: readonly string[]): RegExp[] {
   const out: RegExp[] = [];
   for (const dictionary of [CAD_MESSAGES, PDF_MESSAGES]) {
     for (const texts of Object.values(dictionary)) {
-      for (const key of UNHEATED_KEYS) {
+      for (const key of keys) {
         const text = (texts as Record<string, string | undefined>)[key];
         if (!text) continue;
-        const escaped = text.replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\{rooms\}/g, '.+');
-        out.push(new RegExp(`^${escaped}$`));
+        // Un paramètre ({rooms}, {where}…) vaut n'importe quel texte, vide compris.
+        const escaped = text.replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\{\w+\}/g, '.*');
+        out.push(new RegExp(`^${escaped}$`, 'i'));
       }
     }
   }
   return out;
 }
 
-let cache: RegExp[] | null = null;
+let unheated: RegExp[] | null = null;
+let noNorth: RegExp[] | null = null;
 
 /** Vrai pour la remarque « le contour englobe un local probablement non chauffé », en français ou en allemand. */
 export function isOutlineUnheatedNote(note: string): boolean {
-  cache ??= templates();
-  return cache.some((re) => re.test(note));
+  unheated ??= templates(UNHEATED_KEYS);
+  return unheated.some((re) => re.test(note));
+}
+
+/** Vrai pour l'avertissement « pas de flèche du nord trouvée », en français ou en allemand. */
+export function isNoNorthNote(note: string): boolean {
+  noNorth ??= templates(NO_NORTH_KEYS);
+  return noNorth.some((re) => re.test(note));
 }
