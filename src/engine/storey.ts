@@ -260,7 +260,9 @@ export function createStorey(sheet: PlanSheet | null, name: string, model: Build
     return room;
   });
 
+  const roofWindows = (detected.roofWindows ?? []).filter((w) => w.width > 0 && w.height > 0).map((w) => ({ width: w.width, height: w.height }));
   return {
+    ...(roofWindows.length > 0 ? { roofWindows } : {}),
     id,
     name,
     sheetId: sheet.id,

@@ -116,6 +116,11 @@ export interface SheetDetection {
   clearHeight?: number;
   /** Altitude du niveau (m) si lisible. */
   elevation?: number;
+  /**
+   * Fenêtres de toit vues par le lecteur (maquette) : elles ne sont portées par aucune façade du contour et ne
+   * figurent donc pas dans `openings`. Dimensions hors tout (m).
+   */
+  roofWindows?: { width: number; height: number }[];
   /** Remarques du lecteur : texte libre court, dans la langue demandée à la lecture. */
   notes: string[];
 }
@@ -249,6 +254,11 @@ export interface Storey {
   rooms: Room[];
   /** Surface nette chauffée de l'étage saisie directement (m²). Prioritaire sur la somme des pièces. */
   netAreaOverride: Sourced<number> | null;
+  /**
+   * Fenêtres de toit vues dans le fichier mais absentes du relevé (aucune façade ne les porte) : le moteur les
+   * rappelle tant que l'expert ne les a pas ajoutées en lignes manuelles. Dimensions hors tout (m).
+   */
+  roofWindows?: { width: number; height: number }[];
 }
 
 /** Fermeture haute du dernier étage chauffé. */

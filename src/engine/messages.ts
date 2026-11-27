@@ -31,6 +31,7 @@ export const FINDING_CODES = [
   'opening.onHeatedWall',
   'opening.orphan',
   'opening.inRoof',
+  'opening.roofWindowsUnplaced',
   'opening.exceedsFacade',
   'opening.tallerThanWall',
   'neighbours.heatedExcluded',
@@ -93,6 +94,8 @@ export const ENGINE_MESSAGES: Dictionary = {
       '{storey} : {count} ouverture(s) sans mur valable (arête supprimée ou mur de hauteur nulle), ignorée(s). Reposez-les sur une façade.',
     'finding.opening.inRoof':
       '{storey} : {count} ouverture(s) sur un mur sans hauteur sous la toiture : comptée(s) comme fenêtres de toit et déduite(s) du pan de même orientation. Vérifiez.',
+    'finding.opening.roofWindowsUnplaced':
+      '{storey} : {count} fenêtre(s) de toit ({sizes} m) vue(s) dans le fichier ne figure(nt) pas dans le relevé, car aucune façade ne les porte. Ajoutez-les en lignes manuelles « à déduire », juste avant le pan de toiture concerné.',
     'finding.opening.exceedsFacade':
       '{storey}, façade {orientation} : les ouvertures totalisent {widths} m de large pour {length} m de façade. Corrigez leurs largeurs ou la façade qui les porte.',
     'finding.opening.tallerThanWall':
@@ -219,6 +222,8 @@ export const ENGINE_MESSAGES: Dictionary = {
       '{storey}: {count} Öffnung(en) ohne gültige Wand (Kante gelöscht oder Wandhöhe null), nicht berücksichtigt. Setzen Sie sie erneut auf eine Fassade.',
     'finding.opening.inRoof':
       '{storey}: {count} Öffnung(en) an einer Wand ohne Höhe unter dem Dach: als Dachfenster gezählt und von der Dachfläche gleicher Orientierung abgezogen. Bitte prüfen.',
+    'finding.opening.roofWindowsUnplaced':
+      '{storey}: {count} Dachfenster ({sizes} m) aus der Datei fehlen im Aufmaß, weil keine Fassade sie trägt. Ergänzen Sie sie als manuelle Abzugszeilen direkt vor der betreffenden Dachfläche.',
     'finding.opening.exceedsFacade':
       '{storey}, Fassade {orientation}: Die Öffnungen sind zusammen {widths} m breit bei {length} m Fassade. Korrigieren Sie die Breiten oder die Fassade, an der sie sitzen.',
     'finding.opening.tallerThanWall':

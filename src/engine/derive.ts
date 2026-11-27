@@ -901,6 +901,23 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     if (toCheck.length > 0) note('outline.unconditionedInside', 'info', { ...where, rooms: names(toCheck), count: toCheck.length });
   });
 
+  // Fenêtres de toit vues dans la maquette mais portées par aucune façade : elles manquent au relevé tant que
+  // l'expert ne les a pas ajoutées en lignes manuelles « à déduire » devant le pan de toiture concerné.
+  const manualDeductions = model.manualRows.filter((m) => m.deduct).reduce((n, m) => n + Math.max(1, Math.round(m.count)), 0);
+  let roofWindowsSeen = 0;
+  for (const g of geometries) {
+    const seen = g.storey.roofWindows ?? [];
+    if (seen.length === 0) continue;
+    roofWindowsSeen += seen.length;
+    const sizes = [...new Set(seen.map((w) => `${fmt(w.width)} × ${fmt(w.height)}`))].join(' ; ');
+    note('opening.roofWindowsUnplaced', manualDeductions >= roofWindowsSeen ? 'info' : 'warn', {
+      storey: g.storey.name,
+      storeyId: g.storey.id,
+      count: seen.length,
+      sizes,
+    });
+  }
+
   const roomsToReview = sum(
     model.storeys.map((s) => (s.netAreaOverride ? 0 : s.rooms.filter((r) => r.needsReview).length)),
   );

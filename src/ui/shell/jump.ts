@@ -46,6 +46,7 @@ const TARGETS: Record<string, Kind> = {
   'opening.orphan': { plan: 'opening' },
   'opening.inRoof': { plan: 'opening' },
   'opening.exceedsFacade': { plan: 'opening' },
+  'opening.roofWindowsUnplaced': { expert: 'manual' },
   'opening.tallerThanWall': { plan: 'opening' },
   'neighbours.heatedExcluded': { plan: 'boundary' },
   'top.default': { question: 'closure', part: 'top' },

@@ -212,6 +212,19 @@ const SCENARIOS: Record<FindingCode, Scenario> = {
     },
     params: { storey: 'RDC', count: 2 },
   },
+  'opening.roofWindowsUnplaced': {
+    severity: 'warn',
+    why: 'deux fenêtres de toit vues dans la maquette, portées par aucune façade',
+    build: () => {
+      const p = sound();
+      p.model.storeys[0]!.roofWindows = [
+        { width: 0.78, height: 1.18 },
+        { width: 0.78, height: 1.18 },
+      ];
+      return p;
+    },
+    params: { storey: 'RDC', storeyId: 'rdc', count: 2, sizes: '0,78 × 1,18' },
+  },
   'opening.exceedsFacade': {
     severity: 'warn',
     why: 'trois baies de 3,00 m sur une façade est de 8 m — invisible une fois les murs regroupés',
@@ -565,5 +578,16 @@ describe('dictionnaires FR / DE du moteur', () => {
 
     const rooms = sound({ netArea: undefined, rooms: [room('Séjour', 50), room('Chambre', Number.NaN)] });
     expect(deriveSheets(rooms, 'fr').totals.an).toBe(50);
+  });
+
+  it('fenêtres de toit vues dans le fichier : rappelées tant qu’elles ne sont pas ajoutées en lignes à déduire', () => {
+    const p = SCENARIOS['opening.roofWindowsUnplaced'].build();
+    expect(finding(deriveSheets(p, 'fr'), 'opening.roofWindowsUnplaced')!.severity).toBe('warn');
+    // L'expert les ajoute (deux lignes à déduire devant le pan) : le rappel reste, en simple information.
+    p.model.manualRows = [
+      manual({ id: 'm-velux', deduct: true, count: 2, orientation: 'S', boundary: 'outside' }),
+      manual({ id: 'm-pan', orientation: 'S', boundary: 'outside' }),
+    ];
+    expect(finding(deriveSheets(p, 'fr'), 'opening.roofWindowsUnplaced')!.severity).toBe('info');
   });
 });

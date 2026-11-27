@@ -256,13 +256,18 @@ const readRoom: Reader<Room> = (value, path) => {
   return room;
 };
 
+const readRoofWindow: Reader<{ width: number; height: number }> = (value, path) => {
+  const o = asObject(value, path);
+  return { width: field(o, 'width', path, asNumber), height: field(o, 'height', path, asNumber) };
+};
+
 const readStorey: Reader<Storey> = (value, path) => {
   const o = asObject(value, path);
   const outline = field(o, 'outline', path, listOf(readVec2));
   const edges = field(o, 'edges', path, listOf(readEdge));
   // Invariant du contrat : une condition aux limites par côté du contour.
   if (edges.length !== outline.length) fail('export.file.length', { path: `${path}.edges`, found: edges.length, expected: outline.length });
-  return {
+  const storey: Storey = {
     id: field(o, 'id', path, asString),
     name: field(o, 'name', path, asString),
     sheetId: field(o, 'sheetId', path, nullable(asString)),
@@ -275,6 +280,9 @@ const readStorey: Reader<Storey> = (value, path) => {
     rooms: field(o, 'rooms', path, listOf(readRoom)),
     netAreaOverride: field(o, 'netAreaOverride', path, nullable(readSourcedNumber)),
   };
+  const roofWindows = optional(o, 'roofWindows', path, listOf(readRoofWindow));
+  if (roofWindows !== undefined && roofWindows.length > 0) storey.roofWindows = roofWindows;
+  return storey;
 };
 
 const readTop: Reader<TopClosure> = (value, path) => {

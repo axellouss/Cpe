@@ -493,6 +493,7 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
 
     // Ouvertures.
     const openings: DetectedOpening[] = [];
+    const bandRoofWindows: { width: number; height: number }[] = [];
     const symbols: number[] = [];
     let extWindows = 0;
     let extDoors = 0;
@@ -520,6 +521,8 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
       let inwardY = 0;
       if (p.roof) {
         roofWindows++;
+        // Gardée avec ses dimensions : le moteur la rappellera tant qu'elle n'est pas dans le relevé.
+        bandRoofWindows.push({ width: round(width, 3), height: round(height, 3) });
       } else {
         const probe = probeExterior(grid, pieces.labels, g, Math.max(PROBE_REACH, g.depth / 2 + 0.5));
         if (probe.exterior) {
@@ -692,6 +695,7 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
       metresPerUnit: { value: 1, from: 'plan', note: msg('ifc.scale.note', { unit: model.lengthUnit }) },
       detected: { outline, rooms, openings, elevation: round(band.level.elevation, 3), notes },
     };
+    if (bandRoofWindows.length > 0) sheet.detected.roofWindows = bandRoofWindows;
     if (storeyHeight !== undefined) sheet.detected.storeyHeight = storeyHeight;
     // Dernier niveau : la hauteur s'arrête au sommet des murs, la toiture n'y est pas — à confirmer par l'expert.
     if (storeyHeight !== undefined && isTop) sheet.detected.storeyHeightToWallTop = true;
