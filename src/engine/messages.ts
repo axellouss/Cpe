@@ -31,6 +31,8 @@ export const FINDING_CODES = [
   'opening.onHeatedWall',
   'opening.orphan',
   'opening.inRoof',
+  'opening.exceedsFacade',
+  'opening.tallerThanWall',
   'neighbours.heatedExcluded',
   'top.default',
   'bottom.default',
@@ -42,6 +44,7 @@ export const FINDING_CODES = [
   'attic.heightRule',
   'stepback.byAreas',
   'manual.heatedIgnored',
+  'manual.deductMismatch',
   'abzug.dangling',
   'constructions.overLimit',
   'uvalues.missing',
@@ -90,6 +93,10 @@ export const ENGINE_MESSAGES: Dictionary = {
       '{storey} : {count} ouverture(s) sans mur valable (arête supprimée ou mur de hauteur nulle), ignorée(s). Reposez-les sur une façade.',
     'finding.opening.inRoof':
       '{storey} : {count} ouverture(s) sur un mur sans hauteur sous la toiture : comptée(s) comme fenêtres de toit et déduite(s) du pan de même orientation. Vérifiez.',
+    'finding.opening.exceedsFacade':
+      '{storey}, façade {orientation} : les ouvertures totalisent {widths} m de large pour {length} m de façade. Corrigez leurs largeurs ou la façade qui les porte.',
+    'finding.opening.tallerThanWall':
+      '{storey} : {count} ouverture(s) plus haute(s) que le mur qui les porte. Corrigez leur hauteur ou la hauteur du mur (jambette, hauteur d’étage).',
     'finding.neighbours.heatedExcluded':
       '{length} m de murs mitoyens contre un voisin chauffé : hors enveloppe, aucune ligne dans le tableau.',
     'finding.top.default':
@@ -111,6 +118,8 @@ export const ENGINE_MESSAGES: Dictionary = {
       'Entre {lower} et {upper} : décalage de {area} m² calculé par simple différence de surfaces (plans non superposables). Vérifiez toitures-terrasses et surplombs.',
     'finding.manual.heatedIgnored':
       '{count} ligne(s) manuelle(s) contre un local chauffé : hors enveloppe, non reprise(s) dans le tableau.',
+    'finding.manual.deductMismatch':
+      "{count} ligne(s) manuelle(s) « à déduire » placée(s) devant une paroi d'une autre orientation ou d'un autre milieu : dans LuxEeB-Tool, une ligne marquée « x » se déduit de la ligne suivante. Réordonnez les lignes.",
     'finding.abzug.dangling':
       "{count} ligne(s) manuelle(s) « à déduire » sans paroi à la suite : rien n'est déduit. Placez-les juste avant la paroi concernée.",
     'finding.constructions.overLimit':
@@ -167,6 +176,7 @@ export const ENGINE_MESSAGES: Dictionary = {
     'engine.row.floor.above-unheated': 'Plancher sur cave ou local non chauffé ({storey})',
     'engine.row.floor.above-outside': 'Plancher sur extérieur ({storey})',
     'engine.row.floorOverhang': 'Plancher en surplomb de {storey} (sur extérieur)',
+    'engine.row.floorOverUnheated': 'Plancher de {storey} au-dessus d’un local non chauffé ({rooms})',
     'engine.storeys.join': ' + ',
   },
   de: {
@@ -209,6 +219,10 @@ export const ENGINE_MESSAGES: Dictionary = {
       '{storey}: {count} Öffnung(en) ohne gültige Wand (Kante gelöscht oder Wandhöhe null), nicht berücksichtigt. Setzen Sie sie erneut auf eine Fassade.',
     'finding.opening.inRoof':
       '{storey}: {count} Öffnung(en) an einer Wand ohne Höhe unter dem Dach: als Dachfenster gezählt und von der Dachfläche gleicher Orientierung abgezogen. Bitte prüfen.',
+    'finding.opening.exceedsFacade':
+      '{storey}, Fassade {orientation}: Die Öffnungen sind zusammen {widths} m breit bei {length} m Fassade. Korrigieren Sie die Breiten oder die Fassade, an der sie sitzen.',
+    'finding.opening.tallerThanWall':
+      '{storey}: {count} Öffnung(en) höher als die Wand, in der sie sitzen. Korrigieren Sie ihre Höhe oder die Wandhöhe (Kniestock, Geschosshöhe).',
     'finding.neighbours.heatedExcluded':
       '{length} m Wände zu beheizten Nachbarn: nicht Teil der Hülle, keine Zeile in der Tabelle.',
     'finding.top.default':
@@ -230,6 +244,8 @@ export const ENGINE_MESSAGES: Dictionary = {
       'Zwischen {lower} und {upper}: Versatz von {area} m² nur aus der Flächendifferenz berechnet (Pläne nicht deckungsgleich). Prüfen Sie Dachterrassen und Auskragungen.',
     'finding.manual.heatedIgnored':
       '{count} manuelle Zeile(n) gegen beheizte Räume: nicht Teil der Hülle, nicht in die Tabelle übernommen.',
+    'finding.manual.deductMismatch':
+      '{count} manuelle Abzugszeile(n) vor einem Bauteil anderer Orientierung oder anderer Umgebung: In LuxEeB-Tool wird eine mit „x“ markierte Zeile von der folgenden Zeile abgezogen. Ordnen Sie die Zeilen neu.',
     'finding.abzug.dangling':
       '{count} manuelle Abzugszeile(n) ohne nachfolgendes Bauteil: Es wird nichts abgezogen. Setzen Sie sie direkt vor das betreffende Bauteil.',
     'finding.constructions.overLimit':
@@ -285,6 +301,7 @@ export const ENGINE_MESSAGES: Dictionary = {
     'engine.row.floor.above-unheated': 'Decke über unbeheiztem Keller oder Raum ({storey})',
     'engine.row.floor.above-outside': 'Boden gegen Außenluft ({storey})',
     'engine.row.floorOverhang': 'Auskragender Boden von {storey} (gegen Außenluft)',
+    'engine.row.floorOverUnheated': 'Boden von {storey} über einem unbeheizten Raum ({rooms})',
     'engine.storeys.join': ' + ',
   },
 };

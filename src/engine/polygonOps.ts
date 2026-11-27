@@ -72,7 +72,7 @@ function mitre(): BufferParameters {
   return p;
 }
 
-function grow(geom: unknown, distance: number): PolyGeometry {
+function growGeometry(geom: unknown, distance: number): PolyGeometry {
   return BufferOp.bufferOp(geom, distance, mitre()) as PolyGeometry;
 }
 
@@ -108,8 +108,35 @@ export function subtractRegions(
       if (region.length < 3) continue;
       rest = SnapIfNeededOverlayOp.overlayOp(rest, BufferOp.bufferOp(toPolygon(region), 0), OverlayOp.DIFFERENCE);
     }
-    if (clean > 0) rest = grow(grow(rest, -clean), clean);
+    if (clean > 0) rest = growGeometry(growGeometry(rest, -clean), clean);
     return collectPieces(rest as PolyGeometry).sort((a, b) => b.area - a.area);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Aire de la partie de (a − b) qui se trouve au-dessus de `c` dilaté de `grow` (le local `c` avec ses murs).
+ * Sert à dire quelle part d'un surplomb d'étage couvre un local non chauffé du niveau inférieur. null si jsts échoue.
+ */
+export function differenceWithinArea(a: readonly Vec2[], b: readonly Vec2[], c: readonly Vec2[], grow: number): number | null {
+  if (a.length < 3 || b.length < 3 || c.length < 3) return null;
+  try {
+    const over = SnapIfNeededOverlayOp.overlayOp(BufferOp.bufferOp(toPolygon(a), 0), BufferOp.bufferOp(toPolygon(b), 0), OverlayOp.DIFFERENCE);
+    const part = SnapIfNeededOverlayOp.overlayOp(over, growGeometry(BufferOp.bufferOp(toPolygon(c), 0), grow), OverlayOp.INTERSECTION) as AreaGeometry;
+    const area = part.getArea();
+    return Number.isFinite(area) ? Math.max(0, area) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Aire du polygone dilaté de `grow` (angles vifs) ; null si jsts échoue. */
+export function grownArea(poly: readonly Vec2[], grow: number): number | null {
+  if (poly.length < 3) return null;
+  try {
+    const area = growGeometry(BufferOp.bufferOp(toPolygon(poly), 0), grow).getArea();
+    return Number.isFinite(area) ? Math.max(0, area) : null;
   } catch {
     return null;
   }

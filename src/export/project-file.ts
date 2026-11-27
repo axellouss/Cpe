@@ -212,7 +212,7 @@ const readEdge: Reader<StoreyEdge> = (value, path) => {
 
 const readOpening: Reader<Opening> = (value, path) => {
   const o = asObject(value, path);
-  return {
+  const opening: Opening = {
     id: field(o, 'id', path, asString),
     edgeIndex: field(o, 'edgeIndex', path, asIndex),
     kind: field(o, 'kind', path, OPENING_KIND),
@@ -223,6 +223,9 @@ const readOpening: Reader<Opening> = (value, path) => {
     windowTypeId: field(o, 'windowTypeId', path, nullable(asString)),
     from: field(o, 'from', path, PROVENANCE),
   };
+  const sheetWidth = optional(o, 'sheetWidth', path, asNumber);
+  if (sheetWidth !== undefined) opening.sheetWidth = sheetWidth;
+  return opening;
 };
 
 const readRoom: Reader<Room> = (value, path) => {

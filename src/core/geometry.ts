@@ -287,7 +287,9 @@ export function azimuthOfVector(v: Vec2, northAngle: number): number {
 
 /** Secteur parmi les 8 de LuxEeB-Tool (N couvre [337,5° ; 22,5°[, etc.). */
 export function sectorOfAzimuth(azimuth: number): Orientation {
-  const idx = Math.floor(normDeg(azimuth + 22.5) / 45) % 8;
+  // Arrondi au millionième de degré : deux façades parallèles ne doivent pas tomber dans deux secteurs pour une
+  // poussière numérique quand elles sont pile sur une limite (202,49999999999997 contre 202,5).
+  const idx = Math.floor(normDeg(Math.round(azimuth * 1e6) / 1e6 + 22.5) / 45) % 8;
   return ORIENTATIONS[idx]!;
 }
 

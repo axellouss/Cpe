@@ -65,12 +65,14 @@ export interface NetArea {
  * a une surface), sinon 80 % de la surface brute — estimation à remplacer.
  */
 export function netAreaOf(storey: Storey, grossArea: number): NetArea {
+  // Une surface non finie (NaN) compte pour zéro : elle ne doit pas contaminer An.
+  const positive = (v: number): number => (Number.isFinite(v) && v > 0 ? v : 0);
   if (storey.netAreaOverride) {
-    return { area: Math.max(0, storey.netAreaOverride.value), source: 'override', from: storey.netAreaOverride.from };
+    return { area: positive(storey.netAreaOverride.value), source: 'override', from: storey.netAreaOverride.from };
   }
   if (storey.rooms.some((r) => r.area.value > 0)) {
     const heated = storey.rooms.filter((r) => r.heated);
-    const area = heated.reduce((sum, r) => sum + Math.max(0, r.area.value), 0);
+    const area = heated.reduce((sum, r) => sum + positive(r.area.value), 0);
     return { area, source: 'rooms', from: weakest(...heated.map((r) => r.area.from)) };
   }
   return { area: NET_AREA_ESTIMATE_RATIO * grossArea, source: 'estimate', from: 'estimate' };
@@ -141,12 +143,16 @@ function openingsFromDetection(
     const edgeMetres = edgeLength(outline, host.index) * scale;
     if (host.distance * scale > Math.max(OPENING_MAX_DISTANCE_M, OPENING_MAX_DISTANCE_RATIO * edgeMetres)) continue;
     const kind = d.kind === 'door' ? 'door' : 'window';
-    const width = round(d.width ?? distance(d.a, d.b) * scale, 3);
+    const drawn = distance(d.a, d.b);
+    const width = round(d.width ?? drawn * scale, 3);
     if (!(width > 0)) continue;
     const height = d.height ?? (kind === 'door' ? DEFAULT_DOOR_HEIGHT : DEFAULT_WINDOW_HEIGHT);
     // Largeur mesurée sur la feuille avec une échelle non confirmée : simple estimation, que `rescaleStorey` corrigera.
     const widthIsGuess = d.width === undefined && isUnconfirmed(metresPerUnit.from);
-    openings.push({
+    // Largeur donnée par le lecteur mais égale au tracé (à 2 % près) : c'est une mesure à SON échelle, pas un texte
+    // lu — elle doit suivre une correction d'échelle. Une largeur lue (« F 120/135 ») ne suit pas.
+    const measured = d.width === undefined || (drawn > 0 && Math.abs(d.width - drawn * scale) <= MEASURED_WIDTH_TOLERANCE * d.width);
+    const opening: Opening = {
       id: `${storeyId}-o${openings.length + 1}`,
       edgeIndex: host.index,
       kind,
@@ -157,7 +163,9 @@ function openingsFromDetection(
       windowTypeId: null,
       // La hauteur se lit rarement sur un plan : sans elle, l'ouverture reste « à confirmer ».
       from: widthIsGuess ? 'estimate' : d.height === undefined ? 'default' : 'plan',
-    });
+    };
+    if (measured && drawn > 0) opening.sheetWidth = d.width === undefined ? drawn : d.width / scale;
+    openings.push(opening);
   }
   return openings;
 }
@@ -341,20 +349,41 @@ export function restoreFootprint(storey: Storey, sheet: PlanSheet | null): Store
   return { ...storey, outline: footprint, edges, openings };
 }
 
+/** Écart relatif en deçà duquel une largeur donnée par le lecteur est reconnue comme « mesurée sur le tracé ». */
+const MEASURED_WIDTH_TOLERANCE = 0.02;
+
+/** Écart relatif en deçà duquel la surface d'une pièce est reconnue comme « mesurée sur son polygone ». */
+const MEASURED_ROOM_TOLERANCE = 0.02;
+
 /**
- * Applique une nouvelle échelle à un étage (« poser la règle »). Les largeurs d'ouvertures mesurées sur la feuille
- * avec l'ancienne échelle NON CONFIRMÉE (marquées 'estimate' par `createStorey`) suivent la nouvelle et deviennent
- * « à confirmer ». Les autres (lues dans un texte, saisies par l'expert) ne bougent pas. Renvoie un nouvel étage.
+ * Applique une nouvelle échelle à un étage (« poser la règle »). Tout ce qui a été MESURÉ sur la feuille avec
+ * l'ancienne échelle suit la nouvelle :
+ *  - les largeurs d'ouvertures mesurées sur le dessin (`sheetWidth`), tant que l'expert ne les a pas saisies ;
+ *  - les surfaces de pièces qui valaient l'aire de leur polygone à l'ancienne échelle.
+ * Ne bougent pas : les valeurs saisies par l'expert, et les surfaces écrites sur le plan (elles ne dépendent pas
+ * de l'échelle). Une largeur seulement estimée (échelle non confirmée) devient « à confirmer ». Renvoie un nouvel étage.
  */
 export function rescaleStorey(storey: Storey, metresPerUnit: Sourced<number>): Storey {
   const old = storey.metresPerUnit.value;
-  const ratio = old > 0 && metresPerUnit.value > 0 ? metresPerUnit.value / old : 1;
+  const next = metresPerUnit.value;
+  const changed = old > 0 && next > 0 && Math.abs(next / old - 1) > 1e-9;
   return {
     ...storey,
     metresPerUnit: { ...metresPerUnit },
-    openings: storey.openings.map((o): Opening =>
-      o.from === 'estimate' ? { ...o, width: round(o.width * ratio, 3), from: isUnconfirmed(metresPerUnit.from) ? 'estimate' : 'default' } : { ...o },
-    ),
+    openings: storey.openings.map((o): Opening => {
+      if (o.from === 'user') return { ...o };
+      const from = o.from === 'estimate' ? (isUnconfirmed(metresPerUnit.from) ? 'estimate' : 'default') : o.from;
+      // Seules les largeurs mesurées sur le dessin dépendent de l'échelle.
+      const width = o.sheetWidth !== undefined && next > 0 ? round(o.sheetWidth * next, 3) : o.width;
+      return { ...o, width, from };
+    }),
+    rooms: storey.rooms.map((r): Room => {
+      if (!changed || r.area.from === 'user' || !r.polygon || r.polygon.length < 3) return r;
+      const sheetArea = polygonArea(r.polygon);
+      const measuredOld = sheetArea * old * old;
+      if (!(measuredOld > 0) || Math.abs(r.area.value - measuredOld) > MEASURED_ROOM_TOLERANCE * measuredOld) return r;
+      return { ...r, area: { ...r.area, value: round(sheetArea * next * next, 2) } };
+    }),
   };
 }
 
@@ -379,13 +408,18 @@ interface Candidate {
   guess: { fr: string; de: string; rank: number } | null;
 }
 
-/** Ordre du bas vers le haut : altitudes si toutes connues, sinon rangs des noms si tous reconnus, sinon ordre du document. */
+/**
+ * Ordre du bas vers le haut : altitudes si toutes connues ; sinon les niveaux reconnus à leur nom, par rang, et
+ * au-dessus d'eux les feuilles au nom inconnu, dans l'ordre du document (un « Plan 3 » ne doit pas faire perdre
+ * l'ordre du rez-de-chaussée et de l'étage).
+ */
 function sortBottomUp(candidates: Candidate[]): Candidate[] {
   const sorted = [...candidates];
   if (sorted.every((c) => c.elevation !== undefined)) {
     sorted.sort((a, b) => a.elevation! - b.elevation! || a.docIndex - b.docIndex);
-  } else if (sorted.every((c) => c.guess !== null)) {
-    sorted.sort((a, b) => a.guess!.rank - b.guess!.rank || a.docIndex - b.docIndex);
+  } else if (sorted.some((c) => c.guess !== null)) {
+    const rank = (c: Candidate): number => (c.guess ? c.guess.rank : Number.POSITIVE_INFINITY);
+    sorted.sort((a, b) => (rank(a) === rank(b) ? a.docIndex - b.docIndex : rank(a) < rank(b) ? -1 : 1));
   }
   return sorted;
 }

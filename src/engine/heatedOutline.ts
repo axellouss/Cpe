@@ -447,3 +447,15 @@ export function unheatedRoomsInsideOutline(storey: Storey): Room[] {
     return anchor !== null && pointInPolygon(anchor, storey.outline);
   });
 }
+
+/**
+ * Locaux non comptés dans An (tranchés), dessinés avec leur polygone, qui se trouvent HORS du contour de l'étage :
+ * ceux que le contour chauffé a laissés dehors (garage accolé ou intégré). Le plancher d'un étage supérieur qui
+ * les couvre donne sur un local non chauffé.
+ */
+export function unheatedRoomsBeside(storey: Storey): Room[] {
+  if (storey.outline.length < 3) return [];
+  return storey.rooms.filter(
+    (r) => !r.heated && !r.needsReview && r.polygon && r.polygon.length >= 3 && !pointInPolygon(centroid(r.polygon), storey.outline),
+  );
+}

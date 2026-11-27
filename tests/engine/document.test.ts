@@ -184,6 +184,43 @@ describe('rescaleStorey : poser la règle après coup', () => {
     expect(raw.openings[0]!.width).toBe(120); // l'étage d'origine n'est pas modifié
     expect(raw.metresPerUnit).toEqual({ value: 1, from: 'estimate' });
   });
+
+  it('une échelle lue puis corrigée : largeurs mesurées et surfaces mesurées suivent, ce qui est écrit sur le plan ne bouge pas', () => {
+    // Feuille dessinée en centimètres, que le lecteur a crue à 0,0108 m par unité (8 % de trop).
+    const src = sheet('p', 'RDC', {
+      metresPerUnit: { value: 0.0108, from: 'plan' },
+    });
+    src.detected = {
+      notes: [],
+      outline: rect(1000, 800),
+      rooms: [
+        // surface mesurée sur le polygone (800 × 500 unités → 46,66 m² à la mauvaise échelle)
+        { name: 'Séjour', measuredArea: 46.656, heatedGuess: 'yes', polygon: rect(800, 500) },
+        // surface ÉCRITE sur le plan : indépendante de l'échelle
+        { name: 'Cuisine', statedArea: 9.75, measuredArea: 11.37, heatedGuess: 'yes', polygon: rect(650, 150) },
+      ],
+      openings: [
+        // largeur donnée par le lecteur d'après le tracé (120 unités × 0,0108) : c'est une mesure
+        { kind: 'window', a: { x: 100, y: 0 }, b: { x: 220, y: 0 }, width: 1.296, exterior: true },
+        // largeur lue dans le nom du bloc (« P 90 ») alors que le tracé fait 100 unités : c'est un texte
+        { kind: 'door', a: { x: 400, y: 0 }, b: { x: 500, y: 0 }, width: 0.9, exterior: true },
+        // sans largeur : mesurée par le moteur
+        { kind: 'window', a: { x: 600, y: 800 }, b: { x: 800, y: 800 }, exterior: true },
+      ],
+    };
+    const raw = createStorey(src, 'RDC', emptyModel());
+    expect(raw.openings.map((o) => o.width)).toEqual([1.296, 0.9, 2.16]);
+    expect(raw.rooms.map((r) => r.area.value)).toEqual([46.656, 11.37]); // 9,75 écrit ≠ 11,37 mesuré → mesure retenue
+    const fixed = rescaleStorey(raw, { value: 0.01, from: 'user' });
+    expect(fixed.openings.map((o) => o.width)).toEqual([1.2, 0.9, 2]);
+    // Séjour : 800 × 500 unités × 0,01² = 40,00 m² ; Cuisine : 650 × 150 × 0,01² = 9,75 m² — la surface écrite
+    expect(fixed.rooms.map((r) => r.area.value)).toEqual([40, 9.75]);
+    // Une largeur saisie par l'expert ne suit plus rien.
+    const typed = { ...raw, openings: raw.openings.map((o, i) => (i === 0 ? { ...o, width: 1.25, from: 'user' as const } : o)) };
+    expect(rescaleStorey(typed, { value: 0.01, from: 'user' }).openings[0]!.width).toBe(1.25);
+    const typedRoom = { ...raw, rooms: raw.rooms.map((r, i) => (i === 0 ? { ...r, area: { value: 41, from: 'user' as const } } : r)) };
+    expect(rescaleStorey(typedRoom, { value: 0.01, from: 'user' }).rooms[0]!.area.value).toBe(41);
+  });
 });
 
 describe('modelFromDocument : un document → premier jet de bâtiment', () => {
@@ -244,9 +281,12 @@ describe('modelFromDocument : un document → premier jet de bâtiment', () => {
     expect(model.bottom).toEqual({ kind: 'slab-on-ground', constructionId: null, from: 'default' });
   });
 
-  it("garde l'ordre du document dès qu'une feuille n'a ni altitude ni nom reconnu", () => {
+  it("une feuille au nom inconnu ne fait pas perdre l'ordre des niveaux reconnus : elle se range au-dessus d'eux", () => {
     const model = modelFromDocument(doc([withOutline('a', '1er étage', 10, 8), withOutline('x', 'Feuille 3', 10, 8), withOutline('e', 'RDC', 10, 8)]), 'fr');
-    expect(model.storeys.map((s) => s.name)).toEqual(['1er étage', 'Feuille 3', 'Rez-de-chaussée']);
+    expect(model.storeys.map((s) => s.name)).toEqual(['Rez-de-chaussée', '1er étage', 'Feuille 3']);
+    // Aucun nom reconnu : l'ordre du document.
+    const unknown = modelFromDocument(doc([withOutline('a', 'Plan B', 10, 8), withOutline('b', 'Plan A', 10, 8)]), 'fr');
+    expect(unknown.storeys.map((s) => s.name)).toEqual(['Plan B', 'Plan A']);
   });
 
   it('distingue deux feuilles qui porteraient le même nom de niveau', () => {

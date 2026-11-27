@@ -85,7 +85,7 @@ const SCENARIOS: Record<FindingCode, Scenario> = {
     params: { storey: 'RDC', height: '2,80' },
   },
   'clearHeight.default': {
-    severity: 'warn',
+    severity: 'info',
     why: 'hauteur libre laissée à la valeur par défaut',
     build: () => sound({ heightFrom: 'default' }),
     params: { storey: 'RDC', height: '2,50' },
@@ -97,7 +97,7 @@ const SCENARIOS: Record<FindingCode, Scenario> = {
     params: { height: '5,20' },
   },
   'clearHeight.aboveGross': {
-    severity: 'block',
+    severity: 'warn',
     why: 'hauteur libre 2,60 m > hauteur brute 2,40 m',
     build: () => sound({ grossHeight: 2.4, clearHeight: 2.6 }),
     params: { clear: '2,60', gross: '2,40' },
@@ -212,6 +212,22 @@ const SCENARIOS: Record<FindingCode, Scenario> = {
     },
     params: { storey: 'RDC', count: 2 },
   },
+  'opening.exceedsFacade': {
+    severity: 'warn',
+    why: 'trois baies de 3,00 m sur une façade est de 8 m — invisible une fois les murs regroupés',
+    build: () => sound({ openings: [windowAt(NORTH, 2, 1.5, 2), windowAt(EAST, 3, 1.5, 3)] }),
+    params: { storey: 'RDC', storeyId: 'rdc', orientation: 'Est', widths: '9,00', length: '8,00' },
+  },
+  'opening.tallerThanWall': {
+    severity: 'warn',
+    why: 'fenêtre de 1,35 m de haut dans une jambette de 0,80 m',
+    build: () => {
+      const p = sound({ openings: [windowAt(NORTH, 1, 1.35, 2)] });
+      p.model.top = pitchedTop({ kneeWallHeight: 0.8, ridgeAngle: 0 });
+      return p;
+    },
+    params: { storey: 'RDC', storeyId: 'rdc', count: 2 },
+  },
   'neighbours.heatedExcluded': {
     severity: 'info',
     why: 'mur est (8 m) mitoyen avec un voisin chauffé',
@@ -311,6 +327,19 @@ const SCENARIOS: Record<FindingCode, Scenario> = {
     build: () => {
       const p = sound();
       p.model.manualRows = [manual({ boundary: 'heated' })];
+      return p;
+    },
+    params: { count: 1 },
+  },
+  'manual.deductMismatch': {
+    severity: 'warn',
+    why: 'fenêtre de toit nord « à déduire » placée devant une dalle contre terre',
+    build: () => {
+      const p = sound();
+      p.model.manualRows = [
+        manual({ id: 'm-velux', deduct: true, orientation: 'N', boundary: 'outside' }),
+        manual({ id: 'm-dalle', orientation: 'H', boundary: 'ground' }),
+      ];
       return p;
     },
     params: { count: 1 },
@@ -511,5 +540,30 @@ describe('dictionnaires FR / DE du moteur', () => {
     for (const key of Object.keys(ENGINE_MESSAGES.fr)) {
       expect(variables(ENGINE_MESSAGES.de[key]!), key).toEqual(variables(ENGINE_MESSAGES.fr[key]!));
     }
+  });
+
+  it('valeurs non finies : jamais de total NaN, et un constat bloquant dit quel étage est en cause', () => {
+    const scale = sound({ scale: { value: Number.NaN, from: 'user' } });
+    const a = deriveSheets(scale, 'fr');
+    expect(codes(a)).toContain('storey.outlineInvalid');
+    expect(Number.isFinite(a.totals.ve)).toBe(true);
+    expect(Number.isFinite(a.totals.grossFloorArea)).toBe(true);
+
+    const vertex = sound();
+    vertex.model.storeys[0]!.outline[1] = { x: Number.NaN, y: 0 };
+    expect(codes(deriveSheets(vertex, 'fr'))).toContain('storey.outlineInvalid');
+
+    const height = deriveSheets(sound({ grossHeight: Number.NaN }), 'fr');
+    expect(codes(height)).toContain('height.implausible');
+    expect(Number.isFinite(height.totals.ve)).toBe(true);
+
+    const north = sound();
+    north.model.northAngle = { value: Number.NaN, from: 'user' };
+    const n = deriveSheets(north, 'fr');
+    expect(codes(n)).toContain('north.default');
+    expect(n.envelope.every((r) => r.orientation !== undefined && !r.label.includes('undefined'))).toBe(true);
+
+    const rooms = sound({ netArea: undefined, rooms: [room('Séjour', 50), room('Chambre', Number.NaN)] });
+    expect(deriveSheets(rooms, 'fr').totals.an).toBe(50);
   });
 });

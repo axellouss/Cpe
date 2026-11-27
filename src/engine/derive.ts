@@ -63,9 +63,9 @@ import {
   resolveWindowType,
 } from './defaults';
 import type { FindingCode } from './messages';
-import { differenceArea } from './polygonOps';
+import { differenceArea, differenceWithinArea, grownArea } from './polygonOps';
 import { isOutsideEnvelopeName } from '../semantics/labels';
-import { unheatedRoomsInsideOutline } from './heatedOutline';
+import { unheatedRoomsBeside, unheatedRoomsInsideOutline } from './heatedOutline';
 import { isUnconfirmed, weakest } from './provenance';
 import { computePitchedRoof, isEavesEdge, type PitchedRoof, type RoofSlope } from './roof';
 import { netAreaOf, type NetArea } from './storey';
@@ -80,6 +80,10 @@ const A_OVER_VE_RANGE = { min: 0.25, max: 1.3 }; // 1/m
 const PITCH_RANGE = { min: 3, max: 75 }; // degrés
 const BORDERLINE_MARGIN = 5; // degrés autour d'une limite de secteur
 const STEP_MIN_AREA = 0.5; // m² : en dessous, un décalage entre étages est du bruit de tracé
+/** Un local et ses murs extérieurs : portée de la dilatation de son polygone (m). */
+const ROOM_WALL_REACH = 0.65;
+/** Épaisseur de mur typique, quand seule une surface peut être estimée (m). */
+const ROOM_WALL_TYPICAL = 0.3;
 const LUXEEB_OPAQUE_SLOTS = 20; // manuel LuxEeB-Tool, ch. 2.2.2 : « 20 éléments de construction sont disponibles »
 
 const BOUNDARY_ORDER: Record<Boundary, number> = { outside: 0, unheated: 1, ground: 2, heated: 3 };
@@ -156,8 +160,10 @@ function fmt(value: number, digits = 2): string {
 
 export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
   const model = project.model;
-  const north = model.northAngle.value;
-  const northFrom = model.northAngle.from;
+  const northFinite = Number.isFinite(model.northAngle.value);
+  const north = northFinite ? model.northAngle.value : 0;
+  // Un nord illisible vaut un nord non confirmé.
+  const northFrom: Provenance = northFinite ? model.northAngle.from : 'default';
   const findings: Finding[] = [];
   const note = (code: FindingCode, severity: Severity, params: Record<string, string | number> = {}): void => {
     findings.push({ code, severity, params });
@@ -169,11 +175,13 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
   // ── Étages en mètres ──
   const geometries: StoreyGeometry[] = model.storeys.map((storey) => {
     const s = storey.metresPerUnit.value;
-    const poly = scalePolygon(storey.outline, s);
+    // Échelle ou sommet non fini (NaN, infini) : l'étage est inutilisable, et le dit par un constat bloquant.
+    const finite = Number.isFinite(s) && s > 0 && storey.outline.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+    const poly = finite ? scalePolygon(storey.outline, s) : [];
     return {
       storey,
       poly,
-      area: polygonArea(poly),
+      area: finite ? polygonArea(poly) : 0,
       usable: poly.length >= 3,
       geometryFrom: weakest('plan', storey.metresPerUnit.from),
     };
@@ -366,16 +374,37 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     const onHeated: Opening[] = [];
     const orphans: Opening[] = [];
     const inRoof: Opening[] = [];
+    /** Largeur cumulée des ouvertures par arête, et nombre d'ouvertures plus hautes que leur mur. */
+    const widthOnEdge = new Map<number, number>();
+    let tooTall = 0;
     for (const o of activeOpenings) {
       const host = Number.isInteger(o.edgeIndex) ? hostOfEdge[o.edgeIndex] : undefined;
       if (host === undefined || host === null) orphans.push(o);
       else if (host === 'heated') onHeated.push(o);
       else {
         if ('slope' in host) inRoof.push(o);
+        else {
+          widthOnEdge.set(o.edgeIndex, (widthOnEdge.get(o.edgeIndex) ?? 0) + o.width * o.count);
+          if (o.height * 100 > host.heightCm + 1) tooTall += o.count;
+        }
         addOpening(host, o, g);
       }
     }
     const where = { storey: g.storey.name, storeyId: g.storey.id };
+    // Contrôle façade par façade, AVANT le regroupement : une fenêtre trop large sur un étage ne doit pas être
+    // masquée par le mur de même orientation d'un autre étage.
+    for (const [index, widths] of widthOnEdge) {
+      const length = edgeLength(g.poly, index);
+      if (widths > length + 0.01) {
+        note('opening.exceedsFacade', 'warn', {
+          ...where,
+          orientation: orientationName(sectorOfAzimuth(edgeAzimuth(g.poly, index, north))),
+          widths: fmt(widths),
+          length: fmt(length),
+        });
+      }
+    }
+    if (tooTall > 0) note('opening.tallerThanWall', 'warn', { ...where, count: tooTall });
     if (onHeated.length > 0) note('opening.onHeatedWall', 'warn', { ...where, count: countOf(onHeated) });
     if (orphans.length > 0) note('opening.orphan', 'warn', { ...where, count: countOf(orphans) });
     if (inRoof.length > 0) note('opening.inRoof', 'info', { ...where, count: countOf(inRoof) });
@@ -421,10 +450,16 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     });
 
   // ── 2. Fermeture haute du dernier étage ──
-  /** Longueur × largeur équivalentes d'une surface horizontale : étendue le long du plus grand côté, puis surface / longueur. */
+  /**
+   * Longueur × largeur d'une surface horizontale. Rectangle : ses deux côtés. Toute autre forme : la surface sur
+   * la longueur et 1 m de largeur (comme le fait le manuel de LuxEeB-Tool), pour que longueur × largeur redonne
+   * exactement la surface — une « largeur moyenne » arrondie au centimètre ne le ferait pas.
+   */
   const horizontalDims = (poly: readonly Vec2[], area: number): { length: number; width: number } => {
-    const length = extentAlong(poly, longestEdgeAngle(poly)).along;
-    return length > 0 ? { length, width: area / length } : { length: 0, width: 0 };
+    if (!(area > 0)) return { length: 0, width: 0 };
+    const e = extentAlong(poly, longestEdgeAngle(poly));
+    const rect = e.along * e.across;
+    return rect > 0 && Math.abs(rect - area) <= 0.001 * area ? { length: e.along, width: e.across } : { length: area, width: 1 };
   };
   const ofCategory = (id: string | null, category: Construction['category']): string | null =>
     id !== null && model.constructions.some((c) => c.id === id && c.category === category) ? id : null;
@@ -541,7 +576,8 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
       for (let i = 0; i < g.poly.length; i++) {
         if ((g.storey.edges[i]?.boundary ?? 'outside') !== 'heated') perimeter += edgeLength(g.poly, i);
       }
-      groundSlab = { constructionId: construction.id, slabArea: round(g.area), perimeter: round(perimeter) };
+      // Même surface que la ligne effectivement saisie dans le tableau.
+      groundSlab = { constructionId: construction.id, slabArea: host.row.grossArea, perimeter: round(perimeter) };
     }
   }
 
@@ -583,6 +619,41 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
       });
       roofBlocks.push({ host, deductions: [] });
     }
+    // Part du surplomb qui couvre un local non chauffé laissé hors du contour du niveau inférieur (garage intégré
+    // sous des chambres) : ce plancher donne sur un local non chauffé, pas sur l'air extérieur.
+    let overUnheated = 0;
+    const below = unheatedRoomsBeside(lower.storey);
+    if (overhang > STEP_MIN_AREA && below.length > 0) {
+      const scale = lower.storey.metresPerUnit.value;
+      for (const room of below) {
+        const footprint = scalePolygon(room.polygon!, scale);
+        const part = exact ? differenceWithinArea(upper.poly, lower.poly, footprint, ROOM_WALL_REACH) : null;
+        overUnheated += part ?? grownArea(footprint, ROOM_WALL_TYPICAL) ?? polygonArea(footprint);
+      }
+      overUnheated = Math.min(overhang, overUnheated);
+      if (overhang - overUnheated <= STEP_MIN_AREA) overUnheated = overhang;
+    }
+    if (overUnheated > STEP_MIN_AREA) {
+      const host = draft({
+        id: `floor:overUnheated:${upper.storey.id}`,
+        kind: 'floor',
+        construction: resolveConstruction(model, null, DEFAULT_CONSTRUCTION_IDS.floorUnheated, lang),
+        windowType: null,
+        count: 1,
+        length: overUnheated,
+        width: 1,
+        orientation: 'H',
+        boundary: 'unheated',
+        deduct: false,
+        from: exact ? from : weakest(from, 'estimate'),
+        storeyId: upper.storey.id,
+        manual: false,
+        label: () =>
+          t(lang, 'engine.row.floorOverUnheated', { storey: upper.storey.name, rooms: below.map((r) => r.name || '?').join(', ') }),
+      });
+      floorBlocks.push({ host, deductions: [] });
+      overhang -= overUnheated;
+    }
     if (overhang > STEP_MIN_AREA) {
       const host = draft({
         id: `floor:overhang:${upper.storey.id}`,
@@ -602,11 +673,11 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
       });
       floorBlocks.push({ host, deductions: [] });
     }
-    if (!exact && (exposed > STEP_MIN_AREA || overhang > STEP_MIN_AREA)) {
+    if (!exact && (exposed > STEP_MIN_AREA || overhang > STEP_MIN_AREA || overUnheated > STEP_MIN_AREA)) {
       note('stepback.byAreas', 'info', {
         lower: lower.storey.name,
         upper: upper.storey.name,
-        area: fmt(Math.max(exposed, overhang)),
+        area: fmt(Math.max(exposed, overhang, overUnheated)),
       });
     }
   }
@@ -615,6 +686,7 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
   const manualBlocks: Block[] = [];
   let pendingManual: Draft[] = [];
   let manualHeated = 0;
+  let manualMismatch = 0;
   for (const m of model.manualRows) {
     if (m.boundary === 'heated') {
       manualHeated++;
@@ -623,10 +695,13 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     const d = manualDraft(m, model, lang, draft);
     if (m.deduct) pendingManual.push(d);
     else {
+      // Une fenêtre nord déduite d'une dalle : la ligne à déduire n'est pas devant la bonne paroi.
+      manualMismatch += pendingManual.filter((x) => x.row.orientation !== d.row.orientation || x.row.boundary !== d.row.boundary).length;
       manualBlocks.push({ host: d, deductions: pendingManual });
       pendingManual = [];
     }
   }
+  if (manualMismatch > 0) note('manual.deductMismatch', 'warn', { count: manualMismatch });
   const danglingManual = pendingManual;
   if (manualHeated > 0) note('manual.heatedIgnored', 'info', { count: manualHeated });
   if (danglingManual.length > 0) note('abzug.dangling', 'warn', { count: danglingManual.length });
@@ -676,7 +751,7 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     const net = netAreaOf(g.storey, g.area);
     netAreas.push(net);
     const area = round(net.area);
-    const clearHeight = round(g.storey.clearHeight.value);
+    const clearHeight = Number.isFinite(g.storey.clearHeight.value) ? round(g.storey.clearHeight.value) : 0;
     zones.push({
       id: `zone:${g.storey.id}`,
       label: g.storey.name,
@@ -690,7 +765,9 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     // Sous une toiture inclinée, la hauteur d'étage saisie ne sert pas : hauteur équivalente = volume / surface.
     const underRoof = g === topGeometry && pitched !== null;
     const grossArea = round(g.area);
-    const height = round(underRoof ? (g.area > 0 ? pitched.volume / g.area : 0) : g.storey.grossHeight.value);
+    const rawHeight = underRoof ? (g.area > 0 ? pitched.volume / g.area : 0) : g.storey.grossHeight.value;
+    // Une hauteur non finie est signalée par « height.implausible » ; elle ne doit pas rendre Ve illisible.
+    const height = Number.isFinite(rawHeight) ? round(rawHeight) : 0;
     volumes.push({
       id: `volume:${g.storey.id}`,
       label: g.storey.name,
@@ -793,19 +870,21 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
   geometries.forEach((g, i) => {
     const where = { storey: g.storey.name, storeyId: g.storey.id };
     const s = g.storey;
-    if (!g.usable || isSelfIntersecting(g.poly) || g.area < MIN_OUTLINE_AREA) {
+    if (!g.usable || isSelfIntersecting(g.poly) || !(g.area >= MIN_OUTLINE_AREA)) {
       note('storey.outlineInvalid', 'block', { ...where, area: fmt(g.area) });
     }
     if (isUnconfirmed(s.metresPerUnit.from)) note('scale.unconfirmed', 'block', where);
     if (!isPitchedTop(g)) {
       const h = s.grossHeight.value;
       if (isUnconfirmed(s.grossHeight.from)) note('height.default', 'warn', { ...where, height: fmt(h) });
-      if (h < HEIGHT_RANGE.min || h > HEIGHT_RANGE.max) note('height.implausible', 'warn', { ...where, height: fmt(h) });
+      // Écrit de façon à attraper aussi une hauteur non finie.
+      if (!(h >= HEIGHT_RANGE.min && h <= HEIGHT_RANGE.max)) note('height.implausible', 'warn', { ...where, height: fmt(h) });
       if (s.clearHeight.value > h) {
-        note('clearHeight.aboveGross', 'block', { ...where, clear: fmt(s.clearHeight.value), gross: fmt(h) });
+        note('clearHeight.aboveGross', 'warn', { ...where, clear: fmt(s.clearHeight.value), gross: fmt(h) });
       }
     }
-    if (isUnconfirmed(s.clearHeight.from)) note('clearHeight.default', 'warn', { ...where, height: fmt(s.clearHeight.value) });
+    // LuxEeB-Tool calcule Vn lui-même à partir de An : la hauteur libre n'est qu'une valeur de contrôle.
+    if (isUnconfirmed(s.clearHeight.from)) note('clearHeight.default', 'info', { ...where, height: fmt(s.clearHeight.value) });
     if (netAreas[i]!.source === 'estimate') note('an.estimated', 'block', { ...where, area: fmt(netAreas[i]!.area) });
     // Local « non compté dans An » à l'intérieur du contour : A et Ve le comptent, An non. C'est juste pour un local
     // non conditionné situé DANS l'enveloppe (chaufferie, local technique), faux pour un local hors enveloppe.

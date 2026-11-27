@@ -71,8 +71,8 @@ describe('plans superposables (storeysAligned = true)', () => {
     expect(horizontal(twoStoreys(L, rect(12, 6), true))).toEqual([
       'roof H 1 × 12.00 × 6.00 | outside | Toiture plate (Étage)',
       'roof H 1 × 24.00 × 1.00 | outside | Toiture-terrasse au-dessus de RDC',
-      // Dalle en L de 96 m² : longueur = étendue le long du plus grand côté (12 m), largeur équivalente 96 / 12 = 8 m
-      'floor H 1 × 12.00 × 8.00 | ground | Dalle sur terre-plein (RDC)',
+      // Dalle en L de 96 m² : forme non rectangulaire → surface sur la longueur, largeur 1 m (longueur × largeur exact)
+      'floor H 1 × 96.00 × 1.00 | ground | Dalle sur terre-plein (RDC)',
     ]);
   });
 
@@ -155,5 +155,65 @@ describe('trois niveaux', () => {
       'wall S 1 × 30.00 × 2.80',
       'wall W 1 × 21.00 × 2.80',
     ]);
+  });
+});
+
+describe('étage au-dessus d’un garage intégré, retiré du contour chauffé du niveau bas', () => {
+  // Emprise 14 × 8 m ; garage intégré dans l'angle sud-est : 3,40 × 3,40 m au nu intérieur, murs de 40 cm
+  // → le contour chauffé du RDC perd 3,80 × 3,80 = 14,44 m². L'étage (chambres) couvre toute l'emprise.
+  const carved: Vec2[] = [
+    { x: 0, y: 0 },
+    { x: 14, y: 0 },
+    { x: 14, y: 4.2 },
+    { x: 10.2, y: 4.2 },
+    { x: 10.2, y: 8 },
+    { x: 0, y: 8 },
+  ];
+  const garage = {
+    id: 'r-garage',
+    name: 'Garage',
+    area: { value: 11.56, from: 'plan' as const },
+    heated: false,
+    needsReview: false,
+    polygon: [
+      { x: 10.2, y: 4.2 },
+      { x: 13.6, y: 4.2 },
+      { x: 13.6, y: 7.6 },
+      { x: 10.2, y: 7.6 },
+    ],
+  };
+  const house = (aligned: boolean) =>
+    project(
+      [
+        storey('rdc', 'RDC', carved, { netArea: 70, rooms: [garage], boundaries: { 2: 'unheated', 3: 'unheated' } }),
+        storey('etage', 'Étage', rect(14, 8), { netArea: 90 }),
+      ],
+      { storeysAligned: aligned },
+    );
+
+  it('plans superposables : le plancher au-dessus du garage donne sur un local non chauffé, pas sur l’extérieur', () => {
+    const d = deriveSheets(house(true), 'fr');
+    const floors = d.envelope.filter((r) => r.kind === 'floor').map((r) => `${brief(r)} | ${r.boundary} | ${r.label}`);
+    expect(floors).toEqual([
+      'floor H 1 × 97.56 × 1.00 | ground | Dalle sur terre-plein (RDC)',
+      'floor H 1 × 14.44 × 1.00 | unheated | Plancher de Étage au-dessus d’un local non chauffé (Garage)',
+    ]);
+    expect(d.envelope.find((r) => r.id === 'floor:overUnheated:etage')).toMatchObject({ constructionId: 'floor-unheated', from: 'plan' });
+    expect(d.envelope.some((r) => r.id.startsWith('floor:overhang'))).toBe(false);
+  });
+
+  it('plans non superposables : même attribution, par les surfaces, et marquée comme estimation', () => {
+    const d = deriveSheets(house(false), 'fr');
+    const row = d.envelope.find((r) => r.id === 'floor:overUnheated:etage');
+    expect(row).toMatchObject({ grossArea: 14.44, boundary: 'unheated', from: 'estimate' });
+    expect(d.envelope.some((r) => r.id.startsWith('floor:overhang'))).toBe(false);
+    expect(codes(d)).toContain('stepback.byAreas');
+  });
+
+  it('sans local non chauffé connu sous le surplomb, il reste un plancher sur l’extérieur', () => {
+    const p = house(true);
+    p.model.storeys[0]!.rooms = [];
+    const d = deriveSheets(p, 'fr');
+    expect(d.envelope.find((r) => r.id === 'floor:overhang:etage')).toMatchObject({ grossArea: 14.44, boundary: 'outside' });
   });
 });

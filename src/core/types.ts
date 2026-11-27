@@ -193,6 +193,12 @@ export interface Opening {
   /** Dimensions brutes du gros œuvre (m). */
   width: number;
   height: number;
+  /**
+   * Largeur mesurée sur le dessin, en unités de feuille, quand elle n'a pas été lue dans un texte : si l'échelle
+   * est corrigée, `width` la suit (tant que l'expert ne l'a pas saisie lui-même). Absent pour une largeur lue
+   * dans un nom de bloc, une étiquette ou une maquette, qui ne dépend pas de l'échelle.
+   */
+  sheetWidth?: number;
   count: number;
   /** Position du centre le long de l'arête, 0..1 (affichage uniquement). */
   position: number;
