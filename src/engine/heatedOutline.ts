@@ -428,10 +428,22 @@ export function excludeRoomFromOutline(storey: Storey, roomId: string): Storey |
   };
 }
 
-/** Locaux non comptés dans An (tranchés) dont le polygone est à l'intérieur du contour de l'étage. */
+/** Où se trouve un local sur la feuille : centre de son polygone, à défaut la position de son étiquette. */
+export function roomAnchor(room: Pick<Room, 'polygon' | 'at'>): Vec2 | null {
+  if (room.polygon && room.polygon.length >= 3) return centroid(room.polygon);
+  return room.at ?? null;
+}
+
+/**
+ * Locaux non comptés dans An (tranchés) qui se trouvent à l'intérieur du contour de l'étage. Un local connu par sa
+ * seule étiquette (polygone non fermé sur le plan) compte aussi : on ne peut pas le retirer d'office, mais il faut
+ * le signaler.
+ */
 export function unheatedRoomsInsideOutline(storey: Storey): Room[] {
   if (storey.outline.length < 3) return [];
-  return storey.rooms.filter(
-    (r) => !r.heated && !r.needsReview && r.polygon && r.polygon.length >= 3 && pointInPolygon(centroid(r.polygon), storey.outline),
-  );
+  return storey.rooms.filter((r) => {
+    if (r.heated || r.needsReview) return false;
+    const anchor = roomAnchor(r);
+    return anchor !== null && pointInPolygon(anchor, storey.outline);
+  });
 }

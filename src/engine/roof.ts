@@ -7,8 +7,8 @@
  *   - murs d'égout (parallèles au faîtage) : hauteur de la jambette ; pignons : jambette + hauteur de faîtage / 2.
  * Lucarnes, débords, toitures à la Mansart : non couverts → l'expert complète par des lignes manuelles.
  */
-import { azimuthOfVector, degToRad, extentAlong, longestEdgeAngle, normDeg, polygonArea, radToDeg, sectorOfAzimuth } from '../core/geometry';
-import type { Orientation, RoofShape, TopClosure, Vec2 } from '../core/types';
+import { azimuthOfVector, degToRad, extentAlong, normDeg, polygonArea, radToDeg, sectorOfAzimuth } from '../core/geometry';
+import type { Boundary, Orientation, RoofShape, TopClosure, Vec2 } from '../core/types';
 
 /** Pente utilisée dans les calculs, bornée pour éviter cos(pente) → 0. */
 const MAX_PITCH_DEG = 85;
@@ -44,6 +44,8 @@ export interface PitchedRoof {
   eavesEstimated: boolean;
   /** Vrai si le contour s'écarte de plus de 2 % du rectangle L × W. */
   nonRectangular: boolean;
+  /** Vrai si le sens du faîtage n'a pas été fixé par l'expert (direction proposée par `defaultRidgeAngle`). */
+  ridgeAssumed: boolean;
   slopes: RoofSlope[];
   /** Surface totale des pans (m²). */
   totalArea: number;
@@ -66,10 +68,97 @@ export function isEavesEdge(poly: readonly Vec2[], i: number, ridgeAngle: number
 }
 
 /**
- * Calcule la toiture inclinée posée sur le contour `poly` (en MÈTRES, repère de la feuille).
- * `northAngle` = azimut du haut de la feuille.
+ * Direction du faîtage proposée tant que l'expert ne l'a pas fixée (degrés depuis +x, repère de la feuille).
+ *  - Maison en bande ou jumelée : le faîtage est perpendiculaire aux murs mitoyens (les pignons SONT les mitoyens).
+ *  - Sinon : le long de la grande dimension du plus petit rectangle qui englobe le contour — et non le long de la
+ *    plus longue ARÊTE, qui change dès qu'un sommet coupe une façade en deux.
+ * Ce n'est qu'une hypothèse : le moteur la signale tant qu'elle n'est pas confirmée.
  */
-export function computePitchedRoof(poly: readonly Vec2[], top: TopClosure, northAngle: number): PitchedRoof {
+export function defaultRidgeAngle(poly: readonly Vec2[], boundaries?: readonly (Boundary | undefined)[]): number {
+  const n = poly.length;
+  if (n < 2) return 0;
+  const angleOf = (i: number): number => {
+    const a = poly[i]!;
+    const b = poly[(i + 1) % n]!;
+    return radToDeg(Math.atan2(b.y - a.y, b.x - a.x));
+  };
+  const lengthOf = (i: number): number => {
+    const a = poly[i]!;
+    const b = poly[(i + 1) % n]!;
+    return Math.hypot(b.x - a.x, b.y - a.y);
+  };
+  if (boundaries) {
+    // Direction dominante des murs mitoyens (angles doublés : une droite n'a pas de sens).
+    let sx = 0;
+    let sy = 0;
+    for (let i = 0; i < n; i++) {
+      if (boundaries[i] !== 'heated') continue;
+      const twice = degToRad(2 * angleOf(i));
+      sx += Math.cos(twice) * lengthOf(i);
+      sy += Math.sin(twice) * lengthOf(i);
+    }
+    if (Math.hypot(sx, sy) > 1e-9) return undirected(radToDeg(Math.atan2(sy, sx)) / 2 + 90);
+  }
+  let best: { angle: number; rect: number; long: number } | null = null;
+  for (let i = 0; i < n; i++) {
+    if (lengthOf(i) <= 1e-9) continue;
+    const theta = angleOf(i);
+    const e = extentAlong(poly, theta);
+    const rect = e.along * e.across;
+    const long = Math.max(e.along, e.across);
+    const angle = e.along >= e.across ? theta : theta + 90;
+    if (!best || rect < best.rect * (1 - 1e-9) || (Math.abs(rect - best.rect) <= 1e-9 * best.rect && long > best.long)) best = { angle, rect, long };
+  }
+  return best ? undirected(best.angle) : 0;
+}
+
+/** Ramène une direction de droite dans [0°, 180°) : le sens proposé ne dépend pas de l'ordre des sommets. */
+function undirected(angleDeg: number): number {
+  const a = normDeg(angleDeg) % 180;
+  // 179,9999999 et 0 désignent la même droite : on évite de basculer pour une poussière numérique.
+  return a > 180 - 1e-9 ? 0 : a;
+}
+
+/** Un sens de faîtage possible, avec l'orientation des pans qu'il donne. */
+export interface RidgeChoice {
+  ridgeAngle: number;
+  orientations: Orientation[];
+  azimuths: number[];
+  /** Vrai pour le sens que le moteur retient tant que l'expert n'a rien choisi. */
+  assumed: boolean;
+}
+
+/**
+ * Sens de faîtage entre lesquels l'expert choisit : deux pour un toit à deux pans, quatre pour un monopente
+ * (le pan peut descendre de chaque côté), aucun pour un toit à croupes (le faîtage suit la grande dimension).
+ */
+export function ridgeChoices(
+  poly: readonly Vec2[],
+  top: TopClosure,
+  northAngle: number,
+  boundaries?: readonly (Boundary | undefined)[],
+): RidgeChoice[] {
+  if (top.shape === 'hip' || poly.length < 3) return [];
+  const base = defaultRidgeAngle(poly, boundaries);
+  const turns = top.shape === 'mono' ? [0, 90, 180, 270] : [0, 90];
+  return turns.map((turn) => {
+    const ridgeAngle = normDeg(base + turn);
+    const roof = computePitchedRoof(poly, { ...top, ridgeAngle }, northAngle);
+    return { ridgeAngle, orientations: roof.slopes.map((s) => s.orientation), azimuths: roof.slopes.map((s) => s.azimuth), assumed: turn === 0 };
+  });
+}
+
+/**
+ * Calcule la toiture inclinée posée sur le contour `poly` (en MÈTRES, repère de la feuille).
+ * `northAngle` = azimut du haut de la feuille ; `boundaries` = ce qu'il y a derrière chaque arête (pour proposer
+ * un sens de faîtage quand l'expert ne l'a pas fixé).
+ */
+export function computePitchedRoof(
+  poly: readonly Vec2[],
+  top: TopClosure,
+  northAngle: number,
+  boundaries?: readonly (Boundary | undefined)[],
+): PitchedRoof {
   const area = polygonArea(poly);
   const pitchDeg = Math.min(MAX_PITCH_DEG, Math.max(0, top.pitchDeg));
   const pitch = degToRad(pitchDeg);
@@ -77,7 +166,8 @@ export function computePitchedRoof(poly: readonly Vec2[], top: TopClosure, north
   const tan = Math.tan(pitch);
   const knee = Math.max(0, top.kneeWallHeight);
 
-  let ridgeAngle = top.ridgeAngle ?? longestEdgeAngle(poly);
+  const ridgeAssumed = top.ridgeAngle === null || !Number.isFinite(top.ridgeAngle);
+  let ridgeAngle = ridgeAssumed ? defaultRidgeAngle(poly, boundaries) : (top.ridgeAngle as number);
   let extent = extentAlong(poly, ridgeAngle);
   // Toit à croupes : le faîtage suit toujours la grande dimension (sinon il n'existerait pas).
   if (top.shape === 'hip' && extent.along < extent.across) {
@@ -131,6 +221,8 @@ export function computePitchedRoof(poly: readonly Vec2[], top: TopClosure, north
     gableHeight: top.shape === 'hip' ? knee : knee + rise / 2,
     eavesEstimated: top.shape === 'mono',
     nonRectangular,
+    // Toit à croupes : le faîtage suit la grande dimension, il n'y a rien à supposer.
+    ridgeAssumed: ridgeAssumed && top.shape !== 'hip',
     slopes: slopes.filter((s) => s.area > 0 && s.length > 0),
     totalArea,
     volume: area * knee + roofVolume,

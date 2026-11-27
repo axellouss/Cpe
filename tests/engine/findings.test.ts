@@ -142,6 +142,21 @@ const SCENARIOS: Record<FindingCode, Scenario> = {
       }),
     params: { storey: 'RDC', storeyId: 'rdc', rooms: '« Garage »', count: 1 },
   },
+  'outline.unconditionedInside': {
+    severity: 'info',
+    why: 'chaufferie non comptée dans An, à l’intérieur du contour : correct si elle est dans l’enveloppe isolée',
+    build: () =>
+      sound({
+        netArea: undefined,
+        rooms: [
+          room('Séjour', 50),
+          { ...room('Chaufferie', 6, false, false), polygon: [{ x: 6, y: 4 }, { x: 9.6, y: 4 }, { x: 9.6, y: 7.6 }, { x: 6, y: 7.6 }] },
+          // connue par sa seule étiquette (polygone non fermé sur le plan) : signalée aussi
+          { ...room('Local technique', 4, false, false), at: { x: 2, y: 2 } },
+        ],
+      }),
+    params: { storey: 'RDC', storeyId: 'rdc', rooms: '« Chaufferie », « Local technique »', count: 2 },
+  },
   'north.default': {
     severity: 'warn',
     why: 'boussole jamais tournée',
@@ -230,7 +245,7 @@ const SCENARIOS: Record<FindingCode, Scenario> = {
     params: { value: '2,05' },
   },
   'roof.estimated': {
-    severity: 'info',
+    severity: 'warn',
     why: 'toiture à deux pans sur un contour en L',
     build: () => {
       const p = sound({ netArea: 70 }, L_SHAPE);
@@ -248,6 +263,17 @@ const SCENARIOS: Record<FindingCode, Scenario> = {
       return p;
     },
     params: { orientation: 'Sud' },
+  },
+  'roof.ridgeAssumed': {
+    severity: 'warn',
+    why: 'toit à deux pans : le plan ne dit pas dans quel sens court le faîtage',
+    build: () => {
+      const p = sound();
+      p.model.top = pitchedTop();
+      return p;
+    },
+    // Contour 10 × 8 m, nord en haut : faîtage supposé le long des 10 m, pans vers le nord et le sud.
+    params: { a: 'Nord', b: 'Sud' },
   },
   'roof.pitchImplausible': {
     severity: 'warn',

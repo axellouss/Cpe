@@ -19,6 +19,7 @@ import type {
 import * as defaults from './defaults';
 import * as derive from './derive';
 import './messages';
+import { ridgeChoices, type RidgeChoice } from './roof';
 import * as storeys from './storey';
 
 /** Mesures instantanées d'un étage, pour l'affichage en direct pendant le tracé. */
@@ -93,3 +94,16 @@ export {
   unheatedRoomsInsideOutline,
   type HeatedOutlineProposal,
 } from './heatedOutline';
+
+/**
+ * Sens de faîtage possibles pour la toiture inclinée du dernier étage, avec l'orientation des pans de chacun.
+ * Vide pour un toit à croupes ou tant qu'aucun étage n'a de contour.
+ */
+export function roofRidgeChoices(model: BuildingModel): RidgeChoice[] {
+  const storey = model.storeys[model.storeys.length - 1];
+  const scale = storey?.metresPerUnit.value ?? 0;
+  if (!storey || storey.outline.length < 3 || !(scale > 0)) return [];
+  const poly = storey.outline.map((p) => ({ x: p.x * scale, y: p.y * scale }));
+  return ridgeChoices(poly, model.top, model.northAngle.value, poly.map((_, i) => storey.edges[i]?.boundary));
+}
+export type { RidgeChoice } from './roof';

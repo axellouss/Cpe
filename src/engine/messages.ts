@@ -22,6 +22,7 @@ export const FINDING_CODES = [
   'an.low',
   'rooms.needReview',
   'outline.containsUnheated',
+  'outline.unconditionedInside',
   'north.default',
   'orientation.borderline',
   'windows.none',
@@ -36,6 +37,7 @@ export const FINDING_CODES = [
   'aOverVe.implausible',
   'roof.estimated',
   'roof.monoDirection',
+  'roof.ridgeAssumed',
   'roof.pitchImplausible',
   'attic.heightRule',
   'stepback.byAreas',
@@ -70,7 +72,9 @@ export const ENGINE_MESSAGES: Dictionary = {
       "An = {an} m², soit seulement {ratio} % de la surface brute ({gross} m²). Vérifiez qu'aucune pièce chauffée ne manque.",
     'finding.rooms.needReview': '{count} pièce(s) à trancher : comptée(s) dans An ou non ? Touchez-les sur le plan.',
     'finding.outline.containsUnheated':
-      "{storey} : {rooms} — non compté(s) dans An mais à l'intérieur du contour chauffé. Hors de l'enveloppe thermique (garage, local froid) ? Retirez-le du contour. Dans l'enveloppe ? Comptez-le dans An.",
+      "{storey} : {rooms} — à l'intérieur du contour chauffé, alors qu'un tel local est en principe hors de l'enveloppe thermique. Retirez-le du contour ; s'il est réellement dans l'enveloppe isolée, laissez-le (il compte dans A et Ve, pas dans An).",
+    'finding.outline.unconditionedInside':
+      "{storey} : {rooms} — non compté(s) dans An mais dans le contour : correct pour un local non conditionné situé dans l'enveloppe thermique (chaufferie, local technique). S'il est hors de l'enveloppe, retirez-le du contour.",
     'finding.north.default':
       'Nord non confirmé : le haut du plan est supposé pointer vers l’azimut {angle}° (0 = nord). Tournez la boussole, les orientations des façades en dépendent.',
     'finding.orientation.borderline':
@@ -88,15 +92,18 @@ export const ENGINE_MESSAGES: Dictionary = {
       '{storey} : {count} ouverture(s) sur un mur sans hauteur sous la toiture : comptée(s) comme fenêtres de toit et déduite(s) du pan de même orientation. Vérifiez.',
     'finding.neighbours.heatedExcluded':
       '{length} m de murs mitoyens contre un voisin chauffé : hors enveloppe, aucune ligne dans le tableau.',
-    'finding.top.default': 'Fermeture haute non confirmée (hypothèse : {kind}). Choisissez le type de toiture.',
+    'finding.top.default':
+      'Fermeture haute non confirmée (hypothèse : {kind}). Confirmez la toiture — et, pour un toit incliné, sa pente, sa jambette et le sens du faîtage.',
     'finding.bottom.default':
       "Fermeture basse non confirmée (hypothèse : {kind}). Indiquez ce qu'il y a sous le premier étage chauffé.",
     'finding.aOverVe.implausible':
       "A/Ve = {value} 1/m est inhabituel (attendu : 0,25 à 1,30). Vérifiez l'échelle, les hauteurs et les murs mitoyens.",
     'finding.roof.estimated':
-      '{storey} : contour non rectangulaire, les pans de toiture sont répartis de façon approchée (total de {area} m² conservé). Vérifiez la surface de chaque pan.',
+      "{storey} : contour non rectangulaire sous une toiture inclinée. Les pans (total de {area} m² conservé), la hauteur des murs sous toiture et le volume Ve ne sont qu'approchés : vérifiez-les et complétez par des lignes manuelles si nécessaire.",
     'finding.roof.monoDirection':
-      "Toit monopente : sens de la pente supposé (pan orienté {orientation}) et hauteur moyenne appliquée aux deux murs d'égout. Corrigez l'orientation du pan et ces hauteurs si nécessaire.",
+      "Toit monopente : sens de la pente supposé (pan orienté {orientation}). Indiquez vers où descend le pan dans la question sur la toiture ; la hauteur moyenne est appliquée aux deux murs d'égout.",
+    'finding.roof.ridgeAssumed':
+      'Sens du faîtage supposé : pans orientés {a} et {b}. Confirmez-le dans la question sur la toiture — murs sous toiture, pans et volume Ve en dépendent.',
     'finding.roof.pitchImplausible': 'Pente de toiture de {pitch}° inhabituelle (attendu : 3 à 75°). Vérifiez la valeur.',
     'finding.attic.heightRule':
       '{storey} sous rampants : seule la surface dont la hauteur libre dépasse 1,00 m compte dans An. Vérifiez la surface nette retenue.',
@@ -184,7 +191,9 @@ export const ENGINE_MESSAGES: Dictionary = {
       'An = {an} m², das sind nur {ratio} % der Bruttofläche ({gross} m²). Prüfen Sie, ob beheizte Räume fehlen.',
     'finding.rooms.needReview': '{count} Raum/Räume noch zu entscheiden: Teil von An oder nicht? Tippen Sie sie im Plan an.',
     'finding.outline.containsUnheated':
-      '{storey}: {rooms} – nicht in An gezählt, liegt aber innerhalb des beheizten Umrisses. Außerhalb der thermischen Hülle (Garage, Kaltraum)? Aus dem Umriss entfernen. Innerhalb der Hülle? In An mitzählen.',
+      '{storey}: {rooms} – innerhalb des beheizten Umrisses, obwohl ein solcher Raum in der Regel außerhalb der thermischen Hülle liegt. Aus dem Umriss entfernen; liegt er tatsächlich in der gedämmten Hülle, belassen (zählt zu A und Ve, nicht zu An).',
+    'finding.outline.unconditionedInside':
+      '{storey}: {rooms} – nicht in An gezählt, aber im Umriss: richtig für einen nicht konditionierten Raum innerhalb der thermischen Hülle (Heizraum, Technikraum). Liegt er außerhalb der Hülle, aus dem Umriss entfernen.',
     'finding.north.default':
       'Norden nicht bestätigt: Es wird angenommen, dass die Planoberseite nach Azimut {angle}° zeigt (0 = Norden). Drehen Sie den Kompass, davon hängen die Orientierungen der Fassaden ab.',
     'finding.orientation.borderline':
@@ -202,15 +211,18 @@ export const ENGINE_MESSAGES: Dictionary = {
       '{storey}: {count} Öffnung(en) an einer Wand ohne Höhe unter dem Dach: als Dachfenster gezählt und von der Dachfläche gleicher Orientierung abgezogen. Bitte prüfen.',
     'finding.neighbours.heatedExcluded':
       '{length} m Wände zu beheizten Nachbarn: nicht Teil der Hülle, keine Zeile in der Tabelle.',
-    'finding.top.default': 'Oberer Abschluss nicht bestätigt (Annahme: {kind}). Wählen Sie die Dachart.',
+    'finding.top.default':
+      'Oberer Abschluss nicht bestätigt (Annahme: {kind}). Bestätigen Sie das Dach – beim geneigten Dach auch Neigung, Kniestock und Firstrichtung.',
     'finding.bottom.default':
       'Unterer Abschluss nicht bestätigt (Annahme: {kind}). Geben Sie an, was unter dem untersten beheizten Geschoss liegt.',
     'finding.aOverVe.implausible':
       'A/Ve = {value} 1/m ist ungewöhnlich (erwartet: 0,25 bis 1,30). Prüfen Sie Maßstab, Höhen und Wände zu Nachbarn.',
     'finding.roof.estimated':
-      '{storey}: Umriss nicht rechteckig, die Dachflächen sind näherungsweise aufgeteilt (Summe von {area} m² bleibt erhalten). Prüfen Sie die Fläche jeder Dachseite.',
+      '{storey}: Umriss nicht rechteckig unter einem geneigten Dach. Dachflächen (Summe von {area} m² bleibt erhalten), Wandhöhen unter dem Dach und das Volumen Ve sind nur Näherungen: prüfen und bei Bedarf mit manuellen Zeilen ergänzen.',
     'finding.roof.monoDirection':
-      'Pultdach: Gefällerichtung angenommen (Dachfläche nach {orientation}) und mittlere Höhe für beide Traufwände angesetzt. Korrigieren Sie die Orientierung der Dachfläche und diese Höhen bei Bedarf.',
+      'Pultdach: Gefällerichtung angenommen (Dachfläche nach {orientation}). Geben Sie in der Frage zum Dach an, wohin die Dachfläche fällt; für beide Traufwände wird die mittlere Höhe angesetzt.',
+    'finding.roof.ridgeAssumed':
+      'Firstrichtung angenommen: Dachflächen nach {a} und {b}. Bestätigen Sie sie in der Frage zum Dach – Wände unter dem Dach, Dachflächen und Volumen Ve hängen davon ab.',
     'finding.roof.pitchImplausible': 'Dachneigung von {pitch}° ist ungewöhnlich (erwartet: 3 bis 75°). Prüfen Sie den Wert.',
     'finding.attic.heightRule':
       '{storey} unter Dachschrägen: Nur die Fläche mit einer lichten Höhe über 1,00 m zählt zu An. Prüfen Sie die angesetzte Nettofläche.',

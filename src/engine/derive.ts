@@ -43,6 +43,7 @@ import {
   type OrientationOrHorizontal,
   type Project,
   type Provenance,
+  type Room,
   type Severity,
   type Storey,
   type Totals,
@@ -63,6 +64,7 @@ import {
 } from './defaults';
 import type { FindingCode } from './messages';
 import { differenceArea } from './polygonOps';
+import { isOutsideEnvelopeName } from '../semantics/labels';
 import { unheatedRoomsInsideOutline } from './heatedOutline';
 import { isUnconfirmed, weakest } from './provenance';
 import { computePitchedRoof, isEavesEdge, type PitchedRoof, type RoofSlope } from './roof';
@@ -180,8 +182,18 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
   const bottomGeometry = geometries[0];
   const pitched: PitchedRoof | null =
     model.top.kind === 'pitched-roof' && topGeometry && topGeometry.usable && topGeometry.area > 0
-      ? computePitchedRoof(topGeometry.poly, model.top, north)
+      ? computePitchedRoof(
+          topGeometry.poly,
+          model.top,
+          north,
+          topGeometry.poly.map((_, i) => topGeometry.storey.edges[i]?.boundary),
+        )
       : null;
+  /**
+   * Ce qui affaiblit tout ce qui dépend de la forme du toit : sens du faîtage seulement supposé, ou contour non
+   * rectangulaire (portée, hauteurs de murs et volume ne sont alors que des approximations).
+   */
+  const roofDoubt: Provenance[] = pitched && (pitched.ridgeAssumed || pitched.nonRectangular) ? ['estimate'] : [];
   const isPitchedTop = (g: StoreyGeometry): boolean => model.top.kind === 'pitched-roof' && g === topGeometry;
 
   const drafts: Draft[] = [];
@@ -325,7 +337,7 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
       if (roof) {
         const eaves = isEavesEdge(g.poly, i, roof.ridgeAngle);
         height = eaves ? roof.eavesHeight : roof.gableHeight;
-        sources.push(model.top.from);
+        sources.push(model.top.from, ...roofDoubt);
         if (eaves && roof.eavesEstimated) sources.push('estimate');
       } else {
         height = g.storey.grossHeight.value;
@@ -426,7 +438,7 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     const top = model.top;
     if (top.kind === 'pitched-roof' && pitched) {
       const construction = resolveConstruction(model, ofCategory(top.constructionId, 'roof'), DEFAULT_CONSTRUCTION_IDS.roof, lang);
-      const from = weakest(g.geometryFrom, top.from, northFrom, ...(pitched.shape === 'mono' ? (['estimate'] as const) : []));
+      const from = weakest(g.geometryFrom, top.from, northFrom, ...roofDoubt);
       const ordered = [...slopeHosts].sort(
         (a, b) => ORIENTATIONS.indexOf(a.slope.orientation) - ORIENTATIONS.indexOf(b.slope.orientation),
       );
@@ -685,7 +697,7 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
       area: grossArea,
       height,
       volume: round(grossArea * height, 4),
-      from: underRoof ? weakest(g.geometryFrom, model.top.from) : weakest(g.geometryFrom, g.storey.grossHeight.from),
+      from: underRoof ? weakest(g.geometryFrom, model.top.from, ...roofDoubt) : weakest(g.geometryFrom, g.storey.grossHeight.from),
       storeyId: g.storey.id,
     });
   }
@@ -795,11 +807,16 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     }
     if (isUnconfirmed(s.clearHeight.from)) note('clearHeight.default', 'warn', { ...where, height: fmt(s.clearHeight.value) });
     if (netAreas[i]!.source === 'estimate') note('an.estimated', 'block', { ...where, area: fmt(netAreas[i]!.area) });
-    // Local tranché « non compté dans An » mais resté dans le contour : A et Ve le comptent, An non — à trancher.
+    // Local « non compté dans An » à l'intérieur du contour : A et Ve le comptent, An non. C'est juste pour un local
+    // non conditionné situé DANS l'enveloppe (chaufferie, local technique), faux pour un local hors enveloppe.
     const inside = unheatedRoomsInsideOutline(s);
-    if (inside.length > 0) {
-      note('outline.containsUnheated', 'warn', { ...where, rooms: inside.map((r) => `« ${r.name || '?'} »`).join(', '), count: inside.length });
+    const outsideByNature = inside.filter((r) => isOutsideEnvelopeName(r.name));
+    const toCheck = inside.filter((r) => !isOutsideEnvelopeName(r.name));
+    const names = (rooms: readonly Room[]): string => rooms.map((r) => `« ${r.name || '?'} »`).join(', ');
+    if (outsideByNature.length > 0) {
+      note('outline.containsUnheated', 'warn', { ...where, rooms: names(outsideByNature), count: outsideByNature.length });
     }
+    if (toCheck.length > 0) note('outline.unconditionedInside', 'info', { ...where, rooms: names(toCheck), count: toCheck.length });
   });
 
   const roomsToReview = sum(
@@ -854,9 +871,15 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
       note('roof.pitchImplausible', 'warn', { pitch: fmt(model.top.pitchDeg, 0) });
     }
     if (pitched) {
-      if (pitched.nonRectangular) note('roof.estimated', 'info', { ...where, area: fmt(pitched.totalArea) });
+      if (pitched.nonRectangular) note('roof.estimated', 'warn', { ...where, area: fmt(pitched.totalArea) });
       const first = pitched.slopes[0];
-      if (pitched.shape === 'mono' && first) note('roof.monoDirection', 'warn', { orientation: orientationName(first.orientation) });
+      const second = pitched.slopes[1];
+      if (pitched.ridgeAssumed && pitched.shape === 'mono' && first) {
+        note('roof.monoDirection', 'warn', { orientation: orientationName(first.orientation) });
+      } else if (pitched.ridgeAssumed && first && second) {
+        const [a, b] = [first.orientation, second.orientation].sort((x, y) => ORIENTATIONS.indexOf(x) - ORIENTATIONS.indexOf(y));
+        note('roof.ridgeAssumed', 'warn', { a: orientationName(a!), b: orientationName(b!) });
+      }
     }
   }
 

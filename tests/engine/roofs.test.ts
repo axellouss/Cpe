@@ -9,11 +9,12 @@ import type { RoofShape, TopClosure, Vec2 } from '../../src/core/types';
 import { deriveSheets } from '../../src/engine';
 import { NORTH, brief, codes, finding, project, rect, storey, windowAt } from './helpers';
 
+/** Faîtage CONFIRMÉ par l'expert le long du grand côté (est-ouest), sauf mention contraire ; `ridgeAngle: null` = supposé. */
 function top(patch: Partial<TopClosure>): TopClosure {
-  return { kind: 'pitched-roof', pitchDeg: 30, shape: 'gable', ridgeAngle: null, kneeWallHeight: 0.5, constructionId: null, from: 'user', ...patch };
+  return { kind: 'pitched-roof', pitchDeg: 30, shape: 'gable', ridgeAngle: 0, kneeWallHeight: 0.5, constructionId: null, from: 'user', ...patch };
 }
 
-/** Rez-de-chaussée de 2,90 m + combles chauffés sous toiture ; faîtage le long du grand côté (est-ouest) par défaut. */
+/** Rez-de-chaussée de 2,90 m + combles chauffés sous toiture ; faîtage le long du grand côté (est-ouest). */
 function atticHouse(patch: Partial<TopClosure>, outline: Vec2[] = rect(12, 10)) {
   const atticOutline = outline.map((p) => ({ ...p }));
   return project(
@@ -164,7 +165,7 @@ describe('toiture à croupes (hip), 30°, jambette 0,50 m', () => {
     // Total théorique 96 / cos 30° = 110,85 m²
     expect(finding(d, 'roof.estimated')).toEqual({
       code: 'roof.estimated',
-      severity: 'info',
+      severity: 'warn',
       params: { storey: 'Combles', storeyId: 'combles', area: '110,85' },
     });
     expect(codes(sheets)).not.toContain('roof.estimated');
@@ -192,8 +193,14 @@ describe('toiture monopente (mono), 10°, murs de 2,40 m côté bas', () => {
     const attic = sheets.envelope.filter((r) => r.storeyId === 'combles');
     const from = Object.fromEntries(attic.map((r) => [`${r.kind} ${r.orientation}`, r.from]));
     // Murs le long du faîtage : l'un est en réalité à 2,40 m, l'autre à 4,16 m → moyenne = estimation
-    expect(from).toEqual({ 'wall N': 'estimate', 'wall S': 'estimate', 'wall E': 'plan', 'wall W': 'plan', 'roof S': 'estimate' });
-    expect(finding(sheets, 'roof.monoDirection')).toEqual({ code: 'roof.monoDirection', severity: 'warn', params: { orientation: 'Sud' } });
+    // Le pan lui-même est exact dès que le sens de la pente est confirmé (surface au sol / cos pente).
+    expect(from).toEqual({ 'wall N': 'estimate', 'wall S': 'estimate', 'wall E': 'plan', 'wall W': 'plan', 'roof S': 'plan' });
+    // Sens de la pente confirmé (faîtage dirigé à 0°) : plus de constat sur le sens, mais les murs d'égout restent une moyenne.
+    expect(finding(sheets, 'roof.monoDirection')).toBeUndefined();
+    const assumed = rowsOf('mono', { pitchDeg: 10, kneeWallHeight: 2.4, ridgeAngle: null });
+    expect(finding(assumed, 'roof.monoDirection')).toEqual({ code: 'roof.monoDirection', severity: 'warn', params: { orientation: 'Sud' } });
+    // Sens seulement supposé : tout ce qui dépend du toit devient une estimation.
+    expect(new Set(assumed.envelope.filter((r) => r.storeyId === 'combles').map((r) => r.from))).toEqual(new Set(['estimate']));
     // Tourner le faîtage de 180° inverse le sens supposé de la pente
     expect(rowsOf('mono', { pitchDeg: 10, kneeWallHeight: 2.4, ridgeAngle: 180 }).envelope.filter((r) => r.kind === 'roof').map(brief)).toEqual([
       'roof N 1 × 12.00 × 10.15',
@@ -255,5 +262,53 @@ describe('toiture plate et plancher haut sous grenier non chauffé', () => {
     // L'expert repasse à « grenier non chauffé » : le type de toiture resté sélectionné ne convient plus à un plancher haut
     p.model.top = top({ kind: 'attic-ceiling', constructionId: 'toit-vert' });
     expect(deriveSheets(p, 'fr').envelope.find((r) => r.kind === 'ceiling')!.constructionId).toBe('ceiling-attic');
+  });
+});
+
+describe('sens du faîtage', () => {
+  it('tant que l’expert ne l’a pas fixé : proposé, signalé, et tout ce qui en dépend est une estimation', () => {
+    const assumed = rowsOf('gable', { ridgeAngle: null });
+    // Proposition = le long de la grande dimension : mêmes lignes que le faîtage confirmé à 0°.
+    expect(assumed.envelope.map(brief)).toEqual(rowsOf('gable').envelope.map(brief));
+    expect(finding(assumed, 'roof.ridgeAssumed')).toEqual({ code: 'roof.ridgeAssumed', severity: 'warn', params: { a: 'Nord', b: 'Sud' } });
+    const attic = assumed.envelope.filter((r) => r.storeyId === 'combles');
+    expect(new Set(attic.map((r) => r.from))).toEqual(new Set(['estimate']));
+    expect(assumed.volumes[1]!.from).toBe('estimate');
+    expect(assumed.totals.veFrom).toBe('estimate');
+    // Confirmé : plus de constat, valeurs « lues sur le plan ».
+    const confirmed = rowsOf('gable');
+    expect(finding(confirmed, 'roof.ridgeAssumed')).toBeUndefined();
+    expect(confirmed.totals.veFrom).toBe('plan');
+  });
+
+  it('la proposition ne dépend pas de la façon dont le contour est découpé en arêtes', () => {
+    // Même rectangle 12 × 8 m, avec un sommet au milieu de chaque grand côté (façade coupée pour marquer un voisin).
+    const plain = rect(12, 8);
+    const split: Vec2[] = [
+      { x: 0, y: 0 },
+      { x: 6, y: 0 },
+      { x: 12, y: 0 },
+      { x: 12, y: 8 },
+      { x: 6, y: 8 },
+      { x: 0, y: 8 },
+    ];
+    const a = deriveSheets(atticHouse({ ridgeAngle: null, pitchDeg: 45, kneeWallHeight: 1 }, plain), 'fr');
+    const b = deriveSheets(atticHouse({ ridgeAngle: null, pitchDeg: 45, kneeWallHeight: 1 }, split), 'fr');
+    expect(b.totals.ve).toBeCloseTo(a.totals.ve, 6);
+    expect(b.totals.envelopeArea).toBeCloseTo(a.totals.envelopeArea, 6);
+    expect(b.envelope.filter((r) => r.kind === 'roof').map((r) => r.orientation)).toEqual(['N', 'S']);
+  });
+
+  it('maison en bande : le faîtage proposé est perpendiculaire aux mitoyens (les pignons sont les mitoyens)', () => {
+    // 6 m de façade sur rue (nord/sud), 10 m de profondeur, mitoyens à l'est et à l'ouest.
+    const outline = rect(6, 10);
+    const p = project(
+      [storey('combles', 'Combles', outline, { netArea: 40, boundaries: ['outside', 'heated', 'outside', 'heated'] })],
+      { top: top({ ridgeAngle: null, pitchDeg: 45, kneeWallHeight: 1 }) },
+    );
+    const d = deriveSheets(p, 'fr');
+    // Pans vers la rue et le jardin, murs de façade à la hauteur de la jambette.
+    expect(d.envelope.filter((r) => r.kind === 'roof').map((r) => r.orientation)).toEqual(['N', 'S']);
+    expect(d.envelope.filter((r) => r.kind === 'wall').map(brief)).toEqual(['wall N 1 × 6.00 × 1.00', 'wall S 1 × 6.00 × 1.00']);
   });
 });
