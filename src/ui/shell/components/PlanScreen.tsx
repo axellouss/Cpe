@@ -280,6 +280,15 @@ function EnvelopeNote({ storey, sheet }: { storey: Storey; sheet: PlanSheet | nu
   );
 }
 
+/**
+ * Explication d'une étape quand son état dit qu'il n'y a rien à faire : celle de l'étape ordinaire (« posez la
+ * règle », « lisez-la sur une coupe ») contredirait « rien à confirmer ».
+ */
+const WHY_BY_STATUS: Record<string, string> = {
+  'shell.plan.status.scale.model': 'shell.plan.step.scale.why.model',
+  'shell.plan.status.height.roof': 'shell.plan.step.height.why.roof',
+};
+
 function Checklist({ project, storey, steps, sheet }: { project: Project; storey: Storey; steps: PlanStepInfo[]; sheet: PlanSheet | null }) {
   const tr = useT();
   const store = useShellStore();
@@ -402,7 +411,7 @@ function Checklist({ project, storey, steps, sheet }: { project: Project; storey
         {active ? (
           <div className={`guide__detail is-${active.state}`} ref={detail} data-testid="plan-step-detail">
             <h3 className="guide__detail-title">{tr(`shell.plan.step.${active.key}`)}</h3>
-            <p className="guide__why">{tr(active.status.key === 'shell.plan.status.scale.model' ? 'shell.plan.step.scale.why.model' : `shell.plan.step.${active.key}.why`)}</p>
+            <p className="guide__why">{tr(WHY_BY_STATUS[active.status.key] ?? `shell.plan.step.${active.key}.why`)}</p>
             <p className="guide__status">{statusText(active, tr)}</p>
             {active.key === 'height' && !grossHeightUnused(project, storey) ? <HeightPicker storey={storey} step={active} /> : null}
             {active.key === 'outline' || active.key === 'rooms' ? <EnvelopeNote storey={storey} sheet={sheet} /> : null}

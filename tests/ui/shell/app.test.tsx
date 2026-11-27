@@ -348,12 +348,21 @@ describe('lecture', () => {
     expect(all('stack-row').map((row) => row.querySelector('input')?.value ?? '')).toContain('Erdgeschoss');
     expect(q('read-notes-lang').textContent).toContain('auf Französisch');
     expect(q('doc-card').querySelector('.doc__warnings')?.getAttribute('lang')).toBe('fr');
+    // L'expert renomme un étage proposé avant de relire : son nom doit survivre à la relecture.
+    const upperSheet = m.store.getState().proposal!.sheets.find((s) => s.name === 'Obergeschoss')!;
+    await act(async () => {
+      const proposal = m.store.getState().proposal!;
+      m.store.getState().setProposal({ ...proposal, sheets: proposal.sheets.map((s) => (s.sheetId === upperSheet.sheetId ? { ...s, name: 'Grenier aménagé' } : s)) });
+    });
     // Un geste relit le fichier dans la langue actuelle : il REMPLACE le document (pas de doublon), l'avis disparaît.
     await click('reread-doc');
     expect(all('doc-card')).toHaveLength(1);
     expect(all('stack-row')).toHaveLength(2);
     expect(has('read-notes-lang')).toBe(false);
     expect(m.store.getState().documents[0]!.readLang).toBe('de');
+    // Le nom saisi est gardé, le nom laissé par défaut reste dans la langue actuelle, et un message dit que c'est fait.
+    expect(m.store.getState().proposal!.sheets.map((s) => s.name).sort()).toEqual(['Erdgeschoss', 'Grenier aménagé']);
+    expect(q('toast').textContent).toContain('neu eingelesen');
     await click('lang-fr');
     expect(has('read-notes-lang')).toBe(true);
     await click('reread-doc');

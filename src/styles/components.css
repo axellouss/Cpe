@@ -555,6 +555,10 @@ ul.notice {
 :lang(de) .choice__title,
 :lang(de) .choice__sub {
   hyphens: auto;
+  /* Seuls les longs composés se coupent : « be-heizte » ne gagnait rien à l'être. */
+  hyphenate-limit-chars: 14 5 5;
+  -webkit-hyphenate-limit-before: 5;
+  -webkit-hyphenate-limit-after: 5;
 }
 
 .choice__icon {

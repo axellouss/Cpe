@@ -206,7 +206,8 @@ function pickRoomArea(
   const s = stated !== undefined && stated > 0 ? stated : undefined;
   const m = measured !== undefined && measured > 0 ? measured : undefined;
   if (s !== undefined && m !== undefined && Math.abs(s - m) / m > ROOM_AREA_MISMATCH) {
-    return { value: round(m, 2), note: `${round(s, 2)} / ${round(m, 2)}`, measured: true };
+    // Virgule décimale, en français comme en allemand : la remarque est reprise telle quelle dans le relevé.
+    return { value: round(m, 2), note: `${round(s, 2).toFixed(2).replace('.', ',')} / ${round(m, 2).toFixed(2).replace('.', ',')}`, measured: true };
   }
   return { value: s ?? m ?? 0, measured: s === undefined && m !== undefined };
 }

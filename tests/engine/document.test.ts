@@ -387,7 +387,7 @@ describe('modelFromDocument : un document → premier jet de bâtiment', () => {
     ];
     const rooms = createStorey(s, 'Combles', createEmptyProject('fr').model).rooms;
     expect(rooms.map((r) => r.area)).toEqual([
-      { value: 94.05, from: 'plan', note: '74.51 / 94.05' },
+      { value: 94.05, from: 'plan', note: '74,51 / 94,05' },
       { value: 21.41, from: 'plan' },
       { value: 12.984, from: 'plan' },
       { value: 8, from: 'plan' },

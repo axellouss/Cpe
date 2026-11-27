@@ -42,6 +42,8 @@ export function sniffKind(fileName: string, head: Uint8Array): ReadableKind | Cl
 
 export interface FileLike {
   name: string;
+  /** Taille en octets, quand elle est connue (un `File` du navigateur la donne). */
+  size?: number;
   arrayBuffer(): Promise<ArrayBuffer>;
 }
 
