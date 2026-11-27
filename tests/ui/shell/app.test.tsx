@@ -250,18 +250,29 @@ describe('accueil', () => {
     expect(q('discard-confirm').getAttribute('role')).toBe('alert');
     expect(document.activeElement).toBe(q('discard-cancel'));
 
-    // « Garder » : retour à la proposition de reprise, projet intact.
+    // « Garder » : retour à la proposition de reprise, projet intact, focus rendu au bouton « Effacer ».
     await click('discard-cancel');
     expect(has('discard-confirm')).toBe(false);
     expect(has('resume-saved')).toBe(true);
     expect(m.storage.getItem(STORAGE_KEYS.project)).not.toBeNull();
+    expect(document.activeElement).toBe(q('discard-saved'));
 
-    // « Oui, effacer » : le projet disparaît du poste, et un message le dit.
+    // Échap pendant la confirmation vaut « Garder ».
+    await click('discard-saved');
+    await act(async () => {
+      q('discard-cancel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(has('discard-confirm')).toBe(false);
+    expect(m.storage.getItem(STORAGE_KEYS.project)).not.toBeNull();
+    expect(document.activeElement).toBe(q('discard-saved'));
+
+    // « Oui, effacer » : le projet disparaît du poste, un message le dit, et le focus va au choix de fichiers.
     await click('discard-saved');
     await click('discard-yes');
     expect(m.storage.getItem(STORAGE_KEYS.project)).toBeNull();
     expect(has('resume-saved')).toBe(false);
     expect(q('toast').textContent).toContain('Projet effacé');
+    expect(document.activeElement).toBe(q('plan-input'));
   });
 
   it('fichier Archicad déposé avec un plan lisible : le dialogue dit que l’autre a été lu', async () => {

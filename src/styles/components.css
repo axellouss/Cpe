@@ -536,12 +536,11 @@ ul.notice {
   min-width: 0;
 }
 
-/* Les composés allemands (« Wärmeschutzverglasung ») doivent se couper dans la carte, pas en sortir. */
+/* Un mot trop long pour la carte se coupe au lieu d'en sortir. */
 .choice__title {
   font-weight: 650;
   line-height: 1.25;
   overflow-wrap: anywhere;
-  hyphens: auto;
 }
 
 .choice__sub {
@@ -549,6 +548,12 @@ ul.notice {
   font-size: 0.88rem;
   line-height: 1.3;
   overflow-wrap: anywhere;
+}
+
+/* La césure automatique sert les composés allemands (« Wärmeschutzverglasung ») ; en français elle coupait
+   sans nécessité des mots courts (« plan-cher »). */
+:lang(de) .choice__title,
+:lang(de) .choice__sub {
   hyphens: auto;
 }
 

@@ -62,14 +62,27 @@ export function HomeScreen() {
   // « Effacer » le projet retrouvé demande une confirmation dans la page : c'est parfois la seule copie du travail.
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const keepButton = useRef<HTMLButtonElement>(null);
+  const discardButton = useRef<HTMLButtonElement>(null);
+  /** Où remettre le focus quand la confirmation se referme : sur « Effacer » (on garde), ou sur le choix de fichiers (effacé). */
+  const focusAfter = useRef<'discard' | 'pick' | null>(null);
+  const depth = useRef(0);
+  const planInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (confirmDiscard) keepButton.current?.focus();
+    if (confirmDiscard) {
+      keepButton.current?.focus();
+      return;
+    }
+    if (focusAfter.current === 'discard') discardButton.current?.focus();
+    if (focusAfter.current === 'pick') planInput.current?.focus();
+    focusAfter.current = null;
   }, [confirmDiscard]);
   useEffect(() => {
     if (!saved) setConfirmDiscard(false);
   }, [saved]);
-  const depth = useRef(0);
-  const planInput = useRef<HTMLInputElement>(null);
+  const keepProject = (): void => {
+    focusAfter.current = 'discard';
+    setConfirmDiscard(false);
+  };
   const projectInput = useRef<HTMLInputElement>(null);
 
   const onPick = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -94,7 +107,18 @@ export function HomeScreen() {
       </div>
 
       {saved ? (
-        <div className="notice notice--info home__saved" role="region" aria-label={tr('shell.home.saved.title')}>
+        <div
+          className="notice notice--info home__saved"
+          role="region"
+          aria-label={tr('shell.home.saved.title')}
+          // Échap pendant la confirmation : on garde le projet.
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && confirmDiscard) {
+              e.stopPropagation();
+              keepProject();
+            }
+          }}
+        >
           <Icon name="folder" />
           {confirmDiscard ? (
             <>
@@ -103,13 +127,14 @@ export function HomeScreen() {
                 <span>{tr('shell.home.saved.discard.warn')}</span>
               </div>
               <div className="notice__actions">
-                <button type="button" className="btn btn--primary" onClick={() => setConfirmDiscard(false)} ref={keepButton} data-testid="discard-cancel">
+                <button type="button" className="btn btn--primary" onClick={keepProject} ref={keepButton} data-testid="discard-cancel">
                   {tr('shell.home.saved.discard.keep')}
                 </button>
                 <button
                   type="button"
                   className="btn btn--danger"
                   onClick={() => {
+                    focusAfter.current = 'pick';
                     store.getState().discardSaved();
                     store.getState().showToast(tr('shell.home.saved.discarded'), 'info');
                   }}
@@ -129,7 +154,7 @@ export function HomeScreen() {
                 <button type="button" className="btn btn--primary" onClick={() => store.getState().resumeSaved()} data-testid="resume-saved">
                   {tr('shell.home.saved.resume')}
                 </button>
-                <button type="button" className="btn btn--ghost" onClick={() => setConfirmDiscard(true)} data-testid="discard-saved">
+                <button type="button" className="btn btn--ghost" onClick={() => setConfirmDiscard(true)} ref={discardButton} data-testid="discard-saved">
                   {tr('shell.home.saved.discard')}
                 </button>
               </div>

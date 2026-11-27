@@ -207,7 +207,8 @@ describe('écran « Résultat » dans une page hôte', () => {
     });
     const m = await mountResult();
     await press('download-csv');
-    expect(m.store.getState().toast?.text).toContain('Fichier préparé');
+    // L'hôte a enregistré : on ne renvoie pas vers « vos téléchargements ».
+    expect(m.store.getState().toast?.text).toBe('Fichier enregistré.');
     await press('download-json');
     await press('download-report');
     expect(m.store.getState().toast?.text).toContain('Dossier enregistré'); // et non « fenêtre bloquée » : rien n'a été tenté
@@ -224,7 +225,9 @@ describe('écran « Résultat » dans une page hôte', () => {
     expect(copied[0]).toContain('LuxEeB');
     expect(m.store.getState().toast?.text).toContain('presse-papiers');
     await press('download-report');
-    expect(m.store.getState().toast?.text).toContain('refusé');
+    // Ce n'est pas « le navigateur » qui refuse : le message nomme la page et donne une issue.
+    expect(m.store.getState().toast?.text).toContain('Cette page ne permet pas d’enregistrer le dossier');
+    expect(m.store.getState().toast?.text).not.toContain('navigateur');
     expect(opened).toEqual([]);
     expect(anchorClicks).toEqual([]);
   });

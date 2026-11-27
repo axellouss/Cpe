@@ -403,6 +403,13 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       });
     };
 
+    /** Noms par défaut (niveaux reconnus, types de parois) d'un projet venu d'ailleurs, mis dans la langue actuelle. */
+    const inCurrentLang = (workspace: Workspace): Workspace => {
+      const lang = get().lang;
+      const project = relocalizeDefaults(workspace.project, lang === 'fr' ? 'de' : 'fr', lang);
+      return project === workspace.project ? workspace : { ...workspace, project };
+    };
+
     const replaceWorkspace = (workspace: Workspace, label: string): void => {
       apply(() => workspace, { label });
       set((s) => ({ history: sealHistory(s.history) }));
@@ -615,6 +622,8 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           toast(projectFileErrorMessage(error, get().lang), 'warn');
           return false;
         }
+        // Un projet enregistré dans l'autre langue prend les noms par défaut de la langue actuelle.
+        opened = inCurrentLang(opened);
         const project = opened.project;
         // Les coches « saisi dans LuxEeB-Tool » viennent du fichier ouvert, avec ses autres repères.
         replaceWorkspace(opened, 'shell.undo.openProject');
@@ -636,7 +645,10 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         lastSaved = workspace;
         // Lue AVANT de changer d'écran : l'abonnement qui retient la position réécrirait la clé.
         const position = loadPosition(deps.storage);
-        set({ history: createHistory(workspace), saved: null, proposal: null, saveState: 'saved' });
+        // Projet enregistré dans l'autre langue : ses noms par défaut suivent la langue actuelle.
+        const current = inCurrentLang(workspace);
+        set({ history: createHistory(current), saved: null, proposal: null, saveState: 'saved' });
+        if (current !== workspace) scheduleSave(current);
         const storeys = workspace.project.model.storeys;
         if (storeys.length === 0) {
           set({ step: 'questions', question: position?.step === 'questions' ? position.question : FIRST_QUESTION, questionPart: null });

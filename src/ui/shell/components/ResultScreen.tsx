@@ -455,17 +455,20 @@ function Downloads({ sheets, project }: { sheets: LuxeebSheets; project: Project
    */
   const save = async (kind: ExportFileKind, build: () => string, copyFallback: boolean, savedKey: string, savedTone: 'ok' | 'info'): Promise<void> => {
     try {
-      const outcome = await saveText(exportFileName(project, kind), EXPORT_MIME[kind], build(), copyFallback);
+      const outcome = await saveText(exportFileName(project, kind, lang), EXPORT_MIME[kind], build(), copyFallback);
       if (outcome === 'saved') toast(tr(savedKey), savedTone);
       else if (outcome === 'copied') toast(tr('shell.result.download.copied'), 'info');
-      else if (outcome === 'failed') toast(tr('shell.result.download.failed'), 'warn');
+      // Dans une page hôte, ce n'est pas « le navigateur » qui refuse : on le dit, avec une issue.
+      else if (outcome === 'failed') toast(tr(isHosted() ? (kind === 'report' ? 'shell.result.report.unavailable' : 'shell.result.download.unavailable') : 'shell.result.download.failed'), 'warn');
     } catch (error) {
       toast(projectFileErrorMessage(error, lang), 'warn');
     }
   };
 
-  const csv = (): void => void save('csv', () => sheetsToCsv(sheets, project, lang), true, 'shell.result.download.done', 'ok');
-  const json = (): void => void save('project', () => serializeWorkspace({ project, marks }), true, 'shell.result.download.done', 'ok');
+  // Dans une page hôte, c'est elle qui enregistre : « voyez vos téléchargements » ne serait pas juste.
+  const doneKey = (): string => (isHosted() ? 'shell.result.download.saved' : 'shell.result.download.done');
+  const csv = (): void => void save('csv', () => sheetsToCsv(sheets, project, lang), true, doneKey(), 'ok');
+  const json = (): void => void save('project', () => serializeWorkspace({ project, marks }), true, doneKey(), 'ok');
   const report = (): void => {
     try {
       const html = buildReportHtml(sheets, project, lang, { date: new Date(), sources: documents.map((d) => d.doc.fileName) });

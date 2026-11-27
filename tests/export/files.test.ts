@@ -32,6 +32,17 @@ describe('exportFileName', () => {
     }
   });
 
+  it('nomme les fichiers dans la langue de l’interface : allemand sans accent ni « ß »', () => {
+    const project = makeProject();
+    expect(exportFileName(project, 'project', 'de')).toBe('plan2cpe-maison-schmit.json');
+    expect(exportFileName(project, 'csv', 'de')).toBe('plan2cpe-maison-schmit-aufmass.csv');
+    expect(exportFileName(project, 'report', 'de')).toBe('plan2cpe-maison-schmit-akte.html');
+    project.answers.projectName = '';
+    expect(exportFileName(project, 'csv', 'de')).toBe('plan2cpe-projekt-aufmass.csv');
+    expect(exportFileName(project, 'csv', 'fr')).toBe('plan2cpe-projet-releve.csv');
+    for (const lang of ['fr', 'de'] as const) for (const kind of ['project', 'csv', 'report'] as const) expect(exportFileName(project, kind, lang)).toMatch(/^[a-z0-9.-]+$/);
+  });
+
   it('donne le type MIME de chaque fichier', () => {
     expect(EXPORT_MIME).toEqual({ project: 'application/json', csv: 'text/csv;charset=utf-8', report: 'text/html;charset=utf-8' });
   });
