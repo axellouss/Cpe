@@ -1192,6 +1192,12 @@ function hairlineViews(page: RawPage, rooms: readonly DetectedRoom[], den: numbe
     const areaM2 = (b.maxX - b.minX) * (b.maxY - b.minY) * mpp * mpp;
     return { ring: rings[i]!, bbox: b, areaM2, kind, title, titleNearby: title !== null, storey, texts: textIdx, segs: owned[i]!.segs, unsupportedM: 0 };
   });
+  // Une région qui en enveloppe une autre (cadre d'un tableau autour d'un plan, légende englobante) n'est pas un
+  // second plan : on garde la région intérieure.
+  const wraps = (a: BBox, b: BBox): boolean => a.minX <= b.minX && a.minY <= b.minY && a.maxX >= b.maxX && a.maxY >= b.maxY;
+  for (const v of views) {
+    if (v.kind === 'plan' && views.some((w) => w !== v && w.kind === 'plan' && wraps(v.bbox, w.bbox))) v.kind = 'other';
+  }
   const inRegion = (r: DetectedRoom, v: View): boolean => !!r.at && rectDistance(r.at.x, r.at.y, v.bbox) === 0;
   // Étiquettes écrites dans une coupe, une façade ou un plan de situation : pas des pièces d'un étage.
   const notPlan = views.filter((v) => v.kind !== 'plan' && (v.kind === 'section' || v.title !== null));
@@ -1386,8 +1392,12 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
       kept = split.kept;
       if (split.dropped.length > 0) notes.push(msg(lang, 'pdf.note.rooms.section', { rooms: split.dropped.join(', ') }));
       // Plusieurs niveaux titrés sur la page (titres des régions, ou à défaut textes hors cartouche) : la liste les mêle.
-      const titled = split.views.filter((v) => v.storey !== null).map((v) => v.storey!.rank);
-      const levels = new Set([...titled, ...pageStoreys.filter((t) => !isTitleBlockText(t.s) && !LEVEL_RE.test(t.s)).map((t) => guessStorey(t.s)!.rank)]);
+      // Comptent : les titres des régions reconnues comme plans, et les titres de niveau écrits SEULS hors de tout
+      // dessin (deux plans reliés par un trait). Pas un mot dans une légende, une colonne de tableau ou une coupe.
+      const titled = split.views.filter((v) => v.kind === 'plan' && v.storey !== null).map((v) => v.storey!.rank);
+      const inDrawing = (t: RawText): boolean => split.views.some((v) => rectDistance(t.cx, t.cy, v.bbox) === 0);
+      const standalone = pageStoreys.filter((t) => !isTitleBlockText(t.s) && !LEVEL_RE.test(t.s) && t.s.trim().split(/\s+/).length <= 3 && !inDrawing(t));
+      const levels = new Set([...titled, ...standalone.map((t) => guessStorey(t.s)!.rank)]);
       if (levels.size > 1 && kept.length > 0) {
         warnings.push(say('pdf.warn.views.wholePage'));
         notes.push(msg(lang, 'pdf.note.rooms.wholePage'));
