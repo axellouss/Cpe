@@ -26,6 +26,7 @@ export const PLAN_MESSAGES: Dictionary = {
     'plan.nav.up': 'Vers le haut',
     'plan.nav.down': 'Vers le bas',
     'plan.pan.hint': 'Glissez pour déplacer le plan, molette ou pincement pour zoomer, double-clic pour approcher.',
+    'plan.pan.hint.touch': 'Glissez pour déplacer le plan, pincez pour zoomer.',
 
     'plan.counter.grossArea': 'Surface brute',
     'plan.counter.perimeter': 'Périmètre',
@@ -197,6 +198,7 @@ export const PLAN_MESSAGES: Dictionary = {
     'plan.nav.up': 'Nach oben',
     'plan.nav.down': 'Nach unten',
     'plan.pan.hint': 'Ziehen verschiebt den Plan, Mausrad oder Zwei-Finger-Geste zoomt, Doppelklick holt heran.',
+    'plan.pan.hint.touch': 'Ziehen verschiebt den Plan, zwei Finger zoomen.',
 
     'plan.counter.grossArea': 'Bruttofläche',
     'plan.counter.perimeter': 'Umfang',

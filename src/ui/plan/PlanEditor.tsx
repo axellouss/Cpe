@@ -373,7 +373,15 @@ export function PlanEditor(props: PlanEditorProps) {
     const target = framed ? panBy(framed, 0, -coverLift.current) : null;
     if (target && !sameView(current, target, 0.5)) setViewNow(target, kind);
   };
-  useLayoutEffect(reframeNow, [hudKey, compact, size.width, size.height, hasView, staticInsets]);
+  const previousTool = useRef(tool);
+  useLayoutEffect(() => {
+    // Sur un écran étroit, chaque étape repart d'un plan cadré : un zoom fait à l'étape précédente laisserait
+    // les façades hors de l'écran, sous une interface qui n'est plus la même. Sur un grand écran, la vue choisie
+    // par l'utilisateur est gardée d'un outil à l'autre.
+    if (compact && previousTool.current !== tool && autoFit.current === null) autoFit.current = 'auto';
+    previousTool.current = tool;
+    reframeNow();
+  }, [hudKey, compact, size.width, size.height, hasView, staticInsets]);
 
   // Un outil vient de changer la TAILLE du contour par une saisie (longueur exacte d'un côté), pas par un geste :
   // il le signale (`reframe`), et la vue — si elle est encore automatique — se recadre dès que le nouveau contour

@@ -20,7 +20,8 @@ export function PanTool({ ctx }: { ctx: ToolContext }) {
         <OpeningMarks outline={storey.outline} openings={storey.openings} metresPerUnit={storey.metresPerUnit.value} view={view} />
       </Overlay>
       <TopBar>
-        <Hint>{tr('plan.pan.hint')}</Hint>
+        {/* Au doigt : ni molette ni double-clic à proposer. */}
+        <Hint>{tr(ctx.coarse || ctx.compact ? 'plan.pan.hint.touch' : 'plan.pan.hint')}</Hint>
       </TopBar>
       <BottomBar>
         <CounterRow ctx={ctx}>

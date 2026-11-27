@@ -188,7 +188,7 @@ describe('éditeur sur téléphone : le contour garde l’écran', () => {
     expect(box.bottom).toBeLessThan(LAYOUT['p2c-plan__compass']!.top);
   });
 
-  it('la vue suit le changement d’outil tant qu’on ne l’a pas bougée ; après un zoom à la main, elle ne bouge plus', async () => {
+  it('la vue suit le changement d’outil ; un zoom à la main vaut pour l’étape en cours, la suivante repart cadrée', async () => {
     await show('outline');
     const outline = outlineBox();
     await show('north');
@@ -202,9 +202,21 @@ describe('éditeur sur téléphone : le contour garde l’écran', () => {
     });
     const zoomed = outlineBox();
     expect(zoomed.right - zoomed.left).toBeGreaterThan((north.right - north.left) * 1.3);
+    // Sur un téléphone, l'étape suivante repart d'un plan cadré : sinon les façades resteraient hors de l'écran,
+    // sous une interface qui n'est plus la même (constat de la contre-vérification).
     await show('boundary');
-    expect(outlineBox()).toEqual(zoomed);
-    // « Ajuster » rend la main au cadrage automatique.
+    const next = outlineBox();
+    expect(next).not.toEqual(zoomed);
+    expect((next.right - next.left) / PHONE.width).toBeGreaterThanOrEqual(0.55);
+    expect(next.left).toBeGreaterThanOrEqual(0);
+    expect(next.right).toBeLessThanOrEqual(PHONE.width);
+    for (const b of hudBoxes()) expect(overlaps(next, b)).toBe(false);
+    // Dans l'étape, le zoom fait à la main est gardé ; « Ajuster » rend la main au cadrage automatique.
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[data-testid="plan-zoom-in"]')!.click();
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
+    expect(outlineBox().right - outlineBox().left).toBeGreaterThan((next.right - next.left) * 1.3);
     await act(async () => {
       document.querySelector<HTMLButtonElement>('[data-testid="plan-fit"]')!.click();
       await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
