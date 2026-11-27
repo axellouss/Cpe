@@ -119,7 +119,7 @@ export const EXPORT_MESSAGES: Dictionary = {
     'export.tr.lengthGross': 'longueur brute',
     'export.tr.widthGross': 'largeur ou hauteur brute',
     'export.tr.orientation': "orientation (valeur de l'outil)",
-    'export.tr.deduct': 'déduction : « x » à saisir',
+    'export.tr.deduct': 'déduction\u00a0: «\u00a0x\u00a0» à saisir',
     'export.tr.areaExpected': "surface attendue dans l'outil",
     'export.tr.roomName': 'désignation de la zone',
     'export.tr.width': 'largeur',

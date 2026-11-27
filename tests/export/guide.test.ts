@@ -348,7 +348,7 @@ describe('buildGuide — enveloppe', () => {
       'Länge (Rohbaumaß) [m] — longueur brute',
       'Breite (Rohbaumaß) [m] — largeur ou hauteur brute',
       "Orientierung — orientation (valeur de l'outil)",
-      'Abzug — déduction : « x » à saisir',
+      'Abzug — déduction\u00a0: «\u00a0x\u00a0» à saisir',
       "A [m²] — surface attendue dans l'outil",
       'Repère du relevé',
       'Orientation (azimut)',
