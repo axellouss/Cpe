@@ -129,6 +129,8 @@ export interface SheetProposal {
   include: boolean;
   /** Nom de l'étage proposé (modifiable). */
   name: string;
+  /** Vrai dès que l'expert a saisi ce nom lui-même : il ne suit alors plus la langue ni une relecture du fichier. */
+  renamed?: boolean;
   /** Nom de l'étage existant qui utilise déjà la feuille (rôle 'used'). */
   usedBy?: string;
   /** Altitude du niveau si le fichier la donne (IFC) : sert à ranger une feuille cochée après coup. */
@@ -283,7 +285,7 @@ export function relocalizeProposal(proposal: Proposal, from: Lang, to: Lang): Pr
   const taken = new Set(proposal.sheets.map((s) => s.name));
   const sheets = proposal.sheets.map((s) => {
     const guess = guessStorey(s.name);
-    if (!guess || guess[from] !== s.name || guess[to] === s.name || taken.has(guess[to])) return s;
+    if (s.renamed || !guess || guess[from] !== s.name || guess[to] === s.name || taken.has(guess[to])) return s;
     taken.delete(s.name);
     taken.add(guess[to]);
     changed = true;
@@ -293,7 +295,35 @@ export function relocalizeProposal(proposal: Proposal, from: Lang, to: Lang): Pr
 }
 
 export function renameProposalSheet(proposal: Proposal, sheetId: string, name: string): Proposal {
-  return { ...proposal, sheets: proposal.sheets.map((s) => (s.sheetId === sheetId ? { ...s, name } : s)) };
+  return { ...proposal, sheets: proposal.sheets.map((s) => (s.sheetId === sheetId ? { ...s, name, renamed: true } : s)) };
+}
+
+/**
+ * Après la relecture d'un fichier : la nouvelle proposition (`next`) reprend ce que l'expert avait réglé sur
+ * l'ancienne (`previous`) — feuilles cochées, noms saisis par lui, ordre des étages. Un nom laissé tel que proposé
+ * prend, lui, le nouveau nom par défaut ; s'il est déjà pris par un nom saisi, il est distingué (« … (2) »).
+ */
+export function carryProposalEdits(previous: Proposal, next: Proposal): Proposal {
+  const before = new Map(previous.sheets.map((s, index) => [s.sheetId, { sheet: s, index }]));
+  const merged = next.sheets.map((s) => {
+    const old = before.get(s.sheetId)?.sheet;
+    if (!old || old.role !== s.role) return s;
+    return old.renamed ? { ...s, include: old.include, name: old.name, renamed: true } : { ...s, include: old.include };
+  });
+  // Ordre réglé par l'expert : les feuilles déjà connues gardent leur rang relatif, les nouvelles suivent.
+  const rank = (s: SheetProposal, fallback: number): number => before.get(s.sheetId)?.index ?? previous.sheets.length + fallback;
+  const ordered = merged.map((s, i) => ({ s, key: rank(s, i) })).sort((a, b) => a.key - b.key).map((x) => x.s);
+  // Jamais deux étages du même nom : le nom saisi par l'expert reste, le nom par défaut est distingué.
+  const typed = new Set(ordered.filter((s) => s.renamed).map((s) => s.name));
+  const taken = new Set<string>(typed);
+  const sheets = ordered.map((s) => {
+    if (s.renamed) return s;
+    let name = s.name;
+    for (let n = 2; taken.has(name); n++) name = `${s.name} (${n})`;
+    taken.add(name);
+    return name === s.name ? s : { ...s, name };
+  });
+  return { ...next, sheets };
 }
 
 /** Monte (+1) ou descend (−1) une feuille cochée parmi les feuilles cochées. */

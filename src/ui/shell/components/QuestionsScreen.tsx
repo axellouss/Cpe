@@ -24,6 +24,7 @@ import { ORIENTATIONS } from '../../../core/types';
 import { roofRidgeChoices } from '../../../engine';
 import { prefersReducedMotion } from '../browser';
 import { derive } from '../compute';
+import { envelopeProvenance } from '../../../export';
 import { fixed } from '../numbers';
 import {
   CAN_SKIP,
@@ -300,7 +301,9 @@ function ClosurePart({ project, tr, actions }: PartProps) {
   const { top, bottom } = project.model;
   const topChosen = top.from === 'user';
   const bottomChosen = bottom.from === 'user';
-  const totals = derive(project, lang).sheets?.totals ?? null;
+  const derivedSheets = derive(project, lang).sheets;
+  const totals = derivedSheets?.totals ?? null;
+  const envelopeFrom = derivedSheets ? envelopeProvenance(derivedSheets) : null;
   // Toit incliné : choisi (ou proposé par la maquette) mais pas encore confirmé dans ses détails.
   const pitchedPending = top.kind === 'pitched-roof' && top.from === 'estimate';
   const showPitched = top.kind === 'pitched-roof' && (topChosen || pitchedPending);
@@ -429,13 +432,13 @@ function ClosurePart({ project, tr, actions }: PartProps) {
       {totals && project.model.storeys.length > 0 ? (
         <p className="q-live" aria-live="polite" data-testid="q-live">
           <span>
-            {tr('shell.total.envelope')} <strong><AnimatedNumber value={totals.envelopeArea} /> m²</strong>
+            {tr('shell.total.envelope')} <strong><AnimatedNumber value={totals.envelopeArea} /> m²</strong> {envelopeFrom ? <ProvenanceTag from={envelopeFrom.envelope} /> : null}
           </span>
           <span>
             {tr('shell.total.ve')} <strong><AnimatedNumber value={totals.ve} /> m³</strong> <ProvenanceTag from={totals.veFrom} />
           </span>
           <span>
-            {tr('shell.total.aOverVe')} <strong><AnimatedNumber value={totals.aOverVe} digits={2} /></strong>
+            {tr('shell.total.aOverVe')} <strong><AnimatedNumber value={totals.aOverVe} digits={2} /></strong> {envelopeFrom ? <ProvenanceTag from={envelopeFrom.aOverVe} /> : null}
           </span>
         </p>
       ) : null}

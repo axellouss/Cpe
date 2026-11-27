@@ -12,6 +12,7 @@ import type { PlanDocument } from '../../../src/core/types';
 import { GUIDE_SECTION_KEYS } from '../../../src/export';
 import { App } from '../../../src/ui/shell';
 import { STORAGE_KEYS } from '../../../src/ui/shell/autosave';
+import { renameProposalSheet } from '../../../src/ui/shell/documents';
 import { currentStorey, selectProject } from '../../../src/ui/shell/store';
 import { houseDoc, testStore } from './helpers';
 import type { TestStore } from './helpers';
@@ -366,8 +367,7 @@ describe('lecture', () => {
     // L'expert renomme un étage proposé avant de relire : son nom doit survivre à la relecture.
     const upperSheet = m.store.getState().proposal!.sheets.find((s) => s.name === 'Obergeschoss')!;
     await act(async () => {
-      const proposal = m.store.getState().proposal!;
-      m.store.getState().setProposal({ ...proposal, sheets: proposal.sheets.map((s) => (s.sheetId === upperSheet.sheetId ? { ...s, name: 'Grenier aménagé' } : s)) });
+      m.store.getState().setProposal(renameProposalSheet(m.store.getState().proposal!, upperSheet.sheetId, 'Grenier aménagé'));
     });
     // Un geste relit le fichier dans la langue actuelle : il REMPLACE le document (pas de doublon), l'avis disparaît.
     await click('reread-doc');

@@ -540,11 +540,21 @@ function areasSection(sheets: LuxeebSheets, envelope: readonly EnvelopeRow[], la
 
 // ───────────────────────────── 6. Contrôle ─────────────────────────────
 
+/**
+ * Provenance des totaux de l'enveloppe : la plus faible des lignes qui les composent. Partagée par les valeurs de
+ * contrôle du guide et par tous les écrans qui affichent A, la surface des fenêtres ou A/Ve — pour qu'une enveloppe
+ * calculée sur des hauteurs par défaut ne passe nulle part pour un fait.
+ */
+export function envelopeProvenance(sheets: LuxeebSheets, rows: readonly EnvelopeRow[] = luxeebEnvelopeRows(sheets.envelope)): { envelope: Provenance; windows: Provenance; aOverVe: Provenance } {
+  const envelope = weakestProvenance(rows.map((r) => r.from));
+  const windows = weakestProvenance(rows.filter((r) => r.kind === 'window').map((r) => r.from));
+  return { envelope, windows, aOverVe: weakestProvenance([envelope, sheets.totals.veFrom]) };
+}
+
 function checkSection(sheets: LuxeebSheets, envelope: readonly EnvelopeRow[], lang: Lang): GuideSection {
   const V = LUXEEB_OVERVIEW;
   const totals = enteredTotals(sheets, envelope);
-  const envelopeFrom = weakestProvenance(envelope.map((r) => r.from));
-  const windowFrom = weakestProvenance(envelope.filter((r) => r.kind === 'window').map((r) => r.from));
+  const { envelope: envelopeFrom, windows: windowFrom, aOverVe: ratioFrom } = envelopeProvenance(sheets, envelope);
   const vnFrom = weakestProvenance(sheets.zones.map((z) => z.from));
   const ratio = totals.ve > 0 ? totals.gross / totals.ve : Number.NaN;
 
@@ -559,7 +569,7 @@ function checkSection(sheets: LuxeebSheets, envelope: readonly EnvelopeRow[], la
       numberItem('check.an', termLabel(lang, V.an, 'export.tr.an'), totals.an, 'm²', sheets.totals.anFrom),
       numberItem('check.vn', termLabel(lang, V.vn, 'export.tr.vn'), sheets.totals.vn, 'm³', vnFrom, t(lang, 'export.note.checkVn')),
       numberItem('check.windowArea', termLabel(lang, V.windowArea, 'export.tr.windowArea'), totals.windows, 'm²', windowFrom, t(lang, 'export.note.checkWindowArea')),
-      numberItem('check.aOverVe', termLabel(lang, V.aOverV, 'export.tr.aOverVe'), ratio, '1/m', weakestProvenance([envelopeFrom, sheets.totals.veFrom]), t(lang, 'export.note.checkAOverVe')),
+      numberItem('check.aOverVe', termLabel(lang, V.aOverV, 'export.tr.aOverVe'), ratio, '1/m', ratioFrom, t(lang, 'export.note.checkAOverVe')),
     ],
     tables: [],
   };

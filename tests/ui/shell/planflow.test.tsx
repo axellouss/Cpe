@@ -220,6 +220,26 @@ describe('jauges et indicateur d’étapes : ce que l’expert a réellement val
   });
 });
 
+describe('totaux du bâtiment : jamais un chiffre sans sa provenance', () => {
+  it('sur l’écran du plan comme dans la question : l’enveloppe A, les fenêtres et A/Ve sont étiquetés, « défaut » tant que les hauteurs le sont', async () => {
+    await openPlan(houseDoc());
+    const totals = q('totals');
+    const metrics = Array.from(totals.querySelectorAll<HTMLElement>('.metric'));
+    expect(metrics).toHaveLength(5);
+    for (const metric of metrics) expect(metric.querySelector('.tag'), metric.textContent ?? '').not.toBeNull();
+    // An (pièces lues), Ve, A, fenêtres, A/Ve : avec des hauteurs d'étage par défaut, Ve, A et A/Ve le disent.
+    const tag = (i: number): string => metrics[i]!.querySelector('.tag')!.className;
+    expect(tag(1)).toContain('tag--default');
+    expect(tag(2)).toContain('tag--default');
+    expect(tag(4)).toContain('tag--default');
+
+    await click('to-questions');
+    const live = q('q-live');
+    expect(live.querySelectorAll('.tag')).toHaveLength(3);
+    expect(Array.from(live.querySelectorAll('.tag')).every((el) => el.className.includes('tag--default'))).toBe(true);
+  });
+});
+
 describe('hauteur d’étage dans le guide', () => {
   it('se choisit d’une pastille ou se saisit ; la hauteur libre reste facultative dans le panneau', async () => {
     const m = await openPlan(houseDoc());

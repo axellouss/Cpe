@@ -6,6 +6,7 @@ import { createEmptyProject, createStorey } from '../../../src/engine';
 import {
   allSheets,
   applyProposal,
+  carryProposalEdits,
   collectObjectUrls,
   combineDocuments,
   defaultStoreyName,
@@ -24,6 +25,7 @@ import {
   toggleProposalSheet,
   toLoadedDocument,
 } from '../../../src/ui/shell/documents';
+import type { Proposal, SheetProposal } from '../../../src/ui/shell/documents';
 import '../../../src/ui/shell/messages';
 import { setBottom, setNorth } from '../../../src/ui/shell/modelOps';
 import { doc, houseDoc, rect, sheet } from './helpers';
@@ -233,6 +235,32 @@ describe('résumés affichés', () => {
       },
     });
     expect(summarizeSheet(s).roomArea).toBeCloseTo(94.05 + 6.2, 2);
+  });
+
+  it('après une relecture : coches, noms saisis et ordre sont gardés ; un nom laissé par défaut suit la nouvelle lecture', () => {
+    const entry = (sheetId: string, name: string, extra: Partial<SheetProposal> = {}): SheetProposal => ({ sheetId, fileName: 'plan.pdf', sheetName: name, role: 'storey', include: true, name, ...extra });
+    const proposal = (sheets: SheetProposal[]): Proposal => ({ mode: 'replace', sheets, north: null, storeysAligned: false });
+
+    // Lecture en français : « Page 1 » (nom inventé par le lecteur), « Rez-de-chaussée », « Étage ».
+    let before = proposal([entry('p1', 'Page 1'), entry('p2', 'Rez-de-chaussée'), entry('p3', 'Étage')]);
+    before = renameProposalSheet(before, 'p2', 'Obergeschoss'); // l'expert nomme lui-même le rez-de-chaussée
+    before = { ...before, sheets: [before.sheets[2]!, before.sheets[0]!, { ...before.sheets[1]!, include: false }] }; // ordre réglé, une feuille décochée
+    // Relecture en allemand : nouveaux noms par défaut, ordre du lecteur.
+    const after = proposal([entry('p1', 'Seite 1'), entry('p2', 'Erdgeschoss'), entry('p3', 'Obergeschoss')]);
+
+    const merged = carryProposalEdits(before, after);
+    // Ordre de l'expert gardé : p3, p1, p2.
+    expect(merged.sheets.map((s) => s.sheetId)).toEqual(['p3', 'p1', 'p2']);
+    const byId = Object.fromEntries(merged.sheets.map((s) => [s.sheetId, s]));
+    // « Page 1 » n'avait pas été saisi : il suit la nouvelle lecture.
+    expect(byId.p1!.name).toBe('Seite 1');
+    // Le nom saisi reste, la coche décochée aussi.
+    expect(byId.p2).toMatchObject({ name: 'Obergeschoss', renamed: true, include: false });
+    // Le nouveau nom par défaut de p3 est déjà pris par le nom saisi : il est distingué, jamais doublé.
+    expect(byId.p3!.name).toBe('Obergeschoss (2)');
+    expect(new Set(merged.sheets.map((s) => s.name)).size).toBe(3);
+    // Rien de réglé : la nouvelle proposition passe telle quelle.
+    expect(carryProposalEdits(proposal([entry('p1', 'Page 1')]), proposal([entry('p1', 'Seite 1')])).sheets[0]!.name).toBe('Seite 1');
   });
 
   it('garage accolé : annonce le contour chauffé proposé, et tait la consigne du lecteur déjà suivie', () => {

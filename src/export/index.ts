@@ -163,7 +163,7 @@ export function buildGuide(sheets: LuxeebSheets, project: Project, lang: Lang): 
 
 // ───────────────────────────── Compléments (hors contrat initial) ─────────────────────────────
 
-export { GUIDE_SECTION_KEYS, guideDisclaimer } from './guide';
+export { envelopeProvenance, GUIDE_SECTION_KEYS, guideDisclaimer } from './guide';
 export type { GuideSectionKey } from './guide';
 export { envelopeDeductLines, luxeebEnvelopeRows, PASTE_EOL } from './paste';
 export { buildReportHtml } from './report';

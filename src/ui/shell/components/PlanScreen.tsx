@@ -23,6 +23,7 @@ import {
 } from '../checklist';
 import type { PlanStepInfo, StepState } from '../checklist';
 import { derive, safeStoreyMetrics } from '../compute';
+import { envelopeProvenance } from '../../../export';
 import { allSheets, fileNameOfSheetId, findSheet } from '../documents';
 import { confirmStoreyHeight, excludeRoomFromEnvelope, restoreStoreyFootprint, setNetArea, setStoreyHeight } from '../modelOps';
 import type { HeightKind } from '../modelOps';
@@ -554,6 +555,8 @@ function SidePanel({ project, storey }: { project: Project; storey: Storey }) {
   const metrics = safeStoreyMetrics(storey);
   const derived = derive(project, lang);
   const totals = derived.sheets?.totals ?? null;
+  // Même provenance que les valeurs de contrôle du résultat : A n'est pas un fait tant que ses lignes ne le sont pas.
+  const envelopeFrom = derived.sheets ? envelopeProvenance(derived.sheets) : null;
   const findings = derived.sheets?.findings ?? [];
   const blocking = findings.filter((f) => f.severity === 'block').length;
   const warnings = findings.filter((f) => f.severity === 'warn').length;
@@ -641,9 +644,15 @@ function SidePanel({ project, storey }: { project: Project; storey: Storey }) {
             <Metric label={tr('shell.total.short.ve')} title={tr('shell.total.ve')} value={totals.ve} unit="m³">
               <ProvenanceTag from={totals.veFrom} />
             </Metric>
-            <Metric label={tr('shell.total.short.envelope')} title={tr('shell.total.envelope')} value={totals.envelopeArea} unit="m²" />
-            <Metric label={tr('shell.total.short.windows')} title={tr('shell.total.windows')} value={totals.windowArea} unit="m²" />
-            <Metric label={tr('shell.total.short.aOverVe')} title={tr('shell.total.aOverVe')} value={totals.aOverVe} unit="1/m" digits={2} />
+            <Metric label={tr('shell.total.short.envelope')} title={tr('shell.total.envelope')} value={totals.envelopeArea} unit="m²">
+              {envelopeFrom ? <ProvenanceTag from={envelopeFrom.envelope} /> : null}
+            </Metric>
+            <Metric label={tr('shell.total.short.windows')} title={tr('shell.total.windows')} value={totals.windowArea} unit="m²">
+              {envelopeFrom ? <ProvenanceTag from={envelopeFrom.windows} /> : null}
+            </Metric>
+            <Metric label={tr('shell.total.short.aOverVe')} title={tr('shell.total.aOverVe')} value={totals.aOverVe} unit="1/m" digits={2}>
+              {envelopeFrom ? <ProvenanceTag from={envelopeFrom.aOverVe} /> : null}
+            </Metric>
           </dl>
         ) : (
           <p className="muted">

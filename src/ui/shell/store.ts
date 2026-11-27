@@ -20,7 +20,6 @@ import type { FileLike } from '../../readers';
 import type { PlanTool } from '../plan';
 import { browserStorage, clearWorkspace, dropLegacyEntered, initialLang, loadPosition, loadWorkspace, parseWorkspace, saveLang, savePosition, saveWorkspace } from './autosave';
 import type { StorageLike, StoredWorkspace } from './autosave';
-import { guessStorey } from '../../semantics/labels';
 import { dropStoreyMarks, firstOpenStep, markPlanStep, nextOpenStep, sameScaleStoreyIds, stepOfTool, storeySteps } from './checklist';
 import {
   applyProposal,
@@ -29,6 +28,7 @@ import {
   documentSignature,
   findSheet,
   includedSheets,
+  carryProposalEdits,
   proposeStoreys,
   relocalizeProposal,
   toLoadedDocument,
@@ -722,25 +722,11 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         const file = sources.get(id);
         if (!file || get().busy) return;
         const before = get().proposal;
-        const readLang = get().documents.find((d) => d.id === id)?.readLang ?? null;
         // Même fichier, même empreinte : la lecture remplace le document, dans la langue actuelle.
         await get().ingestFiles([file]);
         const after = get().proposal;
-        if (before && after) {
-          // Ce que l'expert avait réglé sur cet écran est gardé : feuilles cochées, noms qu'il a saisis lui-même
-          // (un nom laissé tel que proposé, lui, suit la nouvelle langue).
-          const typed = (name: string): boolean => {
-            const guess = guessStorey(name);
-            return !guess || readLang === null || guess[readLang] !== name;
-          };
-          const kept = new Map(before.sheets.map((s) => [s.sheetId, s]));
-          const sheets = after.sheets.map((s) => {
-            const old = kept.get(s.sheetId);
-            if (!old || old.role !== s.role) return s;
-            return { ...s, include: old.include, name: typed(old.name) ? old.name : s.name };
-          });
-          set({ proposal: { ...after, sheets } });
-        }
+        // Ce que l'expert avait réglé sur cet écran est gardé : feuilles cochées, noms saisis, ordre des étages.
+        if (before && after) set({ proposal: carryProposalEdits(before, after) });
         if (get().documents.some((d) => d.id === id && d.readLang === get().lang)) toast(tr('shell.read.reread.done', { file: id }), 'ok');
       },
 
