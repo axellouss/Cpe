@@ -92,6 +92,16 @@ function SheetRow({ doc, sheet, proposal }: { doc: PlanDocument; sheet: PlanShee
           <dt>{tr('shell.read.outline')}</dt>
           <dd>
             <span className="facts__value">{summary.hasOutline ? tr('shell.read.outline.found', { points: d.outline?.length ?? 0 }) : tr('shell.read.outline.none')}</span>
+            {summary.leftOutside.length > 0 ? (
+              <span className="facts__note" data-testid="read-left-outside">
+                {tr('shell.read.outline.heated', { rooms: summary.leftOutside.join(', ') })}
+              </span>
+            ) : null}
+            {summary.keptInside.length > 0 ? (
+              <span className="facts__note" data-testid="read-kept-inside">
+                {tr('shell.read.outline.inside', { rooms: summary.keptInside.join(', ') })}
+              </span>
+            ) : null}
           </dd>
         </div>
         <div className="facts__row">

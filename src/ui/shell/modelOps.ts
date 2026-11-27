@@ -21,7 +21,14 @@ import type {
   TopClosure,
   WindowType,
 } from '../../core/types';
-import { createStorey, DEFAULT_CONSTRUCTION_IDS, DEFAULT_WINDOW_TYPE_ID, rescaleStorey } from '../../engine';
+import {
+  createStorey,
+  DEFAULT_CONSTRUCTION_IDS,
+  DEFAULT_WINDOW_TYPE_ID,
+  excludeRoomFromOutline,
+  rescaleStorey,
+  restoreFootprint,
+} from '../../engine';
 
 // ───────────────────────────── Outils ─────────────────────────────
 
@@ -239,6 +246,19 @@ export function updateRoom(
       return next;
     }),
   }));
+}
+
+/**
+ * Retire du contour chauffé un local non chauffé qui touche l'extérieur (garage, local froid…), avec ses murs
+ * extérieurs ; le mur mis à nu devient « contre un local non chauffé ». Sans effet si le retrait n'est pas sûr.
+ */
+export function excludeRoomFromEnvelope(project: Project, storeyId: string, roomId: string): Project {
+  return mapStorey(project, storeyId, (s) => excludeRoomFromOutline(s, roomId) ?? s);
+}
+
+/** Remet dans le contour toute l'emprise lue sur la feuille (annexes comprises). */
+export function restoreStoreyFootprint(project: Project, storeyId: string, sheet: PlanSheet | null): Project {
+  return mapStorey(project, storeyId, (s) => restoreFootprint(s, sheet) ?? s);
 }
 
 export function addRoom(project: Project, storeyId: string, name: string): Project {

@@ -83,7 +83,13 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
 
 // ───────────────────────────── Compléments (hors contrat initial) ─────────────────────────────
 
-export { rescaleStorey } from './storey';
+export { rescaleStorey, restoreFootprint, roomsOutsideOutline } from './storey';
 export { DEFAULT_CONSTRUCTION_IDS, DEFAULT_WINDOW_TYPE_ID } from './defaults';
 export { FINDING_CODES, findingText, type FindingCode } from './messages';
 export { weakest } from './provenance';
+export {
+  excludeRoomFromOutline,
+  proposeHeatedOutline,
+  unheatedRoomsInsideOutline,
+  type HeatedOutlineProposal,
+} from './heatedOutline';

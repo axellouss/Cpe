@@ -21,6 +21,7 @@ export const FINDING_CODES = [
   'an.grossLike',
   'an.low',
   'rooms.needReview',
+  'outline.containsUnheated',
   'north.default',
   'orientation.borderline',
   'windows.none',
@@ -68,6 +69,8 @@ export const ENGINE_MESSAGES: Dictionary = {
     'finding.an.low':
       "An = {an} m², soit seulement {ratio} % de la surface brute ({gross} m²). Vérifiez qu'aucune pièce chauffée ne manque.",
     'finding.rooms.needReview': '{count} pièce(s) à trancher : comptée(s) dans An ou non ? Touchez-les sur le plan.',
+    'finding.outline.containsUnheated':
+      "{storey} : {rooms} — non compté(s) dans An mais à l'intérieur du contour chauffé. Hors de l'enveloppe thermique (garage, local froid) ? Retirez-le du contour. Dans l'enveloppe ? Comptez-le dans An.",
     'finding.north.default':
       'Nord non confirmé : le haut du plan est supposé pointer vers l’azimut {angle}° (0 = nord). Tournez la boussole, les orientations des façades en dépendent.',
     'finding.orientation.borderline':
@@ -180,6 +183,8 @@ export const ENGINE_MESSAGES: Dictionary = {
     'finding.an.low':
       'An = {an} m², das sind nur {ratio} % der Bruttofläche ({gross} m²). Prüfen Sie, ob beheizte Räume fehlen.',
     'finding.rooms.needReview': '{count} Raum/Räume noch zu entscheiden: Teil von An oder nicht? Tippen Sie sie im Plan an.',
+    'finding.outline.containsUnheated':
+      '{storey}: {rooms} – nicht in An gezählt, liegt aber innerhalb des beheizten Umrisses. Außerhalb der thermischen Hülle (Garage, Kaltraum)? Aus dem Umriss entfernen. Innerhalb der Hülle? In An mitzählen.',
     'finding.north.default':
       'Norden nicht bestätigt: Es wird angenommen, dass die Planoberseite nach Azimut {angle}° zeigt (0 = Norden). Drehen Sie den Kompass, davon hängen die Orientierungen der Fassaden ab.',
     'finding.orientation.borderline':

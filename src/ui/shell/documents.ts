@@ -8,7 +8,7 @@
  * ce qui permet de retrouver le fond de plan d'un projet rouvert.
  */
 import type { BottomKind, Lang, PlanDocument, PlanSheet, Project, Sourced } from '../../core/types';
-import { createEmptyProject, createStorey, modelFromDocument } from '../../engine';
+import { createEmptyProject, createStorey, modelFromDocument, proposeHeatedOutline } from '../../engine';
 import { t } from '../../i18n';
 import { guessStorey } from '../../semantics/labels';
 import type { LoadedDocument } from './types';
@@ -323,10 +323,15 @@ export interface SheetSummary {
   windowCount: number;
   doorCount: number;
   hasOutline: boolean;
+  /** Locaux que le contour chauffé proposé laisse dehors (garage accolé…). */
+  leftOutside: string[];
+  /** Locaux non chauffés d'après leur nom, restés dans le contour : à trancher par l'expert. */
+  keptInside: string[];
 }
 
 export function summarizeSheet(sheet: PlanSheet): SheetSummary {
   const d = sheet.detected;
+  const proposal = d.outline && sheet.metresPerUnit ? proposeHeatedOutline(d.outline, d.rooms, sheet.metresPerUnit.value) : null;
   return {
     roomCount: d.rooms.length,
     roomArea: d.rooms.reduce((sum, r) => sum + (r.statedArea ?? r.measuredArea ?? 0), 0),
@@ -334,5 +339,7 @@ export function summarizeSheet(sheet: PlanSheet): SheetSummary {
     windowCount: d.openings.filter((o) => o.kind !== 'door' && o.exterior !== false).length,
     doorCount: d.openings.filter((o) => o.kind === 'door' && o.exterior !== false).length,
     hasOutline: (d.outline?.length ?? 0) >= 3,
+    leftOutside: proposal?.removed.map((r) => r.name || '?') ?? [],
+    keptInside: proposal?.kept.map((name) => name || '?') ?? [],
   };
 }

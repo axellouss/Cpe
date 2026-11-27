@@ -35,6 +35,7 @@ const TARGETS: Record<string, Kind> = {
   'an.grossLike': { plan: 'rooms', focus: 'netArea' },
   'an.low': { plan: 'rooms', focus: 'netArea' },
   'rooms.needReview': { plan: 'rooms' },
+  'outline.containsUnheated': { plan: 'outline' },
   'north.default': { plan: 'north' },
   'orientation.borderline': { plan: 'north' },
   'windows.none': { plan: 'opening' },

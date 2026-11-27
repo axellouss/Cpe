@@ -63,7 +63,12 @@ function text(html: string): string {
 }
 
 const sheet = demoSheet();
-const storey = createStorey(sheet, 'Rez-de-chaussée', model);
+// Ces rendus portent sur l'EMPRISE complète de la maison de démonstration (garage compris), telle que l'expert
+// la retrouve s'il réintègre le garage : `createStorey` seul proposerait le contour chauffé, sans le garage.
+const storey: Storey = {
+  ...createStorey({ ...sheet, detected: { ...sheet.detected, rooms: [] } }, 'Rez-de-chaussée', model),
+  rooms: createStorey(sheet, 'Rez-de-chaussée', model).rooms,
+};
 
 describe('rendu des outils', () => {
   it('contour (correction) : rappel « face extérieure », surface brute et périmètre de la maison de démonstration', () => {

@@ -127,6 +127,21 @@ const SCENARIOS: Record<FindingCode, Scenario> = {
       sound({ netArea: undefined, rooms: [room('Séjour', 50), room('Cave', 12, false, true), room('Buanderie', 6, false, true)] }),
     params: { count: 2 },
   },
+  'outline.containsUnheated': {
+    severity: 'warn',
+    why: 'garage tranché « non compté dans An » mais resté à l’intérieur du contour chauffé',
+    build: () =>
+      sound({
+        netArea: undefined,
+        rooms: [
+          room('Séjour', 50),
+          { ...room('Garage', 14, false, false), polygon: [{ x: 6, y: 4 }, { x: 9.6, y: 4 }, { x: 9.6, y: 7.6 }, { x: 6, y: 7.6 }] },
+          // sans polygone, impossible de dire où il est : pas de constat pour lui
+          room('Abri', 5, false, false),
+        ],
+      }),
+    params: { storey: 'RDC', storeyId: 'rdc', rooms: '« Garage »', count: 1 },
+  },
   'north.default': {
     severity: 'warn',
     why: 'boussole jamais tournée',

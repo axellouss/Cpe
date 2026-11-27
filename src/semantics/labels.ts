@@ -99,6 +99,18 @@ export function classifyRoomName(name: string): HeatedGuess {
   return 'ask';
 }
 
+/**
+ * Locaux qui sont, PAR NATURE, hors de l'enveloppe thermique (garage, abri, terrasse, local explicitement « non
+ * chauffé »). Une chaufferie ou un local technique n'en fait pas partie : non compté dans An d'office, il peut
+ * très bien se trouver à l'intérieur de l'enveloppe isolée — c'est à l'expert de trancher.
+ */
+const OUTSIDE_ENVELOPE_RE =
+  /non[- ]chauff|unbeheizt|nicht beheizt|kaltraum|garage|carport|car-port|parking|stellplatz|abri|remise|schuppen|terrasse|balcon|balkon|loggia/;
+
+export function isOutsideEnvelopeName(name: string): boolean {
+  return OUTSIDE_ENVELOPE_RE.test(fold(name));
+}
+
 const ROOM_WORD_RE = new RegExp(ROOM_RULES.map((r) => r.re.source).join('|'));
 
 /** Vrai si le texte ressemble à un nom de pièce (et non à une cote, un titre de plan…). */

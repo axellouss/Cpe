@@ -3,11 +3,13 @@
  * Fonctions pures : rien n'est modifié dans les objets reçus.
  */
 import {
+  centroid,
   closestOnSegment,
   distance,
   edgeEnds,
   edgeLength,
   lerp,
+  pointInPolygon,
   polygonArea,
   polygonPerimeter,
   round,
@@ -36,6 +38,7 @@ import {
   emptyModel,
 } from './defaults';
 import type { StoreyMetrics } from './index';
+import { ON_OUTLINE_TOL_M, proposeHeatedOutline, remapOpenings } from './heatedOutline';
 import { isUnconfirmed, weakest } from './provenance';
 
 /** Part de la surface brute retenue quand la surface nette est inconnue (estimation grossière, à remplacer). */
@@ -174,9 +177,21 @@ export function createStorey(sheet: PlanSheet | null, name: string, model: Build
   }
 
   const detected = sheet.detected;
-  const outline = copyOutline(detected.outline);
+  const footprint = copyOutline(detected.outline);
   const metresPerUnit: Sourced<number> = sheet.metresPerUnit ? { ...sheet.metresPerUnit } : { value: 1, from: 'estimate' };
-  const edges: StoreyEdge[] = outline.map(() => ({ boundary: 'outside', constructionId: null }));
+  // Les lecteurs donnent l'emprise de tout le bâtiment dessiné. Le contour CHAUFFÉ proposé en retire les annexes
+  // hors enveloppe par nature (garage accolé…) ; sans échelle lue, on ne retire rien (les seuils sont en mètres).
+  const proposal = sheet.metresPerUnit ? proposeHeatedOutline(footprint, detected.rooms, metresPerUnit.value) : null;
+  const carved = proposal && proposal.removed.length > 0 ? proposal : null;
+  const outline = carved ? carved.outline : footprint;
+  const edges: StoreyEdge[] = carved
+    ? carved.boundaries.map((boundary) => ({ boundary, constructionId: null }))
+    : outline.map(() => ({ boundary: 'outside', constructionId: null }));
+  // Les ouvertures sont d'abord posées sur l'emprise, puis reportées : celles de l'annexe retirée disparaissent.
+  const footprintOpenings = openingsFromDetection(detected.openings, footprint, metresPerUnit, id);
+  const openings = carved
+    ? remapOpenings(footprintOpenings, footprint, carved.outline, carved.sources, ON_OUTLINE_TOL_M / metresPerUnit.value)
+    : footprintOpenings;
 
   const rooms: Room[] = detected.rooms.map((r, i) => {
     const area = r.statedArea ?? r.measuredArea ?? 0;
@@ -207,10 +222,79 @@ export function createStorey(sheet: PlanSheet | null, name: string, model: Build
       detected.clearHeight !== undefined
         ? { value: detected.clearHeight, from: 'plan' }
         : { value: DEFAULT_CLEAR_HEIGHT, from: 'default' },
-    openings: openingsFromDetection(detected.openings, outline, metresPerUnit, id),
+    openings,
     rooms,
     netAreaOverride: null,
   };
+}
+
+/** Arête du contour qui passe par le point `at` (à `tol` près), avec la position du point le long de l'arête. */
+function edgeThrough(at: Vec2, outline: readonly Vec2[], tol: number): { index: number; t: number } | null {
+  let best: { index: number; t: number; distance: number } | null = null;
+  for (let i = 0; i < outline.length; i++) {
+    const [p, q] = edgeEnds(outline, i);
+    const cl = closestOnSegment(at, p, q);
+    if (cl.distance <= tol && (!best || cl.distance < best.distance)) best = { index: i, t: cl.t, distance: cl.distance };
+  }
+  return best ? { index: best.index, t: best.t } : null;
+}
+
+function pointOnEdge(outline: readonly Vec2[], index: number, t: number): Vec2 {
+  const [p, q] = edgeEnds(outline, index);
+  return lerp(p, q, t);
+}
+
+/**
+ * Locaux de l'étage (avec polygone) qui se trouvent dans l'emprise lue sur la feuille mais HORS du contour de
+ * l'étage : ce sont ceux que le contour chauffé proposé a laissés dehors (garage accolé…).
+ */
+export function roomsOutsideOutline(storey: Storey, sheet: PlanSheet | null): Room[] {
+  const footprint = copyOutline(sheet?.detected.outline);
+  if (footprint.length < 3 || storey.outline.length < 3) return [];
+  return storey.rooms.filter((r) => {
+    if (!r.polygon || r.polygon.length < 3) return false;
+    const c = centroid(r.polygon);
+    return pointInPolygon(c, footprint) && !pointInPolygon(c, storey.outline);
+  });
+}
+
+/**
+ * Remet dans le contour TOUTE l'emprise lue sur la feuille (l'expert juge que le garage est dans l'enveloppe).
+ * Les arêtes qui longeaient déjà le contour gardent leur nature et leur type de mur ; les ouvertures suivent ;
+ * celles que le lecteur avait vues sur la partie réintégrée (porte du garage) reviennent. Les pièces ne changent
+ * pas : un local réintégré mais non compté dans An sera signalé par le constat « outline.containsUnheated ».
+ * Renvoie null si la feuille n'a pas d'emprise.
+ */
+export function restoreFootprint(storey: Storey, sheet: PlanSheet | null): Storey | null {
+  const footprint = copyOutline(sheet?.detected.outline);
+  const scale = storey.metresPerUnit.value;
+  if (!sheet || footprint.length < 3 || !(scale > 0)) return null;
+  const tol = ON_OUTLINE_TOL_M / scale;
+
+  const edges: StoreyEdge[] = footprint.map((_, i) => {
+    // L'arête actuelle qui passe par le milieu de cette arête de l'emprise lui transmet nature et type de mur.
+    const through = edgeThrough(pointOnEdge(footprint, i, 0.5), storey.outline, tol);
+    const old = through ? storey.edges[through.index] : undefined;
+    return old ? { ...old } : { boundary: 'outside', constructionId: null };
+  });
+
+  const openings: Opening[] = [];
+  for (const o of storey.openings) {
+    if (o.edgeIndex < 0 || o.edgeIndex >= storey.outline.length) continue;
+    const host = edgeThrough(pointOnEdge(storey.outline, o.edgeIndex, o.position), footprint, tol);
+    if (host) openings.push({ ...o, edgeIndex: host.index, position: host.t });
+  }
+  const taken = new Set(storey.openings.map((o) => o.id));
+  for (const o of openingsFromDetection(sheet.detected.openings, footprint, storey.metresPerUnit, storey.id)) {
+    // Déjà portée par le contour actuel : présente, ou supprimée exprès par l'expert — on n'y touche pas.
+    if (edgeThrough(pointOnEdge(footprint, o.edgeIndex, o.position), storey.outline, tol)) continue;
+    let n = openings.length + 1;
+    let id = `${storey.id}-o${n}`;
+    while (taken.has(id)) id = `${storey.id}-o${++n}`;
+    taken.add(id);
+    openings.push({ ...o, id });
+  }
+  return { ...storey, outline: footprint, edges, openings };
 }
 
 /**

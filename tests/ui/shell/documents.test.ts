@@ -196,7 +196,16 @@ describe('résumés affichés', () => {
 
   it('résume une feuille : pièces, surfaces, ouvertures extérieures', () => {
     const s = houseDoc().sheets[0]!;
-    expect(summarizeSheet(s)).toEqual({ roomCount: 3, roomArea: 52.5, roomsToDecide: 1, windowCount: 1, doorCount: 1, hasOutline: true });
+    expect(summarizeSheet(s)).toEqual({
+      roomCount: 3,
+      roomArea: 52.5,
+      roomsToDecide: 1,
+      windowCount: 1,
+      doorCount: 1,
+      hasOutline: true,
+      leftOutside: [],
+      keptInside: [],
+    });
     expect(summarizeSheet(sheet('x', 'vide', { outline: null }))).toMatchObject({ roomCount: 0, hasOutline: false });
   });
 

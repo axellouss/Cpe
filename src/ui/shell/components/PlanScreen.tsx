@@ -4,13 +4,14 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { Project, Sourced, Storey } from '../../../core/types';
+import type { PlanSheet, Project, Sourced, Storey } from '../../../core/types';
+import { excludeRoomFromOutline, roomsOutsideOutline, unheatedRoomsInsideOutline } from '../../../engine';
 import { PlanEditor } from '../../plan';
 import { allStoreysDone, countDone, nextOpenStep, planSteps, STEP_TOOL } from '../checklist';
 import type { PlanStepInfo, StepState } from '../checklist';
 import { derive, safeStoreyMetrics } from '../compute';
 import { allSheets, fileNameOfSheetId, findSheet } from '../documents';
-import { confirmStoreyHeight, setNetArea, setStoreyHeight } from '../modelOps';
+import { confirmStoreyHeight, excludeRoomFromEnvelope, restoreStoreyFootprint, setNetArea, setStoreyHeight, updateRoom } from '../modelOps';
 import type { HeightKind } from '../modelOps';
 import { fixed, unitLength } from '../numbers';
 import { currentStorey, selectMarks, selectProject, useShell, useShellStore } from '../store';
@@ -151,7 +152,73 @@ function confirmLabel(step: PlanStepInfo, tr: Translate): string {
   return tr('shell.plan.confirm');
 }
 
-function Checklist({ project, storey, steps }: { project: Project; storey: Storey; steps: PlanStepInfo[] }) {
+/**
+ * Où passe l'enveloppe thermique : locaux laissés hors du contour chauffé (garage accolé retiré d'office), et
+ * locaux non comptés dans An restés à l'intérieur. Un geste suffit pour corriger dans un sens ou dans l'autre.
+ */
+function EnvelopeNote({ storey, sheet }: { storey: Storey; sheet: PlanSheet | null }) {
+  const tr = useT();
+  const store = useShellStore();
+  const outside = useMemo(() => roomsOutsideOutline(storey, sheet), [storey, sheet]);
+  const inside = useMemo(
+    () => unheatedRoomsInsideOutline(storey).map((room) => ({ room, removable: excludeRoomFromOutline(storey, room.id) !== null })),
+    [storey],
+  );
+  if (outside.length === 0 && inside.length === 0) return null;
+  const update = store.getState().updateProject;
+  return (
+    <div className="envelope-note" data-testid="envelope-note">
+      {outside.length > 0 ? (
+        <div className="notice notice--info" data-testid="envelope-outside">
+          <p className="notice__body">
+            <strong>{tr('shell.plan.envelope.outside.title', { rooms: outside.map((r) => r.name || '?').join(', ') })}</strong>
+            <span>{tr('shell.plan.envelope.outside.text')}</span>
+          </p>
+          <div className="notice__actions">
+            <button
+              type="button"
+              className="btn btn--ghost btn--small"
+              onClick={() => update((p) => restoreStoreyFootprint(p, storey.id, sheet), { label: 'shell.undo.envelope' })}
+              data-testid="envelope-restore"
+            >
+              {tr('shell.plan.envelope.restore')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {inside.map(({ room, removable }) => (
+        <div className="notice notice--warn" key={room.id} data-testid="envelope-inside">
+          <p className="notice__body">
+            <strong>{tr('shell.plan.envelope.inside.title', { room: room.name || '?' })}</strong>
+            <span>{tr(removable ? 'shell.plan.envelope.inside.text' : 'shell.plan.envelope.inside.manual')}</span>
+          </p>
+          <div className="notice__actions">
+            {removable ? (
+              <button
+                type="button"
+                className="btn btn--primary btn--small"
+                onClick={() => update((p) => excludeRoomFromEnvelope(p, storey.id, room.id), { label: 'shell.undo.envelope' })}
+                data-testid="envelope-exclude"
+              >
+                {tr('shell.plan.envelope.exclude')}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn--ghost btn--small"
+              onClick={() => update((p) => updateRoom(p, storey.id, room.id, { heated: true }), { label: 'shell.undo.envelope' })}
+              data-testid="envelope-count"
+            >
+              {tr('shell.plan.envelope.count')}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Checklist({ project, storey, steps, sheet }: { project: Project; storey: Storey; steps: PlanStepInfo[]; sheet: PlanSheet | null }) {
   const tr = useT();
   const store = useShellStore();
   const announce = useAnnounce();
@@ -212,6 +279,7 @@ function Checklist({ project, storey, steps }: { project: Project; storey: Store
           <h3 className="guide__detail-title">{tr(`shell.plan.step.${active.key}`)}</h3>
           <p className="guide__why">{tr(`shell.plan.step.${active.key}.why`)}</p>
           <p className="guide__status">{statusText(active, tr)}</p>
+          {active.key === 'outline' || active.key === 'rooms' ? <EnvelopeNote storey={storey} sheet={sheet} /> : null}
           <div className="guide__actions">
             {active.canConfirm && active.state !== 'done' ? (
               <button type="button" className="btn btn--primary btn--small" onClick={() => store.getState().confirmPlanStep(active.key)} data-testid={`plan-confirm-${active.key}`}>
@@ -471,7 +539,7 @@ export function PlanScreen() {
       <StoreyTabs project={project} storey={storey} />
       <div className="plan__body" id="plan-panel" role="tabpanel" aria-labelledby={`tab-${storey.id}`}>
         <div className="plan__guide">
-          <Checklist project={project} storey={storey} steps={steps} />
+          <Checklist project={project} storey={storey} steps={steps} sheet={sheet} />
         </div>
 
         <div className="plan__stage">

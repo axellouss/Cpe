@@ -63,6 +63,7 @@ import {
 } from './defaults';
 import type { FindingCode } from './messages';
 import { differenceArea } from './polygonOps';
+import { unheatedRoomsInsideOutline } from './heatedOutline';
 import { isUnconfirmed, weakest } from './provenance';
 import { computePitchedRoof, isEavesEdge, type PitchedRoof, type RoofSlope } from './roof';
 import { netAreaOf, type NetArea } from './storey';
@@ -794,6 +795,11 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     }
     if (isUnconfirmed(s.clearHeight.from)) note('clearHeight.default', 'warn', { ...where, height: fmt(s.clearHeight.value) });
     if (netAreas[i]!.source === 'estimate') note('an.estimated', 'block', { ...where, area: fmt(netAreas[i]!.area) });
+    // Local tranché « non compté dans An » mais resté dans le contour : A et Ve le comptent, An non — à trancher.
+    const inside = unheatedRoomsInsideOutline(s);
+    if (inside.length > 0) {
+      note('outline.containsUnheated', 'warn', { ...where, rooms: inside.map((r) => `« ${r.name || '?'} »`).join(', '), count: inside.length });
+    }
   });
 
   const roomsToReview = sum(
