@@ -9,12 +9,14 @@
  *  - les PIÈCES et les OUVERTURES viennent du modèle exact (murs pleins + tableaux appariés) et ne sont
  *    proposées que lorsqu'il se referme.
  */
-import type { DetectedRoom, PlanText, Vec2 } from '../../core/types';
+import type { DetectedRoom, Vec2 } from '../../core/types';
 import { isSelfIntersecting } from '../../core/geometry';
-import { fold, guessStorey, isNorthArrowName, parseOpeningSize, parseRoomLabel, roomsFromTexts } from '../../semantics/labels';
+import { fold, guessStorey, isNorthArrowName, parseOpeningSize, parseRoomLabel } from '../../semantics/labels';
 import { classifyLayer } from './layers';
 import type { LayerCategory } from './layers';
 import { SEG_CURVE, SEG_LINE, SEG_POLY } from './raw';
+import { detectRooms } from './rooms';
+import type { LabelText, RoomFace } from './rooms';
 import type { RawDrawing, RawInsert } from './raw';
 import { closeOutline, pointInRing, pointRingDistance, pointSegDistance, ringArea, ringBox, ringPerimeter, simplifyRing } from './planar';
 import type { Box, Seg } from './planar';
@@ -63,6 +65,8 @@ export interface PlanAnalysis {
   rejectedOpenings: number;
   /** Pièces probablement non chauffées englobées dans le contour. */
   unheatedInside: string[];
+  /** Pièces rendues sans nom reconnu (faces fermées) : le texte lu, ou '' quand la face ne porte aucun texte. */
+  unrecognisedRooms: string[];
 }
 
 export interface Analysis {
@@ -561,19 +565,18 @@ export async function analyse(d: RawDrawing, options: AnalyseOptions, pause: () 
       }
     }
 
-    // ── Pièces ──
-    const labelTexts: PlanText[] = [];
+    // ── Pièces : toute face fermée par les murs dans le contour, nom reconnu ou non (voir rooms.ts) ──
+    const labelTexts: LabelText[] = [];
     for (const t of visibleTexts) {
       const cat = cats[t.layer] ?? null;
       if (cat === 'dim' || cat === 'axis') continue;
       if (!inBox(t.cx, t.cy, box, tol)) continue;
       if (!pointInRing(t.cx, t.cy, boundary)) continue;
-      const pt: PlanText = { text: t.text.replace(/\n/g, ' '), x: t.cx, y: t.cy };
+      const pt: LabelText = { text: t.text.replace(/\n/g, ' '), x: t.cx, y: t.cy, layer: t.layer };
       if (t.height > 0) pt.height = t.height;
       labelTexts.push(pt);
     }
-    const rooms = roomsFromTexts(labelTexts);
-    const holes: { ring: Vec2[]; area: number; box: Box }[] = [];
+    const holes: RoomFace[] = [];
     for (const comp of walls.comps) {
       for (const h of comp.holes) {
         const area = ringArea(h);
@@ -584,32 +587,13 @@ export async function analyse(d: RawDrawing, options: AnalyseOptions, pause: () 
       }
     }
     holes.sort((p, q) => p.area - q.area);
-    const holeOf = rooms.map((r) => {
-      if (!r.at) return -1;
-      for (let i = 0; i < holes.length; i++) {
-        const h = holes[i]!;
-        if (inBox(r.at.x, r.at.y, h.box, 0) && pointInRing(r.at.x, r.at.y, h.ring)) return i;
-      }
-      return -1;
-    });
-    const mergedRooms: string[][] = [];
-    const areaMismatches: [string, number, number][] = [];
-    const ratios: number[] = [];
-    holes.forEach((h, i) => {
-      const inside = rooms.filter((_r, ri) => holeOf[ri] === i);
-      if (inside.length === 1) {
-        const room = inside[0]!;
-        room.polygon = simplifyRing(h.ring, tol * 0.2);
-        room.measuredArea = Math.round((h.area / (u * u)) * 1000) / 1000;
-        if (room.statedArea !== undefined && room.statedArea > 0) {
-          ratios.push(room.measuredArea / room.statedArea);
-          if (Math.abs(room.statedArea - room.measuredArea) > Math.max(0.3, 0.03 * room.measuredArea)) {
-            areaMismatches.push([room.name, room.statedArea, room.measuredArea]);
-          }
-        }
-      } else if (inside.length > 1) {
-        mergedRooms.push(inside.map((r) => r.name));
-      }
+    const { rooms, mergedRooms, areaMismatches, ratios, unrecognised } = detectRooms({
+      texts: labelTexts,
+      faces: holes,
+      boundary,
+      u,
+      tol,
+      isViewTitle: (text) => VIEW_RE.test(fold(text)),
     });
     result.areaRatios.push(...ratios);
 
@@ -728,6 +712,7 @@ export async function analyse(d: RawDrawing, options: AnalyseOptions, pause: () 
       areaMismatches,
       rejectedOpenings: rejected,
       unheatedInside: outline ? rooms.filter((r) => r.heatedGuess === 'no').map((r) => r.name) : [],
+      unrecognisedRooms: unrecognised,
     });
     await pause();
   }

@@ -708,8 +708,8 @@ export async function readDrawing(
   }
 
   // Origine robuste : médiane des milieux de segments (insensible aux entités perdues très loin).
-  const n = flat.segs.count;
-  const xy = flat.segs.xy.subarray(0, n * 4);
+  let n = flat.segs.count;
+  let xy = flat.segs.xy.subarray(0, n * 4);
   const step = Math.max(1, Math.floor(n / 20_000));
   const xs: number[] = [];
   const ys: number[] = [];
@@ -744,6 +744,9 @@ export async function readDrawing(
     ins.x -= origin.x;
     ins.y -= origin.y;
   }
+  const far = dropFarEntities(flat, n);
+  n = far.segCount;
+  xy = flat.segs.xy.subarray(0, n * 4);
 
   return {
     version: doc.header?.versionString ?? '',
@@ -767,6 +770,63 @@ export async function readDrawing(
       readerNotes,
       skippedObjects,
       damagedObjects,
+      farEntities: far.dropped,
     },
   };
+}
+
+/**
+ * Distance à l'origine du dessin (unités de dessin) au-delà de laquelle une entité est aberrante : 10⁹ unités,
+ * soit 1 000 km pour un dessin en millimètres. Un bâtiment, même géoréférencé, n'en approche pas.
+ */
+export const FAR_LIMIT = 1e9;
+
+/**
+ * Retire les traits, arcs et textes situés à plus de `FAR_LIMIT` de l'origine. On n'en trouve que dans un DWG
+ * abîmé (coordonnées lues dans des octets changés : 10⁸², 10²⁷⁷…) ; gardés, ils tombent tous dans la même case des
+ * index spatiaux et l'analyse des murs devient quadratique (des minutes, onglet ou worker bloqué). Les intervalles
+ * de traits et d'arcs des insertions de blocs sont renumérotés. Rend le nombre de traits gardés et d'objets retirés.
+ */
+function dropFarEntities(flat: Flattener, count: number): { segCount: number; dropped: number } {
+  const near = (v: number): boolean => Math.abs(v) <= FAR_LIMIT;
+  const segs = flat.segs;
+  // newIndex[i] = rang du trait i parmi les traits gardés (et, en count, le nombre total gardé).
+  const newIndex = new Int32Array(count + 1);
+  let kept = 0;
+  for (let i = 0; i < count; i++) {
+    newIndex[i] = kept;
+    const k = 4 * i;
+    if (!(near(segs.xy[k]!) && near(segs.xy[k + 1]!) && near(segs.xy[k + 2]!) && near(segs.xy[k + 3]!))) continue;
+    if (kept !== i) {
+      segs.xy.copyWithin(4 * kept, k, k + 4);
+      segs.layer[kept] = segs.layer[i]!;
+      segs.kind[kept] = segs.kind[i]!;
+      segs.insert[kept] = segs.insert[i]!;
+    }
+    kept++;
+  }
+  newIndex[count] = kept;
+  const arcIndex = new Int32Array(flat.arcs.length + 1);
+  const arcs: RawArc[] = [];
+  flat.arcs.forEach((a, i) => {
+    arcIndex[i] = arcs.length;
+    if (near(a.cx) && near(a.cy) && near(a.radius)) arcs.push(a);
+  });
+  arcIndex[flat.arcs.length] = arcs.length;
+  const texts = flat.texts.filter((t) => near(t.cx) && near(t.cy));
+  const dropped = count - kept + (flat.arcs.length - arcs.length) + (flat.texts.length - texts.length);
+  if (dropped === 0) return { segCount: count, dropped: 0 };
+  for (const ins of flat.inserts) {
+    ins.segStart = newIndex[ins.segStart]!;
+    ins.segEnd = newIndex[ins.segEnd]!;
+    ins.arcStart = arcIndex[ins.arcStart]!;
+    ins.arcEnd = arcIndex[ins.arcEnd]!;
+  }
+  // Remplacement en place, sans étaler de longs tableaux en arguments (pile).
+  flat.arcs.length = 0;
+  for (const a of arcs) flat.arcs.push(a);
+  flat.texts.length = 0;
+  for (const t of texts) flat.texts.push(t);
+  segs.count = kept;
+  return { segCount: kept, dropped };
 }

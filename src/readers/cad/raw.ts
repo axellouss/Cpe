@@ -104,6 +104,11 @@ export interface RawDrawing {
      * n'en a aucun) et le dessin rendu est incomplet. 0 pour un DXF.
      */
     damagedObjects: number;
+    /**
+     * Traits, arcs et textes retirés car situés à plus de 10⁹ unités de l'origine du dessin (coordonnées
+     * aberrantes, signe d'un fichier abîmé ; voir load.ts).
+     */
+    farEntities: number;
   };
 }
 

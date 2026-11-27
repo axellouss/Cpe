@@ -88,7 +88,16 @@ describe.skipIf(!dir || !fileExists(canteen))('fichier réel : canteen.dwg (2,6 
     expect(isSelfIntersecting(sheet.detected.outline!)).toBe(false);
     expect(outlineArea(sheet)).toBeGreaterThan(850);
     expect(outlineArea(sheet)).toBeLessThan(980);
-    expect(sheet.detected.rooms).toEqual([]); // pièces numérotées renvoyant à une légende
+    // Pièces numérotées renvoyant à une légende : aucun nom reconnu, mais chaque pièce fermée est rendue,
+    // sans nom, « à trancher », avec sa surface mesurée.
+    const rooms = sheet.detected.rooms;
+    expect(rooms.length).toBeGreaterThan(15);
+    for (const room of rooms) {
+      expect(room).toMatchObject({ name: '', heatedGuess: 'ask' });
+      expect(room.measuredArea).toBeGreaterThanOrEqual(1);
+    }
+    expect(rooms.reduce((sum, r) => sum + r.measuredArea!, 0)).toBeLessThan(outlineArea(sheet));
+    expect(doc.warnings.join('\n')).toMatch(/Aucun nom de pièce reconnu : \d+ pièce\(s\) mesurée\(s\)/);
     expect(sheet.detected.openings.length).toBeGreaterThan(25);
   }, 60_000);
 });

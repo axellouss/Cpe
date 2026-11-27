@@ -164,6 +164,13 @@ function planNotes(p: PlanAnalysis, a: Analysis, u: number): string[] {
     notes.push(msg('cad.note.outline.none'));
   }
   for (const group of p.mergedRooms) notes.push(msg('cad.note.rooms.merged', { rooms: group.join(' + ') }));
+  if (p.unrecognisedRooms.length > 0) {
+    // Les textes lus sont cités ; les faces sans aucun texte sont comptées à part.
+    const named = p.unrecognisedRooms.filter((n) => n !== '').map((name) => msg('cad.note.rooms.quoted', { name }));
+    const blank = p.unrecognisedRooms.length - named.length;
+    if (blank > 0) named.push(msg('cad.note.rooms.blank', { count: blank }));
+    notes.push(msg('cad.note.rooms.unrecognised', { count: p.unrecognisedRooms.length, rooms: named.join(', ') }));
+  }
   for (const [room, stated, measured] of p.areaMismatches) {
     notes.push(msg('cad.note.rooms.mismatch', { room, stated: formatNumber(stated), measured: formatNumber(measured) }));
   }
@@ -405,11 +412,20 @@ export async function readCadInProcess(data: ArrayBuffer, fileName: string, kind
   if (u !== null && a.wallSource !== 'none' && a.tooHeavy === undefined && planSheets.length === 0) warnings.push(msg('cad.warn.plans.none'));
   if (order.length > 1) warnings.push(msg('cad.warn.plans.several', { count: order.length }));
   if (a.droppedPlans > 0) warnings.push(msg('cad.warn.plans.dropped', { count: a.droppedPlans }));
-  if (sheets.every((sh) => sh.detected.rooms.length === 0)) warnings.push(msg('cad.warn.rooms.none'));
+  {
+    // Pièces au nom reconnu : celles que l'analyse n'a pas rangées parmi les faces sans nom reconnu.
+    const total = sheets.reduce((n, sh) => n + sh.detected.rooms.length, 0);
+    const unrecognised = order.reduce((n, k) => n + (a.plans[k]!.viewTitle ? 0 : a.plans[k]!.unrecognisedRooms.length), 0);
+    if (total === 0) warnings.push(msg('cad.warn.rooms.none'));
+    else if (unrecognised >= total) warnings.push(msg('cad.warn.rooms.unnamedOnly', { count: total }));
+  }
   if (!a.north) warnings.push(msg('cad.warn.north.none'));
   if (raw.stats.missingXrefs.length > 0) warnings.push(msg('cad.warn.xrefs', { names: raw.stats.missingXrefs.slice(0, 4).join(', ') }));
   if (raw.stats.hiddenLayerEntities > 0) warnings.push(msg('cad.warn.hidden', { count: raw.stats.hiddenLayerEntities }));
   if (raw.stats.truncated) warnings.push(msg('cad.warn.truncated'));
+  // Objets d'un DWG dont le décodage a débordé de ses données : le fichier est abîmé, le dessin incomplet.
+  if (raw.stats.damagedObjects > 0) warnings.push(msg('cad.warn.damaged', { count: raw.stats.damagedObjects }));
+  if (raw.stats.farEntities > 0) warnings.push(msg('cad.warn.far', { count: raw.stats.farEntities }));
   {
     const list = Object.entries(raw.stats.unsupported)
       .filter(([name]) => name !== 'POINT' && name !== 'VIEWPORT')

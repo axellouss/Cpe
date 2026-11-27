@@ -13,6 +13,11 @@ interface WorkerScope {
 
 const scope = self as unknown as WorkerScope;
 
+/** Envoie l'échec au fil principal (message déjà rédigé dans la langue demandée). */
+function fail(err: unknown): void {
+  scope.postMessage({ type: 'failed', message: err instanceof Error ? err.message : String(err) });
+}
+
 scope.onmessage = (event) => {
   const { data, fileName, kind, options } = event.data;
   // Envoyé AVANT tout calcul : le fil principal sait que le worker tourne, même si le décodage se bloque ensuite.
@@ -22,10 +27,14 @@ scope.onmessage = (event) => {
       // Les traits des feuilles sont cédés au fil principal, pas copiés.
       const transfer: Transferable[] = [];
       for (const sheet of doc.sheets) if (sheet.segments) transfer.push(sheet.segments.buffer as ArrayBuffer);
-      scope.postMessage({ type: 'done', doc, details }, transfer);
+      try {
+        scope.postMessage({ type: 'done', doc, details }, transfer);
+      } catch (err) {
+        // Résultat impossible à transmettre (objet non clonable) : sans ce rattrapage, le rejet resterait muet
+        // et le fil principal attendrait son chien de garde.
+        fail(err);
+      }
     },
-    (err: unknown) => {
-      scope.postMessage({ type: 'failed', message: err instanceof Error ? err.message : String(err) });
-    },
+    fail,
   );
 };
