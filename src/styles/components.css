@@ -907,3 +907,21 @@ ul.notice {
 .skip-link:focus {
   top: 8px;
 }
+
+/* Action secondaire discrète, présentée comme un lien dans une phrase. */
+.linklike {
+  min-height: 28px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.linklike:hover {
+  text-decoration-thickness: 2px;
+}

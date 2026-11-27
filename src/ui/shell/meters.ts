@@ -5,9 +5,10 @@
  *               ni d'une estimation (provenance 'plan', 'calc' ou 'user').
  * Les deux partagent le même dénominateur : « confirmé » ne dépasse donc jamais « complet ».
  *
- * La liste des valeurs attendues est volontairement courte et lisible : celles qui pèsent sur le résultat et que
- * l'application sait renseigner (géométrie par étage, fermetures, nord, réponses). Les champs que l'expert remplit
- * de toute façon dans LuxEeB-Tool (identité des intervenants, ponts thermiques…) n'en font pas partie.
+ * La liste des valeurs attendues est volontairement courte et lisible : celles dont dépendent les chiffres du
+ * relevé (géométrie par étage, fenêtres, nord, fermetures haute et basse). Les notes de visite (année, isolation,
+ * installations…) n'en font pas partie : facultatives, elles ne changent aucune valeur calculée, et les laisser
+ * de côté ne doit pas faire paraître le relevé « incomplet ».
  */
 import type { Project, Provenance, Storey } from '../../core/types';
 import { storeyMetrics } from '../../engine';
@@ -72,7 +73,7 @@ function storeySlots(storey: Storey): MeterSlot[] {
 /** Toutes les valeurs attendues, avec leur état. */
 export function meterSlots(project: Project): MeterSlot[] {
   const slots: MeterSlot[] = [];
-  const { model, answers: a } = project;
+  const { model } = project;
 
   if (model.storeys.length === 0) {
     // Rien de tracé : les valeurs d'un premier étage sont attendues et manquent toutes.
@@ -90,26 +91,6 @@ export function meterSlots(project: Project): MeterSlot[] {
     slots.push({ key: 'bottom', filled: true, from: model.bottom.from });
   }
 
-  const answer = (key: string, value: unknown): void => {
-    const filled = value !== null && value !== undefined;
-    slots.push({ key: `answers.${key}`, filled, from: filled ? 'user' : null });
-  };
-  answer('occasion', a.occasion);
-  answer('buildingType', a.buildingType);
-  answer('dwellings', a.dwellings);
-  answer('yearBuilt', a.yearBuilt);
-  if (a.occasion !== 'new') {
-    answer('insulationWallsCm', a.insulationWallsCm);
-    answer('insulationRoofCm', a.insulationRoofCm);
-    answer('insulationFloorCm', a.insulationFloorCm);
-  }
-  answer('windowGeneration', a.windowGeneration);
-  answer('heatGenerator', a.heatGenerator);
-  answer('heatEmission', a.heatEmission);
-  answer('hotWater', a.hotWater);
-  answer('ventilation', a.ventilation);
-  answer('solarThermal', a.solarThermal);
-  answer('photovoltaic', a.photovoltaic);
   return slots;
 }
 

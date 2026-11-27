@@ -13,6 +13,7 @@ import {
   hasAnyAnswer,
   isPlausibleYear,
   isQuestionComplete,
+  isVisitNote,
   markQuestion,
   nextQuestion,
   periodLabel,
@@ -23,6 +24,8 @@ import {
   questionRank,
   questionStatus,
   relevantQuestions,
+  REQUIRED_QUESTIONS,
+  visitNoteRank,
 } from '../../../src/ui/shell/questions';
 import { selectMarks, selectProject } from '../../../src/ui/shell/store';
 import { emptyMarks } from '../../../src/ui/shell/types';
@@ -31,28 +34,36 @@ import { testStore } from './helpers';
 const empty = (): Project => createEmptyProject('fr');
 
 describe('script des questions', () => {
-  it('neuf questions au plus pour une maison unifamiliale existante, l’identité en dernier et hors compte', () => {
+  it('une seule question indispensable, posée en premier ; huit notes de visite facultatives ; l’identité en dernier et hors compte', () => {
     const project = setAnswers(empty(), { occasion: 'existing', buildingType: 'EFH', dwellings: 1 });
+    expect(REQUIRED_QUESTIONS).toEqual(['closure']);
+    expect(relevantQuestions(project)[0]).toBe('closure');
     expect(countedQuestions(project)).toHaveLength(9);
-    expect(countedQuestions(project).length).toBeLessThanOrEqual(9);
     const all = relevantQuestions(project);
     expect(all[all.length - 1]).toBe('identity');
     expect(countedQuestions(project)).not.toContain('identity');
     expect(questionRank('identity', project).rank).toBeNull();
-    expect(questionRank('closure', project)).toEqual({ rank: 3, total: 9 });
+    expect(questionRank('closure', project)).toEqual({ rank: 1, total: 9 });
+    // Les notes de visite ont leur propre décompte ; la question indispensable et l'identité n'en font pas partie.
+    expect(isVisitNote('closure')).toBe(false);
+    expect(visitNoteRank('closure', project)).toBeNull();
+    expect(visitNoteRank('context', project)).toEqual({ rank: 1, total: 8 });
+    expect(visitNoteRank('solar', project)).toEqual({ rank: 8, total: 8 });
+    expect(visitNoteRank('identity', project)).toBeNull();
   });
 
   it('pas de question sur l’isolation ajoutée après coup pour un bâtiment neuf', () => {
     const project = setAnswers(empty(), { occasion: 'new' });
     expect(relevantQuestions(project)).not.toContain('insulation');
     expect(countedQuestions(project)).toHaveLength(8);
-    expect(nextQuestion('closure', project)).toBe('windows');
-    expect(previousQuestion('windows', project)).toBe('closure');
+    expect(nextQuestion('year', project)).toBe('windows');
+    expect(previousQuestion('windows', project)).toBe('year');
   });
 
   it('avance et recule dans l’ordre, avec des bornes nettes', () => {
     const project = empty();
-    expect(previousQuestion('context', project)).toBeNull();
+    expect(previousQuestion('closure', project)).toBeNull();
+    expect(nextQuestion('closure', project)).toBe('context');
     expect(nextQuestion('context', project)).toBe('year');
     expect(nextQuestion('solar', project)).toBe('identity');
     expect(nextQuestion('identity', project)).toBeNull();
@@ -122,18 +133,20 @@ describe('script des questions', () => {
   it('retrouve la première question pas encore vue', () => {
     let p = empty();
     let marks = emptyMarks();
+    expect(firstOpenQuestion(p, marks)).toBe('closure');
+    marks = markQuestion(marks, 'closure', 'answered');
     expect(firstOpenQuestion(p, marks)).toBe('context');
     p = setAnswers(p, { occasion: 'existing', buildingType: 'EFH', dwellings: 1 });
     marks = markQuestion(marks, 'year', 'skipped');
-    expect(firstOpenQuestion(p, marks)).toBe('closure');
+    expect(firstOpenQuestion(p, marks)).toBe('insulation');
     for (const id of countedQuestions(p)) marks = markQuestion(marks, id, 'skipped');
     expect(firstOpenQuestion(p, marks)).toBeNull();
   });
 
   it('« je ne sais pas » n’est offert que là où c’est une réponse honnête, et vide les bons champs', () => {
-    expect(CAN_SKIP.context).toBe(false);
+    // La question indispensable ne se passe pas ; toutes les notes de visite, si.
     expect(CAN_SKIP.closure).toBe(false);
-    for (const id of ['year', 'insulation', 'windows', 'heating', 'hotWater', 'ventilation', 'solar'] as const) expect(CAN_SKIP[id]).toBe(true);
+    for (const id of ['context', 'year', 'insulation', 'windows', 'heating', 'hotWater', 'ventilation', 'solar'] as const) expect(CAN_SKIP[id]).toBe(true);
     expect(clearedAnswers('insulation')).toEqual({ insulationWallsCm: null, insulationRoofCm: null, insulationFloorCm: null });
     expect(clearedAnswers('ventilation')).toEqual({ ventilation: null, n50: null });
     expect(clearedAnswers('context')).toEqual({});
@@ -169,12 +182,12 @@ describe('parcours complet dans le magasin', () => {
       s().continueQuestion();
     };
 
-    visit(() => s().answer({ occasion: 'existing', buildingType: 'EFH', dwellings: 1 }));
-    visit(() => s().answerYear(1975, true));
     visit(() => {
       s().setTop({ kind: 'attic-ceiling' });
       s().setBottom('above-unheated');
     });
+    visit(() => s().answer({ occasion: 'existing', buildingType: 'EFH', dwellings: 1 }));
+    visit(() => s().answerYear(1975, true));
     visit(() => s().answer({ insulationWallsCm: 12, insulationRoofCm: 0, insulationFloorCm: 0 }));
     visit(() => s().answer({ windowGeneration: 'double-lowe' }));
     visit(() => s().answer({ heatGenerator: 'gas-condensing', heatGeneratorYear: 2012, heatEmission: 'radiators' }));
@@ -182,7 +195,7 @@ describe('parcours complet dans le magasin', () => {
     visit(() => s().answer({ ventilation: 'windows' }));
     visit(() => s().answer({ solarThermal: false, photovoltaic: false }));
 
-    expect(seen).toEqual(['context', 'year', 'closure', 'insulation', 'windows', 'heating', 'hotWater', 'ventilation', 'solar']);
+    expect(seen).toEqual(['closure', 'context', 'year', 'insulation', 'windows', 'heating', 'hotWater', 'ventilation', 'solar']);
     expect(s().step).toBe('questions');
     expect(s().question).toBe('identity');
     s().continueQuestion(); // facultatif : « plus tard »
@@ -199,12 +212,34 @@ describe('parcours complet dans le magasin', () => {
     const { store } = testStore();
     const s = () => store.getState();
     s().startBlank();
-    s().openQuestion('closure');
+    s().openQuestion('year');
     s().backQuestion();
-    expect(s().question).toBe('year');
+    expect(s().question).toBe('context');
     s().backQuestion();
+    expect(s().question).toBe('closure');
     s().backQuestion();
     expect(s().step).toBe('plan');
+  });
+
+  it('le résultat est accessible dès la question indispensable répondue ; les notes de visite restent ouvertes', () => {
+    const { store } = testStore();
+    const s = () => store.getState();
+    s().startBlank();
+    s().goTo('questions');
+    expect(s().question).toBe('closure');
+    s().setTop({ kind: 'flat-roof' });
+    s().setBottom('slab-on-ground');
+    s().finishQuestions();
+    expect(s().step).toBe('result');
+    const project = selectProject(s());
+    expect(questionStatus('closure', project, selectMarks(s()))).toBe('answered');
+    expect(questionStatus('context', project, selectMarks(s()))).toBe('open');
+    // Revenir aux questions reprend à la première note de visite, sans rien exiger.
+    s().goTo('questions');
+    expect(s().question).toBe('context');
+    s().finishQuestions();
+    expect(s().step).toBe('result');
+    expect(questionStatus('context', selectProject(s()), selectMarks(s()))).toBe('open');
   });
 
   it('choisir « neuf » après coup saute l’isolation, même si l’on y était', () => {
@@ -213,8 +248,9 @@ describe('parcours complet dans le magasin', () => {
     s().openQuestion('insulation');
     s().answer({ occasion: 'new' });
     s().goTo('questions');
-    expect(s().question).toBe('context');
+    expect(s().question).toBe('closure'); // la question indispensable n'est pas encore répondue
     s().openQuestion('insulation'); // question hors parcours : ignorée
-    expect(s().question).toBe('context');
+    expect(s().question).toBe('closure');
+    expect(relevantQuestions(selectProject(s()))).not.toContain('insulation');
   });
 });

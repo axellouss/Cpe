@@ -26,15 +26,17 @@ import { derive } from '../compute';
 import { fixed } from '../numbers';
 import {
   CAN_SKIP,
+  countedQuestions,
   isPlausibleYear,
   isQuestionComplete,
+  isVisitNote,
   OPTIONAL_QUESTIONS,
-  PERIODS,
   periodLabel,
   periodOfYear,
-  questionRank,
+  PERIODS,
   questionStatus,
   relevantQuestions,
+  visitNoteRank,
 } from '../questions';
 import { selectMarks, selectProject, useShell, useShellStore } from '../store';
 import type { QuestionId } from '../types';
@@ -716,8 +718,10 @@ export function QuestionsScreen() {
     }, 380);
   };
 
-  const { rank, total } = questionRank(id, project);
+  const note = visitNoteRank(id, project);
   const complete = isQuestionComplete(id, project);
+  // La question indispensable est répondue : le résultat est prêt, les notes de visite sont un supplément.
+  const fork = !isVisitNote(id) && complete;
   const canSkip = CAN_SKIP[id];
   // Sans « je ne sais pas », il faut une réponse complète pour continuer ; avec, on peut continuer sur une réponse partielle.
   const canContinue = complete || canSkip;
@@ -751,7 +755,13 @@ export function QuestionsScreen() {
       </nav>
 
       <div className="card question__card">
-        <p className="question__count">{rank !== null ? tr('shell.q.count', { n: rank, total }) : tr('shell.q.optional')}</p>
+        <p className="question__count">
+          {!isVisitNote(id)
+            ? tr('shell.q.count.required')
+            : note
+              ? tr('shell.q.count.note', { n: note.rank, total: note.total })
+              : tr('shell.q.optional')}
+        </p>
         <h1 id="question-title" ref={title} tabIndex={-1} className="question__title">
           {tr(`shell.q.${id}.title`)}
         </h1>
@@ -775,12 +785,32 @@ export function QuestionsScreen() {
               <span>{tr('shell.q.skip')}</span>
             </button>
           ) : null}
-          <button type="button" className="btn btn--primary btn--large" onClick={() => store.getState().continueQuestion()} disabled={!canContinue} data-testid="q-continue">
-            <span>{tr(!last ? 'shell.continue' : id === 'identity' && !complete ? 'shell.q.identity.later' : 'shell.q.finish')}</span>
-            <Icon name="arrowRight" size={18} />
-          </button>
+          {fork ? (
+            <>
+              <button type="button" className="btn btn--ghost" onClick={() => store.getState().continueQuestion()} data-testid="q-notes">
+                <span>{tr('shell.q.fork.notes')}</span>
+              </button>
+              <button type="button" className="btn btn--primary btn--large" onClick={() => store.getState().finishQuestions()} data-testid="q-continue">
+                <span>{tr('shell.q.finish')}</span>
+                <Icon name="arrowRight" size={18} />
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn btn--primary btn--large" onClick={() => store.getState().continueQuestion()} disabled={!canContinue} data-testid="q-continue">
+              <span>{tr(!last ? 'shell.continue' : id === 'identity' && !complete ? 'shell.q.identity.later' : 'shell.q.finish')}</span>
+              <Icon name="arrowRight" size={18} />
+            </button>
+          )}
         </footer>
         {!canContinue ? <p className="question__need">{tr('shell.q.need')}</p> : null}
+        {fork ? <p className="question__need">{tr('shell.q.fork.hint', { count: countedQuestions(project).filter(isVisitNote).length })}</p> : null}
+        {isVisitNote(id) && id !== 'identity' ? (
+          <p className="question__need">
+            <button type="button" className="linklike" onClick={() => store.getState().finishQuestions()} data-testid="q-to-result">
+              {tr('shell.q.note.toResult')}
+            </button>
+          </p>
+        ) : null}
       </div>
     </section>
   );

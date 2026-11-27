@@ -182,19 +182,24 @@ describe('jauges « complet » et « confirmé »', () => {
     expect(afterPlan.confirmed).toBeGreaterThan(before.confirmed);
     expect(afterPlan.complete).toBe(before.complete); // rien de nouveau, seulement confirmé
 
+    // Les notes de visite ne changent aucun chiffre : elles ne font pas bouger les jauges.
     project = setAnswers(project, { occasion: 'existing', buildingType: 'EFH', dwellings: 1, yearBuilt: 1974 });
     const afterAnswers = computeMeters(project);
-    expect(afterAnswers.complete).toBeGreaterThan(afterPlan.complete);
-    expect(afterAnswers.confirmed).toBeGreaterThan(afterPlan.confirmed);
+    expect(afterAnswers.complete).toBe(afterPlan.complete);
+    expect(afterAnswers.confirmed).toBe(afterPlan.confirmed);
     expect(afterAnswers.confirmed).toBeLessThanOrEqual(afterAnswers.complete);
     storey = project.model.storeys[0]!;
     expect(storey.netAreaOverride).toEqual({ value: 60, from: 'user' });
   });
 
-  it('un bâtiment neuf n’attend pas de réponse sur l’isolation ajoutée', () => {
-    const existing = setAnswers(createEmptyProject('fr'), { occasion: 'existing' });
-    const fresh = setAnswers(createEmptyProject('fr'), { occasion: 'new' });
-    expect(meterSlots(existing).length - meterSlots(fresh).length).toBe(3);
+  it('un relevé complet atteint 100 % sans aucune note de visite', () => {
+    let { project, storey } = withStorey(sheet('s1', 'RDC', { detected: { rooms: [{ name: 'Séjour', statedArea: 30, heatedGuess: 'yes' }], openings: [], notes: [] } }));
+    project = confirmStoreyHeight(confirmStoreyHeight(project, storey.id, 'gross'), storey.id, 'clear');
+    project = setBottom(setTop(project, { kind: 'flat-roof' }), 'slab-on-ground');
+    expect(meterSlots(project).some((s) => s.key.startsWith('answers.'))).toBe(false);
+    // Il ne manque que les fenêtres (aucune posée) et le nord (non confirmé).
+    const open = meterSlots(project).filter((s) => !s.filled || !isConfirmed(s.from)).map((s) => s.key);
+    expect(open).toEqual(['windows', 'north']);
   });
 
   it('une pièce encore à trancher rend la surface nette provisoire', () => {

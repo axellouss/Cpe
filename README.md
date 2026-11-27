@@ -3,7 +3,8 @@
 Plan2CPE lit des plans de bâtiment et prépare les données géométriques à saisir dans **LuxEeB-Tool**, l'outil officiel
 luxembourgeois de calcul du certificat de performance énergétique (CPE) des bâtiments d'habitation.
 
-L'expert dépose ses plans, confirme en touchant ce que le logiciel a lu, répond à neuf questions au plus, et reçoit
+L'expert dépose ses plans, confirme en touchant ce que le logiciel a lu, répond à une seule question indispensable
+(la toiture et le plancher bas, que le plan ne montre pas), et reçoit
 chaque valeur **dans l'ordre de saisie de LuxEeB-Tool**, avec les intitulés allemands de l'outil, des blocs prêts à
 copier et, pour chaque valeur, l'indication de sa provenance (lue sur le plan, calculée, par défaut, estimée, saisie).
 
@@ -46,8 +47,10 @@ niveaux avec garage accolé, en DXF).
 2. **Lecture** — le logiciel montre ce qu'il a trouvé : feuilles, échelle, contour, pièces, ouvertures, nord.
 3. **Plan** — six gestes par étage : échelle, contour chauffé, ce qu'il y a derrière chaque façade, fenêtres et portes,
    nord, pièces comptées dans An. Les hauteurs d'étage se saisissent à côté.
-4. **Questions** — ce qu'un plan ne dit pas : occasion et type de bâtiment, année, toiture et plancher bas, isolation
-   ajoutée, génération des fenêtres, chauffage, eau chaude, ventilation, solaire.
+4. **Question** — une seule est indispensable : ce qu'il y a au-dessus et en dessous du volume chauffé (toiture,
+   plancher bas). C'est la seule dont dépendent les valeurs calculées. Huit « notes de visite » facultatives suivent
+   (occasion, année, isolation ajoutée, fenêtres, chauffage, eau chaude, ventilation, solaire) : elles ne changent
+   aucun chiffre et sont reprises en clair dans le guide de saisie.
 5. **Résultat** — le guide de saisie, section par section, avec les points à vérifier, un dossier imprimable, un relevé
    CSV et le projet enregistrable (`.json`).
 

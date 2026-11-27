@@ -51,7 +51,21 @@ import {
   setNorth,
   setTop as setTopOp,
 } from './modelOps';
-import { clearedAnswers, hasAnyAnswer, isQuestionComplete, markQuestion, nextQuestion, previousQuestion, relevantQuestions } from './questions';
+import {
+  clearedAnswers,
+  firstOpenQuestion,
+  hasAnyAnswer,
+  isQuestionComplete,
+  markQuestion,
+  nextQuestion,
+  previousQuestion,
+  QUESTION_ORDER,
+  relevantQuestions,
+  REQUIRED_QUESTIONS,
+} from './questions';
+
+/** Première question du parcours : la seule indispensable. */
+const FIRST_QUESTION: QuestionId = QUESTION_ORDER[0]!;
 import { emptyMarks } from './types';
 import type { ClosedFile, ExpertTab, LoadedDocument, Marks, PlanStepKey, QuestionId, ReadingItem, Step, Toast, Workspace } from './types';
 
@@ -193,6 +207,8 @@ export interface ShellState {
   setTop(patch: Partial<Omit<TopClosure, 'from'>>, key?: string, confirmed?: boolean): void;
   setBottom(kind: BottomKind): void;
   continueQuestion(): void;
+  /** Marque la question courante comme vue et va droit au résultat (les notes de visite restent facultatives). */
+  finishQuestions(): void;
   skipQuestion(): void;
   backQuestion(): void;
 
@@ -379,7 +395,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       planStep: 'scale',
       planFocus: null,
       celebrate: null,
-      question: 'context',
+      question: FIRST_QUESTION,
       questionPart: null,
       expertOpen: false,
       expertTab: 'constructions',
@@ -410,7 +426,10 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         }
         if (step === 'questions') {
           const project = selectProject(state);
-          const question = relevantQuestions(project).includes(state.question) ? state.question : 'context';
+          // D'abord la question indispensable tant qu'elle n'est pas répondue ; ensuite la première note pas encore vue.
+          const required = REQUIRED_QUESTIONS.find((q) => !isQuestionComplete(q, project));
+          const open = firstOpenQuestion(project, selectMarks(state));
+          const question = required ?? open ?? (relevantQuestions(project).includes(state.question) ? state.question : FIRST_QUESTION);
           set({ step, question, questionPart: null });
           return;
         }
@@ -547,7 +566,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         set({ saved: null, proposal: null, entered: {} });
         const state = get();
         if (project.model.storeys.length > 0) enterPlan(null);
-        else set({ step: 'questions', question: 'context', questionPart: null });
+        else set({ step: 'questions', question: FIRST_QUESTION, questionPart: null });
         toast(tr(state.documents.length === 0 && project.model.storeys.some((s) => s.sheetId !== null) ? 'shell.home.opened.noPlans' : 'shell.home.opened'), 'ok');
         return true;
       },
@@ -562,7 +581,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         lastSaved = workspace;
         set({ history: createHistory(workspace), saved: null, proposal: null, saveState: 'saved' });
         if (workspace.project.model.storeys.length > 0) enterPlan(null);
-        else set({ step: 'questions', question: 'context', questionPart: null });
+        else set({ step: 'questions', question: FIRST_QUESTION, questionPart: null });
       },
 
       discardSaved() {
@@ -587,7 +606,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           storeyId: null,
           planStep: 'scale',
           planFocus: null,
-          question: 'context',
+          question: FIRST_QUESTION,
           questionPart: null,
           entered: {},
           saved: null,
@@ -807,6 +826,16 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         const next = nextQuestion(id, selectProject(get()));
         if (next) set({ question: next, questionPart: null });
         else set({ step: 'result' });
+      },
+
+      finishQuestions() {
+        const state = get();
+        const id = state.question;
+        const project = selectProject(state);
+        if (isQuestionComplete(id, project) || hasAnyAnswer(id, project)) {
+          apply((ws) => ({ ...ws, marks: markQuestion(ws.marks, id, 'answered') }), { silent: true });
+        }
+        set({ step: 'result' });
       },
 
       skipQuestion() {

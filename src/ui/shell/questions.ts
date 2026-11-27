@@ -1,16 +1,20 @@
 /**
- * Script des questions : ce que le plan ne peut pas dire. Un écran par question, neuf au plus au premier passage
- * pour une maison unifamiliale existante ; l'identité du projet (nom, adresse) vient en dernier et reste facultative.
+ * Script des questions : ce que le plan ne peut pas dire. Un écran par question.
+ *
+ * UNE seule question est indispensable — ce qu'il y a au-dessus et en dessous du volume chauffé : c'est la seule
+ * dont dépendent les valeurs calculées (enveloppe A, volume Ve). Elle vient en premier, et le résultat est
+ * accessible aussitôt après. Les autres sont des NOTES DE VISITE facultatives : elles ne changent aucun chiffre et
+ * sont simplement reprises en clair dans le guide de saisie, pour avoir tout le dossier au même endroit.
  * Fonctions pures : l'ordre, la pertinence et l'état de chaque question se déduisent du projet et des repères.
  */
 import type { Project, ProjectAnswers } from '../../core/types';
 import type { Marks, QuestionId } from './types';
 
-/** Ordre des écrans. Les questions à fort effet sur le résultat viennent tôt, tant que l'attention est fraîche. */
+/** Ordre des écrans : la question indispensable d'abord, puis les notes de visite. */
 export const QUESTION_ORDER: readonly QuestionId[] = [
+  'closure',
   'context',
   'year',
-  'closure',
   'insulation',
   'windows',
   'heating',
@@ -20,12 +24,20 @@ export const QUESTION_ORDER: readonly QuestionId[] = [
   'identity',
 ];
 
-/** Questions comptées dans « question n sur N » (l'identité, facultative, n'en fait pas partie). */
+/** Les questions dont dépendent les valeurs calculées : sans elles, pas de résultat fiable. */
+export const REQUIRED_QUESTIONS: readonly QuestionId[] = ['closure'];
+
+/** Questions hors du décompte « n sur N » (l'identité du projet, tout en bas). */
 export const OPTIONAL_QUESTIONS: readonly QuestionId[] = ['identity'];
+
+/** Vrai pour une note de visite : facultative, sans effet sur les valeurs calculées. */
+export function isVisitNote(id: QuestionId): boolean {
+  return !REQUIRED_QUESTIONS.includes(id);
+}
 
 /** Questions où « je ne sais pas » est une réponse acceptable (une valeur par défaut ou un champ vide en découle). */
 export const CAN_SKIP: Record<QuestionId, boolean> = {
-  context: false,
+  context: true,
   year: true,
   closure: false,
   insulation: true,
@@ -140,6 +152,13 @@ export function questionRank(id: QuestionId, project: Project): { rank: number |
   const counted = countedQuestions(project);
   const i = counted.indexOf(id);
   return { rank: i < 0 ? null : i + 1, total: counted.length };
+}
+
+/** Rang d'une note de visite parmi les notes comptées (« note n sur N ») ; null pour les autres questions. */
+export function visitNoteRank(id: QuestionId, project: Project): { rank: number; total: number } | null {
+  const notes = countedQuestions(project).filter(isVisitNote);
+  const i = notes.indexOf(id);
+  return i < 0 ? null : { rank: i + 1, total: notes.length };
 }
 
 export function markQuestion(marks: Marks, id: QuestionId, value: 'answered' | 'skipped'): Marks {

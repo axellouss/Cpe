@@ -15,6 +15,7 @@ import { allSheets, fileNameOfSheetId, findSheet } from '../documents';
 import { confirmStoreyHeight, excludeRoomFromEnvelope, restoreStoreyFootprint, setNetArea, setStoreyHeight } from '../modelOps';
 import type { HeightKind } from '../modelOps';
 import { fixed, unitLength } from '../numbers';
+import { isQuestionComplete, REQUIRED_QUESTIONS } from '../questions';
 import { currentStorey, selectMarks, selectProject, useShell, useShellStore } from '../store';
 import { AnimatedNumber, Badge, NumberField, ProvenanceTag, useAnnounce, useT } from './common';
 import type { BadgeTone, Translate } from './common';
@@ -224,6 +225,7 @@ function Checklist({ project, storey, steps, sheet }: { project: Project; storey
   const nextStorey = storeyDone ? project.model.storeys.find((s) => s.id !== storey.id && planSteps(project, s, marks, null).some((x) => x.state !== 'done')) : undefined;
   const active = steps.find((s) => s.key === planStep) ?? null;
   const following = active ? nextOpenStep(steps, active.key) : null;
+  const closureDone = REQUIRED_QUESTIONS.every((q) => isQuestionComplete(q, project));
 
   useEffect(() => {
     if (!celebrate) return;
@@ -303,8 +305,14 @@ function Checklist({ project, storey, steps, sheet }: { project: Project; storey
             <Icon name="arrowRight" size={18} />
           </button>
         ) : null}
-        <button type="button" className={`btn ${everything || (storeyDone && !nextStorey) ? 'btn--primary' : 'btn--ghost'}`} onClick={() => store.getState().goTo('questions')} data-testid="to-questions">
-          <span>{tr(everything ? 'shell.plan.toQuestions' : 'shell.plan.toQuestions.early')}</span>
+        {/* Toiture et plancher bas déjà confirmés : plus aucune question indispensable, le résultat est prêt. */}
+        <button
+          type="button"
+          className={`btn ${everything || (storeyDone && !nextStorey) ? 'btn--primary' : 'btn--ghost'}`}
+          onClick={() => store.getState().goTo(closureDone ? 'result' : 'questions')}
+          data-testid="to-questions"
+        >
+          <span>{tr(closureDone ? 'shell.plan.toResult' : everything ? 'shell.plan.toQuestions' : 'shell.plan.toQuestions.early')}</span>
           <Icon name="arrowRight" size={18} />
         </button>
       </footer>

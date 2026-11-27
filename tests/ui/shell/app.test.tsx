@@ -341,28 +341,14 @@ describe('questions', () => {
     await click('stub-trace');
     await click('to-questions');
 
-    expect(has('question-context')).toBe(true);
-    expect(text()).toContain('Question 1 sur 9');
+    // La seule question indispensable vient en premier : sans elle, pas de résultat ; pas de « je ne sais pas ».
+    expect(has('question-closure')).toBe(true);
+    expect(text()).toContain('La seule question indispensable');
     expect(text()).toContain('Pourquoi cette question ?');
-    // Sans réponse, on ne continue pas (pas de « je ne sais pas » ici).
     expect((q('q-continue') as HTMLButtonElement).disabled).toBe(true);
     expect(has('q-skip')).toBe(false);
-    await choose('q-occasion', 'existing');
-    await choose('q-building-type', 'EFH');
-    expect(selectProject(m.store.getState()).answers).toMatchObject({ occasion: 'existing', buildingType: 'EFH', dwellings: 1 });
-    await click('q-continue');
-
-    expect(has('question-year')).toBe(true);
-    await choose('q-period', 'p5');
-    expect(selectProject(m.store.getState()).answers.yearBuilt).toBe(1975);
-    expect(text()).toContain('Année approximative inscrite : 1975');
-    await type('q-year', '1972');
-    expect(selectProject(m.store.getState()).answers.yearBuilt).toBe(1972);
-    expect(text()).not.toContain('Année approximative');
-    await click('q-continue');
 
     // Toiture et plancher : la réponse change le bâtiment, les totaux réagissent.
-    expect(has('question-closure')).toBe(true);
     const before = q('q-live').textContent;
     expect(text()).toContain('Hypothèse actuelle');
     await choose('q-top', 'flat-roof');
@@ -388,10 +374,34 @@ describe('questions', () => {
     await choose('q-bottom', 'above-unheated');
     expect(selectProject(m.store.getState()).model.bottom).toMatchObject({ kind: 'above-unheated', from: 'user' });
     expect((q('q-continue') as HTMLButtonElement).disabled).toBe(true); // la toiture n'est pas encore confirmée
+    expect(has('q-notes')).toBe(false);
     await click('q-roof-confirm');
     expect(selectProject(m.store.getState()).model.top).toMatchObject({ kind: 'pitched-roof', pitchDeg: 45, shape: 'hip', kneeWallHeight: 1, from: 'user' });
     expect(has('q-roof-confirm')).toBe(false);
     expect(q('q-live').textContent).not.toBe(before);
+
+    // Question indispensable répondue : le résultat est prêt ; les notes de visite sont proposées, pas exigées.
+    expect((q('q-continue') as HTMLButtonElement).disabled).toBe(false);
+    expect(q('q-continue').textContent).toContain('Voir le résultat');
+    expect(text()).toContain('notes de visite');
+    await click('q-notes');
+
+    expect(has('question-context')).toBe(true);
+    expect(text()).toContain('Note de visite 1 sur 8');
+    expect(has('q-skip')).toBe(true);
+    expect(has('q-to-result')).toBe(true);
+    await choose('q-occasion', 'existing');
+    await choose('q-building-type', 'EFH');
+    expect(selectProject(m.store.getState()).answers).toMatchObject({ occasion: 'existing', buildingType: 'EFH', dwellings: 1 });
+    await click('q-continue');
+
+    expect(has('question-year')).toBe(true);
+    await choose('q-period', 'p5');
+    expect(selectProject(m.store.getState()).answers.yearBuilt).toBe(1975);
+    expect(text()).toContain('Année approximative inscrite : 1975');
+    await type('q-year', '1972');
+    expect(selectProject(m.store.getState()).answers.yearBuilt).toBe(1972);
+    expect(text()).not.toContain('Année approximative');
     await click('q-continue');
 
     expect(has('question-insulation')).toBe(true);
@@ -425,16 +435,17 @@ describe('questions', () => {
   });
 
   it('un bâtiment neuf ne voit pas la question sur l’isolation ajoutée', async () => {
-    await mount();
+    const m = await mount();
     await click('step-questions');
+    await click('dot-context');
     await choose('q-occasion', 'new');
     await choose('q-building-type', 'MFH');
-    expect(text()).toContain('Question 1 sur 8');
+    expect(text()).toContain('Note de visite 1 sur 7');
     expect(has('dot-insulation')).toBe(false);
-    // Immeuble : le nombre de logements est demandé.
-    expect((q('q-continue') as HTMLButtonElement).disabled).toBe(true);
+    // Immeuble : le nombre de logements est demandé — sans bloquer, c'est une note de visite.
+    expect(has('q-dwellings')).toBe(true);
     await type('q-dwellings', '6');
-    expect((q('q-continue') as HTMLButtonElement).disabled).toBe(false);
+    expect(selectProject(m.store.getState()).answers.dwellings).toBe(6);
   });
 });
 
