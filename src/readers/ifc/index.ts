@@ -14,7 +14,7 @@
  *  - init-node.ts     initialisation sous Node (tests).
  */
 import type { IfcAPI } from 'web-ifc';
-import type { PlanDocument } from '../../core/types';
+import type { Lang, PlanDocument } from '../../core/types';
 import { analyseIfc } from './analyse';
 
 export { analyseIfc, type AnalyseOptions } from './analyse';
@@ -36,10 +36,10 @@ export async function createIfcApi(): Promise<IfcAPI> {
  * Lit un fichier IFC (STEP, .ifc). Lève une erreur si le fichier est illisible ; un modèle sans mur ni local
  * donne un document sans feuille, accompagné d'un avertissement.
  */
-export async function readIfc(data: ArrayBuffer, fileName: string): Promise<PlanDocument> {
+export async function readIfc(data: ArrayBuffer, fileName: string, options: { lang?: Lang } = {}): Promise<PlanDocument> {
   const api = await createIfcApi();
   try {
-    return analyseIfc(api, new Uint8Array(data), fileName);
+    return analyseIfc(api, new Uint8Array(data), fileName, options.lang ? { lang: options.lang } : {});
   } finally {
     // Une instance par fichier : la mémoire du WebAssembly ne se rend qu'en jetant l'instance.
     try {

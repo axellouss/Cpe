@@ -1,7 +1,8 @@
 /**
- * Textes du lecteur DWG / DXF (FR + DE). Les avertissements du lecteur sont rendus en français
- * (contrat de PlanDocument.warnings) ; le dictionnaire allemand est prêt pour le jour où l'interface les traduira.
+ * Textes du lecteur DWG / DXF (FR + DE). Les notes et avertissements sont rendus dans la langue demandée à la
+ * lecture (celle de l'interface), en français par défaut.
  */
+import type { Lang } from '../../core/types';
 import type { Dictionary } from '../../i18n';
 import { registerMessages, t } from '../../i18n';
 
@@ -132,7 +133,21 @@ export const CAD_MESSAGES: Dictionary = {
 
 registerMessages(CAD_MESSAGES);
 
-/** Message du lecteur en français (langue des avertissements du contrat). */
+/**
+ * Langue des messages de la lecture en cours. Une lecture se déroule d'un trait dans la langue de l'interface ;
+ * `readCadDetailed` la fixe en entrant.
+ */
+let current: Lang = 'fr';
+
+export function setCadLang(lang: Lang): void {
+  current = lang;
+}
+
+export function cadLang(): Lang {
+  return current;
+}
+
+/** Message du lecteur dans la langue de la lecture en cours (français par défaut). */
 export function msg(key: string, params?: Record<string, string | number>): string {
-  return t('fr', key, params);
+  return t(current, key, params);
 }

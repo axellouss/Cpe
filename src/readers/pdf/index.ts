@@ -170,8 +170,8 @@ export async function readPdfDetailed(data: ArrayBuffer, fileName: string, optio
  * Les adresses d'objet des images de fond (`sheet.image.url`) vivent tant que la page n'est pas fermée ;
  * `releasePdfImages` les libère.
  */
-export async function readPdf(data: ArrayBuffer, fileName: string): Promise<PlanDocument> {
-  return (await readPdfDetailed(data, fileName)).doc;
+export async function readPdf(data: ArrayBuffer, fileName: string, options: ReadPdfOptions = {}): Promise<PlanDocument> {
+  return (await readPdfDetailed(data, fileName, options)).doc;
 }
 
 /** Libère les images de fond d'un document lu par `readPdf` (à appeler quand le document est abandonné). */

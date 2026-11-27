@@ -3,7 +3,7 @@
  * (les bibliothèques IFC / DWG / PDF sont lourdes) et tourne entièrement dans le navigateur :
  * le fichier ne quitte jamais le poste de l'utilisateur.
  */
-import type { PlanDocument, SourceKind } from '../core/types';
+import type { Lang, PlanDocument, SourceKind } from '../core/types';
 
 /** Formats propriétaires qu'aucun outil tiers ne sait lire : on explique comment exporter. */
 export type ClosedFormat = 'pln' | 'rvt' | 'skp' | 'other';
@@ -49,26 +49,32 @@ export interface FileLike {
  * Lit un fichier de plan et renvoie des feuilles prêtes pour l'éditeur, avec les propositions du lecteur
  * (échelle, contour, pièces, ouvertures). Lève `UnsupportedFormatError` pour PLN, RVT, etc.
  */
-export async function readPlanFile(file: FileLike): Promise<PlanDocument> {
+export interface ReadPlanOptions {
+  /** Langue des noms de feuilles, notes et avertissements du lecteur (défaut : français). */
+  lang?: Lang;
+}
+
+export async function readPlanFile(file: FileLike, options: ReadPlanOptions = {}): Promise<PlanDocument> {
+  const lang: Lang = options.lang ?? 'fr';
   const data = await file.arrayBuffer();
   const kind = sniffKind(file.name, new Uint8Array(data, 0, Math.min(32, data.byteLength)));
   switch (kind) {
     case 'ifc': {
       const { readIfc } = await import('./ifc');
-      return readIfc(data, file.name);
+      return readIfc(data, file.name, { lang });
     }
     case 'dwg':
     case 'dxf': {
       const { readCad } = await import('./cad');
-      return readCad(data, file.name, kind);
+      return readCad(data, file.name, kind, { lang });
     }
     case 'pdf': {
       const { readPdf } = await import('./pdf');
-      return readPdf(data, file.name);
+      return readPdf(data, file.name, { lang });
     }
     case 'image': {
       const { readImage } = await import('./image');
-      return readImage(data, file.name);
+      return readImage(data, file.name, { lang });
     }
     default:
       throw new UnsupportedFormatError(kind, file.name);

@@ -127,6 +127,6 @@ export async function readImageDetailed(data: ArrayBuffer, fileName: string, opt
  * Lit une image de plan. L'adresse d'objet de l'image (`sheet.image.url`) vit tant que la page n'est pas
  * fermée ; `URL.revokeObjectURL` la libère quand le document est abandonné.
  */
-export async function readImage(data: ArrayBuffer, fileName: string): Promise<PlanDocument> {
-  return (await readImageDetailed(data, fileName)).doc;
+export async function readImage(data: ArrayBuffer, fileName: string, options: ReadImageOptions = {}): Promise<PlanDocument> {
+  return (await readImageDetailed(data, fileName, options)).doc;
 }

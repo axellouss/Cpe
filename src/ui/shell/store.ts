@@ -456,7 +456,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
             }));
           };
           try {
-            const loaded = toLoadedDocument(await readPlanFile(file));
+            const loaded = toLoadedDocument(await readPlanFile(file, { lang: get().lang }));
             const previous = get().documents.find((d) => d.id === loaded.id);
             // Le même fichier redéposé remplace l'ancien : ses adresses d'objets sont libérées (sauf celles reprises).
             if (previous) for (const url of previous.urls) if (!loaded.urls.includes(url)) deps.revokeUrl(url);

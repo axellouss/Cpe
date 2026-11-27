@@ -17,7 +17,7 @@
  *
  * Le lecteur PROPOSE : tout ce qui est deviné est signalé dans `warnings` et `detected.notes`.
  */
-import type { DetectedOpening, DetectedRoom, PlanDocument, PlanSheet, PlanText, Sourced, Vec2 } from '../../core/types';
+import type { DetectedOpening, DetectedRoom, Lang, PlanDocument, PlanSheet, PlanText, Sourced, Vec2 } from '../../core/types';
 import { formatNumber } from '../../i18n';
 import { guessStorey, parseArea } from '../../semantics/labels';
 import { analyse } from './analyse';
@@ -25,7 +25,7 @@ import type { Analysis, PlanAnalysis } from './analyse';
 import { classifyLayer } from './layers';
 import { CadReadError, SEG_FILL, SEG_HATCH, readDrawing } from './load';
 import type { RawDrawing } from './load';
-import { msg } from './messages';
+import { cadLang, msg, setCadLang } from './messages';
 import { ringArea } from './planar';
 import type { Box } from './planar';
 import { nearestUnit, unitDef } from './units';
@@ -178,11 +178,11 @@ function uniqueNames(names: string[]): string[] {
 function sheetNames(plans: readonly PlanAnalysis[], order: readonly number[], fileName: string): string[] {
   const names = order.map((k, pos) => {
     const p = plans[k]!;
-    if (p.storey) return p.storey.fr;
+    if (p.storey) return p.storey[cadLang()];
     if (p.viewTitle) return p.viewTitle;
     if (order.length === 1) {
       const fromFile = guessStorey(baseName(fileName).replace(/[_\-.]+/g, ' '));
-      return fromFile ? fromFile.fr : baseName(fileName) || msg('cad.sheet.all');
+      return fromFile ? fromFile[cadLang()] : baseName(fileName) || msg('cad.sheet.all');
     }
     return msg('cad.sheet.plan', { n: pos + 1 });
   });
@@ -230,7 +230,9 @@ export async function readCadDetailed(
   data: ArrayBuffer,
   fileName: string,
   kind: 'dwg' | 'dxf',
+  options: { lang?: Lang } = {},
 ): Promise<{ doc: PlanDocument; details: CadReadDetails }> {
+  setCadLang(options.lang ?? 'fr');
   const t0 = Date.now();
   let raw: RawDrawing;
   try {
@@ -344,7 +346,7 @@ export async function readCadDetailed(
   const contents = distribute(raw, territories);
   const names =
     order.length === 0
-      ? [guessStorey(baseName(fileName).replace(/[_\-.]+/g, ' '))?.fr ?? (baseName(fileName) || msg('cad.sheet.all'))]
+      ? [guessStorey(baseName(fileName).replace(/[_\-.]+/g, ' '))?.[cadLang()] ?? (baseName(fileName) || msg('cad.sheet.all'))]
       : sheetNames(a.plans, order, fileName);
   const wallLayerSet = new Set(a.wallLayers.map((name) => raw.layers.indexOf(name)));
 
@@ -496,8 +498,8 @@ export async function readCadDetailed(
 
 /**
  * Lit un fichier DWG ou DXF et renvoie des feuilles prêtes pour l'éditeur, avec les propositions du lecteur.
- * Lève une erreur (message en français) si le fichier est illisible ou vide.
+ * Lève une erreur (message dans la langue demandée) si le fichier est illisible ou vide.
  */
-export async function readCad(data: ArrayBuffer, fileName: string, kind: 'dwg' | 'dxf'): Promise<PlanDocument> {
-  return (await readCadDetailed(data, fileName, kind)).doc;
+export async function readCad(data: ArrayBuffer, fileName: string, kind: 'dwg' | 'dxf', options: { lang?: Lang } = {}): Promise<PlanDocument> {
+  return (await readCadDetailed(data, fileName, kind, options)).doc;
 }
