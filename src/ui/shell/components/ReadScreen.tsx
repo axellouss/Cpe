@@ -4,7 +4,7 @@
  * Un toucher pour accepter ; tout reste ajustable ici même, et plus tard sur le plan.
  */
 import { useRef } from 'react';
-import type { PlanDocument, PlanSheet } from '../../../core/types';
+import type { Lang, PlanDocument, PlanSheet } from '../../../core/types';
 import {
   includedSheets,
   moveProposalSheet,
@@ -35,7 +35,7 @@ function scaleText(doc: PlanDocument, sheet: PlanSheet, tr: Translate): string {
   return tr('shell.read.scale.unit', { length: unitLength(scale.value) });
 }
 
-function SheetRow({ doc, sheet, proposal }: { doc: PlanDocument; sheet: PlanSheet; proposal: Proposal }) {
+function SheetRow({ doc, sheet, proposal, notesLang }: { doc: PlanDocument; sheet: PlanSheet; proposal: Proposal; notesLang: Lang }) {
   const tr = useT();
   const store = useShellStore();
   const entry = proposal.sheets.find((s) => s.sheetId === sheet.id);
@@ -147,7 +147,7 @@ function SheetRow({ doc, sheet, proposal }: { doc: PlanDocument; sheet: PlanShee
       {summary.notes.length > 0 ? (
         <details className="sheet__notes">
           <summary>{tr('shell.read.notes', { count: summary.notes.length })}</summary>
-          <ul lang="fr">
+          <ul lang={notesLang}>
             {summary.notes.map((note, i) => (
               <li key={i}>{note}</li>
             ))}
@@ -162,6 +162,10 @@ function DocumentCard({ loaded, proposal }: { loaded: LoadedDocument; proposal: 
   const tr = useT();
   const store = useShellStore();
   const doc = loaded.doc;
+  const lang = useShell((s) => s.lang);
+  // Les remarques du lecteur sont rédigées dans la langue de l'interface AU MOMENT de la lecture.
+  const notesLang: Lang = loaded.readLang ?? lang;
+  const hasReaderText = doc.warnings.length > 0 || doc.northAngle?.note !== undefined || doc.sheets.some((s) => s.detected.notes.length > 0 || s.metresPerUnit?.note !== undefined);
   return (
     <article className="card doc" aria-label={doc.fileName} data-testid="doc-card">
       <header className="doc__head">
@@ -178,7 +182,7 @@ function DocumentCard({ loaded, proposal }: { loaded: LoadedDocument; proposal: 
       </header>
 
       {doc.warnings.length > 0 ? (
-        <ul className="notice notice--warn doc__warnings" lang="fr" aria-label={tr('shell.read.warnings')}>
+        <ul className="notice notice--warn doc__warnings" lang={notesLang} aria-label={tr('shell.read.warnings')}>
           {doc.warnings.map((w, i) => (
             <li key={i}>{w}</li>
           ))}
@@ -202,12 +206,18 @@ function DocumentCard({ loaded, proposal }: { loaded: LoadedDocument; proposal: 
         <p className="doc__north muted">{tr('shell.read.north.none')}</p>
       )}
 
+      {hasReaderText && notesLang !== lang ? (
+        <p className="doc__lang muted" data-testid="read-notes-lang">
+          {tr(`shell.read.notesLang.${notesLang}`)}
+        </p>
+      ) : null}
+
       {doc.sheets.length === 0 ? (
         <p className="muted">{tr('shell.read.sheets.none')}</p>
       ) : (
         <ul className="sheets">
           {doc.sheets.map((sheet) => (
-            <SheetRow key={sheet.id} doc={doc} sheet={sheet} proposal={proposal} />
+            <SheetRow key={sheet.id} doc={doc} sheet={sheet} proposal={proposal} notesLang={notesLang} />
           ))}
         </ul>
       )}

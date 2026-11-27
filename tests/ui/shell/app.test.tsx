@@ -292,6 +292,15 @@ describe('lecture', () => {
     expect(card).toContain('azimut 340°');
     expect(card).toContain('2 plans trouvés dans le même dessin.');
     expect(all('stack-row')).toHaveLength(2);
+    // Lu en français, affiché en français : rien à signaler sur la langue des remarques.
+    expect(has('read-notes-lang')).toBe(false);
+    await click('lang-de');
+    // Passé en allemand : les étages proposés suivent ; les remarques du lecteur restent en français, et c'est dit.
+    expect(all('stack-row').map((row) => row.querySelector('input')?.value ?? '')).toContain('Erdgeschoss');
+    expect(q('read-notes-lang').textContent).toContain('auf Französisch');
+    expect(q('doc-card').querySelector('.doc__warnings')?.getAttribute('lang')).toBe('fr');
+    await click('lang-fr');
+    expect(has('read-notes-lang')).toBe(false);
     expect(text()).toContain('Dalle sur terre-plein');
 
     // Ajuster : renommer l'étage du haut (affiché en premier, comme une coupe).

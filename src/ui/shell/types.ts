@@ -2,7 +2,7 @@
  * Types propres à l'application qui entoure l'éditeur de plan (écrans, repères d'avancement, documents chargés).
  * Le modèle du bâtiment lui-même vit dans src/core/types.ts.
  */
-import type { PlanDocument, Project } from '../../core/types';
+import type { Lang, PlanDocument, Project } from '../../core/types';
 import type { ClosedFormat } from '../../readers';
 
 /** Les cinq écrans, dans l'ordre du parcours. */
@@ -68,6 +68,8 @@ export interface LoadedDocument {
   urls: string[];
   /** Empreinte du contenu lu : distingue le même fichier redéposé d'un AUTRE fichier qui porte le même nom. */
   signature?: string;
+  /** Langue dans laquelle le lecteur a rédigé ses remarques (celle de l'interface au moment de la lecture). */
+  readLang?: Lang;
 }
 
 /** Suivi de la lecture d'un fichier déposé. */

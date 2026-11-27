@@ -39,10 +39,11 @@ export function collectObjectUrls(doc: PlanDocument): string[] {
   return urls;
 }
 
-export function toLoadedDocument(doc: PlanDocument, signature?: string): LoadedDocument {
+export function toLoadedDocument(doc: PlanDocument, signature?: string, readLang?: Lang): LoadedDocument {
   const spaced = namespaceDocument(doc);
   const loaded: LoadedDocument = { id: spaced.fileName, doc: spaced, urls: collectObjectUrls(spaced) };
   if (signature !== undefined) loaded.signature = signature;
+  if (readLang !== undefined) loaded.readLang = readLang;
   return loaded;
 }
 
@@ -268,6 +269,25 @@ export function toggleProposalSheet(proposal: Proposal, sheetId: string, include
     }
   }
   return { ...proposal, sheets };
+}
+
+/**
+ * Changement de langue pendant que la proposition est à l'écran : les noms d'étages reconnus et laissés tels
+ * quels (« Rez-de-chaussée », « Étage ») passent dans la nouvelle langue ; un nom saisi par l'expert ne bouge pas.
+ */
+export function relocalizeProposal(proposal: Proposal, from: Lang, to: Lang): Proposal {
+  if (from === to) return proposal;
+  let changed = false;
+  const taken = new Set(proposal.sheets.map((s) => s.name));
+  const sheets = proposal.sheets.map((s) => {
+    const guess = guessStorey(s.name);
+    if (!guess || guess[from] !== s.name || guess[to] === s.name || taken.has(guess[to])) return s;
+    taken.delete(s.name);
+    taken.add(guess[to]);
+    changed = true;
+    return { ...s, name: guess[to] };
+  });
+  return changed ? { ...proposal, sheets } : proposal;
 }
 
 export function renameProposalSheet(proposal: Proposal, sheetId: string, name: string): Proposal {

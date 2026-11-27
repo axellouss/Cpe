@@ -29,6 +29,7 @@ import {
   findSheet,
   includedSheets,
   proposeStoreys,
+  relocalizeProposal,
   toLoadedDocument,
 } from './documents';
 import type { Proposal } from './documents';
@@ -424,9 +425,23 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         const previous = get().lang;
         if (next === previous) return;
         saveLang(deps.storage, next);
-        set({ lang: next });
-        // Les noms par défaut (types de parois, niveaux reconnus) suivent la langue ; sans effet s'il n'y en a pas.
-        updateProject((p) => relocalizeDefaults(p, previous, next), { label: 'shell.undo.language' });
+        // Les noms par défaut (types de parois, niveaux reconnus) suivent la langue, sans effet s'il n'y en a pas.
+        // Ce n'est pas un pas à annuler : tout l'historique est traduit, pour qu'« annuler » défasse la dernière
+        // vraie action sans ramener des noms dans l'ancienne langue.
+        const relocalise = (ws: Workspace): Workspace => {
+          const project = relocalizeDefaults(ws.project, previous, next);
+          return project === ws.project ? ws : { ...ws, project };
+        };
+        const state = get();
+        const history: History<Workspace> = {
+          ...state.history,
+          past: state.history.past.map((entry) => ({ ...entry, state: relocalise(entry.state) })),
+          present: relocalise(state.history.present),
+          future: state.history.future.map((entry) => ({ ...entry, state: relocalise(entry.state) })),
+        };
+        // Les étages proposés à l'écran de lecture suivent aussi.
+        set({ lang: next, history, proposal: state.proposal ? relocalizeProposal(state.proposal, previous, next) : null });
+        if (history.present !== state.history.present) scheduleSave(history.present);
       },
 
       goTo(step) {
@@ -500,13 +515,13 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           try {
             const doc = await readPlanFile(file, { lang: get().lang });
             const signature = documentSignature(doc, (file as { size?: number }).size);
-            let loaded = toLoadedDocument(doc, signature);
+            let loaded = toLoadedDocument(doc, signature, get().lang);
             const sameName = get().documents.find((d) => d.id === loaded.id);
             if (sameName && sameName.signature !== undefined && sameName.signature !== signature) {
               // Un AUTRE fichier du même nom (plan.pdf d'un second dossier) : il ne doit pas prendre la place du
               // premier ni glisser son dessin sous des étages déjà tracés. On le garde à côté, sous un nom distinct.
               const renamed = distinctFileName(doc.fileName, get().documents.map((d) => d.id));
-              loaded = toLoadedDocument({ ...doc, fileName: renamed }, signature);
+              loaded = toLoadedDocument({ ...doc, fileName: renamed }, signature, get().lang);
               toast(tr('shell.read.sameName', { name: doc.fileName, renamed }), 'warn');
             }
             const previous = get().documents.find((d) => d.id === loaded.id);

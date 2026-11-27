@@ -609,6 +609,54 @@ describe('navigation', () => {
     expect(selectProject(store.getState()).model.storeys).toHaveLength(1);
   });
 
+  it('changer de langue à l’écran de lecture traduit les étages proposés, sauf ceux que l’expert a renommés', async () => {
+    provide(houseDoc());
+    const { store } = testStore();
+    await store.getState().ingestFiles([file('maison.dxf')]);
+    const names = (): string[] => store.getState().proposal!.sheets.map((s) => s.name);
+    expect(names().sort()).toEqual(['Rez-de-chaussée', 'Étage'].sort());
+    expect(store.getState().documents[0]!.readLang).toBe('fr');
+
+    store.getState().setLang('de');
+    expect(names().sort()).toEqual(['Erdgeschoss', 'Obergeschoss'].sort());
+    // Accepté en allemand : les étages portent les noms allemands.
+    store.getState().acceptProposal();
+    expect(selectProject(store.getState()).model.storeys.map((s) => s.name)).toEqual(['Erdgeschoss', 'Obergeschoss']);
+
+    // Un nom saisi par l'expert ne bouge pas.
+    const other = testStore();
+    await other.store.getState().ingestFiles([file('maison.dxf')]);
+    const first = other.store.getState().proposal!.sheets[0]!;
+    other.store.getState().setProposal({ ...other.store.getState().proposal!, sheets: other.store.getState().proposal!.sheets.map((s) => (s.sheetId === first.sheetId ? { ...s, name: 'Niveau jardin' } : s)) });
+    other.store.getState().setLang('de');
+    expect(other.store.getState().proposal!.sheets.find((s) => s.sheetId === first.sheetId)!.name).toBe('Niveau jardin');
+  });
+
+  it('changer de langue n’est pas un pas à annuler : « annuler » défait la dernière vraie action, dans la nouvelle langue', async () => {
+    provide(houseDoc());
+    const { store } = testStore();
+    await store.getState().ingestFiles([file('maison.dxf')]);
+    store.getState().acceptProposal();
+    const ground = selectProject(store.getState()).model.storeys[0]!;
+    store.getState().confirmPlanStep('rooms');
+    const steps = store.getState().history.past.length;
+    expect(selectMarks(store.getState()).plan[ground.id]?.rooms).toBe(true);
+
+    store.getState().setLang('de');
+    expect(store.getState().history.past).toHaveLength(steps);
+    expect(selectProject(store.getState()).model.storeys.map((s) => s.name)).toEqual(['Erdgeschoss', 'Obergeschoss']);
+
+    // Annuler : la validation des pièces est défaite — pas la langue des noms.
+    store.getState().undo();
+    expect(selectMarks(store.getState()).plan[ground.id]?.rooms).toBeUndefined();
+    expect(selectProject(store.getState()).model.storeys.map((s) => s.name)).toEqual(['Erdgeschoss', 'Obergeschoss']);
+    expect(store.getState().toast?.text).not.toContain('Standardnamen');
+    // Rétablir : toujours en allemand.
+    store.getState().redo();
+    expect(selectProject(store.getState()).model.storeys.map((s) => s.name)).toEqual(['Erdgeschoss', 'Obergeschoss']);
+    expect(selectMarks(store.getState()).plan[ground.id]?.rooms).toBe(true);
+  });
+
   it('coche et décoche les lignes saisies, et s’en souvient avec le projet', () => {
     const first = testStore();
     first.store.getState().startBlank();
