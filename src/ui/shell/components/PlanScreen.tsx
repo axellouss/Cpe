@@ -6,12 +6,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { PlanSheet, Project, Sourced, Storey } from '../../../core/types';
 import { excludeRoomFromOutline, roomsOutsideOutline, unheatedRoomsInsideOutline } from '../../../engine';
+import { isOutsideEnvelopeName } from '../../../semantics/labels';
 import { PlanEditor } from '../../plan';
 import { allStoreysDone, countDone, nextOpenStep, planSteps, STEP_TOOL } from '../checklist';
 import type { PlanStepInfo, StepState } from '../checklist';
 import { derive, safeStoreyMetrics } from '../compute';
 import { allSheets, fileNameOfSheetId, findSheet } from '../documents';
-import { confirmStoreyHeight, excludeRoomFromEnvelope, restoreStoreyFootprint, setNetArea, setStoreyHeight, updateRoom } from '../modelOps';
+import { confirmStoreyHeight, excludeRoomFromEnvelope, restoreStoreyFootprint, setNetArea, setStoreyHeight } from '../modelOps';
 import type { HeightKind } from '../modelOps';
 import { fixed, unitLength } from '../numbers';
 import { currentStorey, selectMarks, selectProject, useShell, useShellStore } from '../store';
@@ -187,7 +188,7 @@ function EnvelopeNote({ storey, sheet }: { storey: Storey; sheet: PlanSheet | nu
         </div>
       ) : null}
       {inside.map(({ room, removable }) => (
-        <div className="notice notice--warn" key={room.id} data-testid="envelope-inside">
+        <div className={`notice ${isOutsideEnvelopeName(room.name) ? 'notice--warn' : 'notice--info'}`} key={room.id} data-testid="envelope-inside">
           <p className="notice__body">
             <strong>{tr('shell.plan.envelope.inside.title', { room: room.name || '?' })}</strong>
             <span>{tr(removable ? 'shell.plan.envelope.inside.text' : 'shell.plan.envelope.inside.manual')}</span>
@@ -196,21 +197,13 @@ function EnvelopeNote({ storey, sheet }: { storey: Storey; sheet: PlanSheet | nu
             {removable ? (
               <button
                 type="button"
-                className="btn btn--primary btn--small"
+                className="btn btn--ghost btn--small"
                 onClick={() => update((p) => excludeRoomFromEnvelope(p, storey.id, room.id), { label: 'shell.undo.envelope' })}
                 data-testid="envelope-exclude"
               >
                 {tr('shell.plan.envelope.exclude')}
               </button>
             ) : null}
-            <button
-              type="button"
-              className="btn btn--ghost btn--small"
-              onClick={() => update((p) => updateRoom(p, storey.id, room.id, { heated: true }), { label: 'shell.undo.envelope' })}
-              data-testid="envelope-count"
-            >
-              {tr('shell.plan.envelope.count')}
-            </button>
           </div>
         </div>
       ))}

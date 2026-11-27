@@ -188,7 +188,8 @@ export interface ShellState {
   openQuestion(id: QuestionId, part?: 'top' | 'bottom' | null): void;
   answer(patch: Partial<ProjectAnswers>, key?: string): void;
   answerYear(year: number | null, fromPeriod: boolean): void;
-  setTop(patch: Partial<Omit<TopClosure, 'from'>>, key?: string): void;
+  /** `confirmed = false` : détails d'un toit incliné encore à confirmer (voir `modelOps.setTop`). */
+  setTop(patch: Partial<Omit<TopClosure, 'from'>>, key?: string, confirmed?: boolean): void;
   setBottom(kind: BottomKind): void;
   continueQuestion(): void;
   skipQuestion(): void;
@@ -778,13 +779,13 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         );
       },
 
-      setTop(patch, key) {
+      setTop(patch, key, confirmed = true) {
         const options: ApplyOptions = { label: 'shell.undo.top' };
         if (key !== undefined) {
           options.key = `top:${key}`;
           options.window = 1500;
         }
-        updateProject((p) => setTopOp(p, patch), options);
+        updateProject((p) => setTopOp(p, patch, confirmed), options);
       },
 
       setBottom(kind) {

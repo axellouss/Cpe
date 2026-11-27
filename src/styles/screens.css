@@ -1634,6 +1634,25 @@
   border-bottom: 0;
 }
 
+/* Groupe de choix suivi de sa note d'hypothèse, hors de la grille principale de la question. */
+.q-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.q-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.q-confirm .q-assumed {
+  flex: 1 1 260px;
+  margin: 0;
+}
+
 .q-assumed,
 .q-note {
   color: var(--muted);

@@ -304,9 +304,13 @@ export function confirmNorth(project: Project): Project {
   return withModel(project, { ...project.model, northAngle: { value: current.value, from: 'user' } });
 }
 
-/** Fermeture haute choisie par l'expert (type de toiture, pente, forme, jambette). */
-export function setTop(project: Project, patch: Partial<Omit<TopClosure, 'from'>>): Project {
-  const top: TopClosure = { ...project.model.top, ...patch, from: 'user' };
+/**
+ * Fermeture haute choisie par l'expert (type de toiture, pente, forme, jambette, sens du faîtage).
+ * `confirmed = false` : le type vient d'être choisi mais ses détails restent à confirmer (toit incliné) — la
+ * fermeture reste « à confirmer » et le constat correspondant demeure.
+ */
+export function setTop(project: Project, patch: Partial<Omit<TopClosure, 'from'>>, confirmed = true): Project {
+  const top: TopClosure = { ...project.model.top, ...patch, from: confirmed ? 'user' : 'estimate' };
   if (!Number.isFinite(top.pitchDeg)) top.pitchDeg = project.model.top.pitchDeg;
   if (!Number.isFinite(top.kneeWallHeight) || top.kneeWallHeight < 0) top.kneeWallHeight = project.model.top.kneeWallHeight;
   return withModel(project, { ...project.model, top });

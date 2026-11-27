@@ -367,16 +367,31 @@ describe('questions', () => {
     expect(text()).toContain('Hypothèse actuelle');
     await choose('q-top', 'flat-roof');
     expect(selectProject(m.store.getState()).model.top).toMatchObject({ kind: 'flat-roof', from: 'user' });
+    // Toit incliné : le toucher ne confirme pas d'office la pente et la jambette par défaut.
     await choose('q-top', 'pitched-roof');
     expect(has('q-pitch')).toBe(true);
+    expect(selectProject(m.store.getState()).model.top).toMatchObject({ kind: 'pitched-roof', from: 'estimate' });
     await choose('q-pitch', '45');
-    await choose('q-shape', 'hip');
     await choose('q-knee', '1');
-    expect(selectProject(m.store.getState()).model.top).toMatchObject({ kind: 'pitched-roof', pitchDeg: 45, shape: 'hip', kneeWallHeight: 1, from: 'user' });
-    expect(q('q-live').textContent).not.toBe(before);
-    expect((q('q-continue') as HTMLButtonElement).disabled).toBe(true); // le plancher bas manque encore
+    // Deux pans : le sens du faîtage se choisit, l'hypothèse est affichée tant qu'il ne l'est pas.
+    expect(has('q-ridge')).toBe(true);
+    expect(text()).toContain('Vers où descendent les deux pans');
+    const ridges = Array.from(q('q-ridge').querySelectorAll<HTMLButtonElement>('button.choice'));
+    expect(ridges).toHaveLength(2);
+    await choose('q-ridge', ridges[1]!.dataset.value!);
+    expect(selectProject(m.store.getState()).model.top.ridgeAngle).toBe(Number(ridges[1]!.dataset.value));
+    expect(selectProject(m.store.getState()).model.top.from).toBe('estimate');
+    // Quatre pans : le faîtage suit la grande dimension, plus rien à choisir.
+    await choose('q-shape', 'hip');
+    expect(has('q-ridge')).toBe(false);
+    expect(selectProject(m.store.getState()).model.top).toMatchObject({ kind: 'pitched-roof', pitchDeg: 45, shape: 'hip', kneeWallHeight: 1, ridgeAngle: null, from: 'estimate' });
     await choose('q-bottom', 'above-unheated');
     expect(selectProject(m.store.getState()).model.bottom).toMatchObject({ kind: 'above-unheated', from: 'user' });
+    expect((q('q-continue') as HTMLButtonElement).disabled).toBe(true); // la toiture n'est pas encore confirmée
+    await click('q-roof-confirm');
+    expect(selectProject(m.store.getState()).model.top).toMatchObject({ kind: 'pitched-roof', pitchDeg: 45, shape: 'hip', kneeWallHeight: 1, from: 'user' });
+    expect(has('q-roof-confirm')).toBe(false);
+    expect(q('q-live').textContent).not.toBe(before);
     await click('q-continue');
 
     expect(has('question-insulation')).toBe(true);

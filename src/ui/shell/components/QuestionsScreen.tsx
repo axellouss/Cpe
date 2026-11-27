@@ -12,6 +12,7 @@ import type {
   HeatGenerator,
   HotWater,
   Occasion,
+  Orientation,
   Project,
   ProjectAnswers,
   RoofShape,
@@ -19,7 +20,10 @@ import type {
   Ventilation,
   WindowGeneration,
 } from '../../../core/types';
+import { ORIENTATIONS } from '../../../core/types';
+import { roofRidgeChoices } from '../../../engine';
 import { derive } from '../compute';
+import { fixed } from '../numbers';
 import {
   CAN_SKIP,
   isPlausibleYear,
@@ -256,6 +260,24 @@ function ClosurePart({ project, tr, actions }: PartProps) {
   const topChosen = top.from === 'user';
   const bottomChosen = bottom.from === 'user';
   const totals = derive(project, lang).sheets?.totals ?? null;
+  // Toit incliné : choisi (ou proposé par la maquette) mais pas encore confirmé dans ses détails.
+  const pitchedPending = top.kind === 'pitched-roof' && top.from === 'estimate';
+  const showPitched = top.kind === 'pitched-roof' && (topChosen || pitchedPending);
+  const ridges = showPitched ? roofRidgeChoices(project.model) : [];
+  const sameRidge = (a: number, b: number): boolean => {
+    const turn = top.shape === 'mono' ? 360 : 180;
+    const d = (((a - b) % turn) + turn) % turn;
+    return Math.min(d, turn - d) < 0.5;
+  };
+  const pickedRidge = top.ridgeAngle === null ? null : (ridges.find((r) => sameRidge(r.ridgeAngle, top.ridgeAngle!))?.ridgeAngle ?? null);
+  const assumedRidge = ridges.find((r) => r.assumed) ?? null;
+  const ridgeTitle = (orientations: readonly Orientation[]): string =>
+    [...orientations]
+      .sort((a, b) => ORIENTATIONS.indexOf(a) - ORIENTATIONS.indexOf(b))
+      .map((o) => tr(`shell.orientation.${o}`))
+      .join(tr('shell.q.closure.ridge.and'));
+  /** Un détail modifié garde la toiture confirmée si elle l'était, « à confirmer » sinon. */
+  const detail = (patch: Parameters<typeof actions.setTop>[0], key?: string): void => actions.setTop(patch, key, topChosen);
 
   useEffect(() => {
     if (part === 'bottom') bottomRef.current?.scrollIntoView?.({ block: 'center' });
@@ -266,34 +288,35 @@ function ClosurePart({ project, tr, actions }: PartProps) {
       <ChoiceGroup
         legend={tr('shell.q.closure.top')}
         options={TOP_KINDS.map((kind) => ({ value: kind, title: tr(`shell.top.${kind}`), sub: tr(`shell.top.${kind}.sub`), picto: <TopPicto kind={kind} /> }))}
-        value={topChosen ? top.kind : null}
-        onPick={(kind) => actions.setTop({ kind })}
-        hot={!topChosen}
+        value={topChosen || pitchedPending ? top.kind : null}
+        // Toit plat ou plafond sous grenier : un toucher suffit. Toit incliné : ses détails restent à confirmer.
+        onPick={(kind) => (kind === 'pitched-roof' ? actions.setTop({ kind }, undefined, topChosen && top.kind === 'pitched-roof') : actions.setTop({ kind }))}
+        hot={!topChosen && !pitchedPending}
         testId="q-top"
       />
-      {!topChosen ? <p className="q-assumed">{tr('shell.q.closure.assumed', { kind: tr(`shell.top.${top.kind}`) })}</p> : null}
+      {!topChosen && !pitchedPending ? <p className="q-assumed">{tr('shell.q.closure.assumed', { kind: tr(`shell.top.${top.kind}`) })}</p> : null}
 
-      {topChosen && top.kind === 'pitched-roof' ? (
+      {showPitched ? (
         <div className="q-sub">
           <ChoiceGroup
             legend={tr('shell.q.closure.pitch')}
             variant="chips"
             options={PITCHES.map((p) => ({ value: p, title: `${p}°` }))}
             value={(PITCHES as readonly number[]).includes(top.pitchDeg) ? top.pitchDeg : null}
-            onPick={(pitchDeg) => actions.setTop({ pitchDeg })}
+            onPick={(pitchDeg) => detail({ pitchDeg })}
             testId="q-pitch"
           />
           <div className="q-field q-field--inline">
             <label htmlFor="q-pitch-exact" className="q-field__label">
               {tr('shell.q.closure.pitch.exact')}
             </label>
-            <NumberField id="q-pitch-exact" value={top.pitchDeg} min={1} max={89} digits={1} unit="°" onCommit={(v) => v !== null && actions.setTop({ pitchDeg: v }, 'pitch')} testId="q-pitch-exact" />
+            <NumberField id="q-pitch-exact" value={top.pitchDeg} min={1} max={89} digits={1} unit="°" onCommit={(v) => v !== null && detail({ pitchDeg: v }, 'pitch')} testId="q-pitch-exact" />
           </div>
           <ChoiceGroup
             legend={tr('shell.q.closure.shape')}
             options={ROOF_SHAPES.map((shape) => ({ value: shape, title: tr(`shell.roofShape.${shape}`), picto: <ShapePicto shape={shape} /> }))}
             value={top.shape}
-            onPick={(shape) => actions.setTop({ shape })}
+            onPick={(shape) => detail({ shape, ridgeAngle: null })}
             testId="q-shape"
           />
           <ChoiceGroup
@@ -301,20 +324,56 @@ function ClosurePart({ project, tr, actions }: PartProps) {
             variant="chips"
             options={KNEE_WALLS.map((h) => ({ value: h, title: h === 0 ? tr('shell.q.closure.knee.none') : `${String(h).replace('.', ',')} m` }))}
             value={(KNEE_WALLS as readonly number[]).includes(top.kneeWallHeight) ? top.kneeWallHeight : null}
-            onPick={(kneeWallHeight) => actions.setTop({ kneeWallHeight })}
+            onPick={(kneeWallHeight) => detail({ kneeWallHeight })}
             testId="q-knee"
           />
           <div className="q-field q-field--inline">
             <label htmlFor="q-knee-exact" className="q-field__label">
               {tr('shell.q.closure.knee.exact')}
             </label>
-            <NumberField id="q-knee-exact" value={top.kneeWallHeight} min={0} max={4} digits={2} unit="m" onCommit={(v) => v !== null && actions.setTop({ kneeWallHeight: v }, 'knee')} testId="q-knee-exact" />
+            <NumberField id="q-knee-exact" value={top.kneeWallHeight} min={0} max={4} digits={2} unit="m" onCommit={(v) => v !== null && detail({ kneeWallHeight: v }, 'knee')} testId="q-knee-exact" />
           </div>
           <p className="q-note">{tr('shell.q.closure.knee.note')}</p>
+          {ridges.length > 0 ? (
+            <>
+              <ChoiceGroup
+                legend={tr(top.shape === 'mono' ? 'shell.q.closure.ridge.mono' : 'shell.q.closure.ridge')}
+                variant="chips"
+                options={ridges.map((r) => ({ value: r.ridgeAngle, title: ridgeTitle(r.orientations) }))}
+                value={pickedRidge}
+                onPick={(ridgeAngle) => detail({ ridgeAngle })}
+                testId="q-ridge"
+              />
+              {pickedRidge === null && assumedRidge ? (
+                <p className="q-assumed">{tr('shell.q.closure.ridge.assumed', { slopes: ridgeTitle(assumedRidge.orientations) })}</p>
+              ) : null}
+            </>
+          ) : null}
+          {!topChosen ? (
+            <div className="q-confirm">
+              <p className="q-assumed">
+                {tr('shell.q.closure.pitched.summary', {
+                  pitch: fixed(top.pitchDeg, 0),
+                  knee: fixed(top.kneeWallHeight, 2),
+                  shape: tr(`shell.roofShape.${top.shape}`),
+                })}
+              </p>
+              <button
+                type="button"
+                className="btn btn--primary"
+                // Confirmer fige aussi le sens du faîtage affiché, s'il n'a pas été touché.
+                onClick={() => actions.setTop(top.ridgeAngle === null && assumedRidge ? { ridgeAngle: assumedRidge.ridgeAngle } : {}, undefined, true)}
+                data-testid="q-roof-confirm"
+              >
+                <Icon name="check" size={18} />
+                <span>{tr('shell.q.closure.pitched.confirm')}</span>
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      <div ref={bottomRef}>
+      <div ref={bottomRef} className="q-stack">
         <ChoiceGroup
           legend={tr('shell.q.closure.bottom')}
           options={BOTTOM_KINDS.map((kind) => ({ value: kind, title: tr(`shell.bottom.${kind}`), sub: tr(`shell.bottom.${kind}.sub`), picto: <BottomPicto kind={kind} /> }))}
