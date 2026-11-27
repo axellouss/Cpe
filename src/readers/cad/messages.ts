@@ -8,8 +8,8 @@ import { registerMessages, t } from '../../i18n';
 
 export const CAD_MESSAGES: Dictionary = {
   fr: {
-    'cad.error.unreadable.dwg': 'Ce fichier DWG est illisible ({detail}). Essayez de l’enregistrer en DXF depuis votre logiciel de dessin.',
-    'cad.error.unreadable.dxf': 'Ce fichier DXF est illisible ({detail}). Réenregistrez-le depuis votre logiciel de dessin (DXF ASCII, version 2000 ou plus récente).',
+    'cad.error.unreadable.dwg': 'Ce fichier DWG est illisible ou abîmé. Essayez de l’enregistrer en DXF depuis votre logiciel de dessin.',
+    'cad.error.unreadable.dxf': 'Ce fichier DXF est illisible ou abîmé. Réenregistrez-le depuis votre logiciel de dessin (DXF ASCII, version 2000 ou plus récente).',
     'cad.error.empty': 'Ce fichier {kind} ne contient aucun dessin dans l’espace objet.',
 
     'cad.unit.mm': 'millimètres',
@@ -69,8 +69,8 @@ export const CAD_MESSAGES: Dictionary = {
     'cad.note.layer0': '{count} traits du calque « 0 » adoptés comme murs.',
   },
   de: {
-    'cad.error.unreadable.dwg': 'Diese DWG-Datei ist nicht lesbar ({detail}). Speichern Sie sie in Ihrem CAD-Programm als DXF.',
-    'cad.error.unreadable.dxf': 'Diese DXF-Datei ist nicht lesbar ({detail}). Speichern Sie sie in Ihrem CAD-Programm erneut (DXF ASCII, Version 2000 oder neuer).',
+    'cad.error.unreadable.dwg': 'Diese DWG-Datei ist nicht lesbar oder beschädigt. Speichern Sie sie in Ihrem CAD-Programm als DXF.',
+    'cad.error.unreadable.dxf': 'Diese DXF-Datei ist nicht lesbar oder beschädigt. Speichern Sie sie in Ihrem CAD-Programm erneut (DXF ASCII, Version 2000 oder neuer).',
     'cad.error.empty': 'Diese {kind}-Datei enthält keine Zeichnung im Modellbereich.',
 
     'cad.unit.mm': 'Millimeter',
