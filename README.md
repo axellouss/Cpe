@@ -45,14 +45,20 @@ niveaux avec garage accolé, en DXF).
 
 1. **Plans** — déposer un ou plusieurs fichiers (un PDF par étage, par exemple), ou continuer sans plan sur une grille.
 2. **Lecture** — le logiciel montre ce qu'il a trouvé : feuilles, échelle, contour, pièces, ouvertures, nord.
-3. **Plan** — six gestes par étage : échelle, contour chauffé, ce qu'il y a derrière chaque façade, fenêtres et portes,
-   nord, pièces comptées dans An. Les hauteurs d'étage se saisissent à côté.
+3. **Plan** — sept gestes par étage : échelle, contour chauffé, hauteur d'étage, ce qu'il y a derrière chaque
+   façade, fenêtres et portes, nord, pièces comptées dans An. L'échelle se confirme une fois par dessin, le nord une
+   fois pour le bâtiment ; un côté du contour se corrige en tapant sa longueur exacte. Deux jauges disent ce qui est
+   **complet** et ce qui est réellement **confirmé** par l'expert.
 4. **Question** — une seule est indispensable : ce qu'il y a au-dessus et en dessous du volume chauffé (toiture,
    plancher bas). C'est la seule dont dépendent les valeurs calculées. Huit « notes de visite » facultatives suivent
    (occasion, année, isolation ajoutée, fenêtres, chauffage, eau chaude, ventilation, solaire) : elles ne changent
    aucun chiffre et sont reprises en clair dans le guide de saisie.
-5. **Résultat** — le guide de saisie, section par section, avec les points à vérifier, un dossier imprimable, un relevé
-   CSV et le projet enregistrable (`.json`).
+5. **Résultat** — le guide de saisie, section par section, avec les points à vérifier et le rappel des étapes du
+   plan jamais confirmées ; un dossier imprimable, un relevé CSV et le projet enregistrable (`.json`). Chaque ligne se
+   coche « saisie dans LuxEeB-Tool » : les coches appartiennent au projet et voyagent dans son fichier.
+
+Le projet s'enregistre tout seul dans le navigateur (jamais les fichiers de plans) : au retour, « Reprendre » ramène
+là où l'on s'était arrêté.
 
 Le « mode expert » donne accès à toutes les tables (pièces, ouvertures, types de parois et de fenêtres, lignes
 ajoutées à la main pour ce que le plan ne montre pas : lucarnes, toitures complexes…).
@@ -62,8 +68,8 @@ ajoutées à la main pour ce que le plan ne montre pas : lucarnes, toitures comp
 | Format | Ce qui est lu | Remarques |
 | --- | --- | --- |
 | IFC 2x3 / IFC4 | niveaux, emprise, pièces (IfcSpace), fenêtres et portes avec leurs dimensions, hauteurs, nord | la voie la plus fiable quand l'architecte travaille en maquette |
-| DWG (R13 à 2018), DXF | unité du dessin, contour sur le calque des murs, pièces nommées, ouvertures, flèche du nord | un dessin peut contenir plusieurs plans : une feuille par plan |
-| PDF vectoriel | échelle écrite et cotes, contour, pièces, ouvertures, titres de niveaux | un PDF « ajusté à la page » n'est plus à l'échelle : il faut poser la règle |
+| DWG (R13 à 2018), DXF | unité du dessin, contour sur le calque des murs, pièces (nommées ou non), ouvertures, flèche du nord | un dessin peut contenir plusieurs plans : une feuille par plan ; lecture hors du fil principal, avec arrêt automatique sur un fichier abîmé |
+| PDF vectoriel | échelle par vue (intitulé, cotes, surfaces écrites), contour, pièces (nommées ou non), ouvertures, titres de niveaux | un PDF « ajusté à la page » n'est plus à l'échelle : il faut poser la règle ; coupes, façades et plans de situation sont écartés |
 | PDF scanné, PNG, JPG | rien n'est lu automatiquement | l'image sert de fond : on pose la règle sur une cote, puis on trace |
 
 **Archicad, Revit, SketchUp.** Leurs fichiers natifs ne se lisent que dans ces logiciels. L'application affiche la
@@ -100,6 +106,17 @@ Elles suivent le règlement grand-ducal du 9 juin 2021 et le manuel de LuxEeB-To
 - **Les lecteurs ont été mis au point sur des plans que nous avons dessinés nous-mêmes** et sur quelques fichiers
   d'exemple publics. Sur de vrais plans d'architecte (hachures, mobilier, plusieurs bâtiments, calques exotiques), la
   lecture automatique échouera plus souvent : dans ce cas on pose la règle et on trace le contour à la main.
+- **Pièces sans nom reconnu** : toute pièce fermée par des murs est proposée, même si son étiquette n'est pas dans
+  le vocabulaire (« Zone 3 ») ou si elle n'en a pas ; elle est alors « à trancher » et ne compte pas dans An tant que
+  l'expert ne l'a pas décidé. Sur un PDF dont le contour n'a pas pu être fermé, ou « tout en trait fin », une pièce
+  sans nom reconnu peut encore manquer.
+- **PDF à plusieurs échelles** : l'échelle est décidée vue par vue ; une vue sans intitulé ni cote propre reçoit
+  l'échelle de la page en « estimation ». Sur une page « tout en trait fin » qui ne montre qu'un plan, l'échelle reste
+  décidée pour la page entière.
+- **Gros fichiers** : la lecture d'un DWG/DXF ne bloque pas la page. Celle d'une grosse maquette IFC peut encore la
+  figer une à deux secondes à la fois ; un PDF très chargé se lit en plusieurs secondes.
+- **Fichiers abîmés** : un DWG endommagé est refusé ou signalé (« objets manquants »), un IFC tronqué est refusé, une
+  image tronquée est signalée. Un DWG dont quelques octets seulement ont changé peut encore se lire sans alerte.
 - **Pas de reconnaissance de caractères** : un scan ou un PDF dont le texte est vectorisé ne livre ni échelle ni pièces.
 - **Les hauteurs se lisent rarement sur un plan.** Sans coupe ni maquette, les hauteurs d'étage sont des valeurs par
   défaut signalées comme telles.
@@ -111,7 +128,11 @@ Elles suivent le règlement grand-ducal du 9 juin 2021 et le manuel de LuxEeB-To
 - **Étages non superposables** (plans à des origines différentes) : les retraits et porte-à-faux sont estimés par
   différence de surfaces.
 - **Textes allemands** : rédigés avec soin, pas encore relus par un expert germanophone.
+- **Langue** : les remarques d'un lecteur sont rédigées dans la langue choisie au moment de la lecture ; un bouton
+  relit le fichier dans la langue actuelle.
 - Vérifié dans Chromium (bureau et émulation mobile). Safari, Firefox et de vrais écrans tactiles restent à essayer.
+- **Page hébergée dans un cadre** (page d'essai) : l'enregistrement des fichiers passe par la page hôte quand elle le
+  propose ; sinon le contenu est copié. Voir `tools/page-essai/`.
 
 ## Pour aller jusqu'au remplissage direct de LuxEeB-Tool
 
@@ -138,6 +159,7 @@ src/ui/plan     éditeur de plan (échelle, contour, façades, ouvertures, nord,
 src/ui/shell    application : écrans, état, enregistrement automatique, annuler/rétablir
 docs/recherche  notes d'étude : formats, méthode de calcul, LuxEeB-Tool, ergonomie
 tests           tests unitaires et plans de test (tous dessinés pour ce projet)
+tools           préparation de la page d'essai pour un hébergement en cadre restreint
 ```
 
 Bibliothèques tierces : `web-ifc` (MPL-2.0), `@node-projects/acad-ts` (MIT), `pdfjs-dist` (Apache-2.0), `jsts`
