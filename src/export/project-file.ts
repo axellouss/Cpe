@@ -67,7 +67,10 @@ export class ProjectFileError extends Error {
     // Les variables qui sont elles-mêmes des clés (« un nombre », « un texte »…) sont traduites d'abord.
     const resolved: Params = {};
     for (const [name, value] of Object.entries(params)) {
-      resolved[name] = typeof value === 'string' && value.startsWith('export.file.') ? t(lang, value) : value;
+      // Seules les variables que le code fournit lui-même comme clés sont traduites ; une valeur venue du fichier
+      // (qui pourrait ressembler à une clé) est citée telle quelle.
+      const ownKey = (name === 'expected' || name === 'found') && typeof value === 'string' && value.startsWith('export.file.');
+      resolved[name] = ownKey ? t(lang, value as string) : value;
     }
     const text = t(lang, key, resolved);
     return stage === 'save' ? `${t(lang, 'export.file.savePrefix')} ${text}` : text;
@@ -141,9 +144,16 @@ function nullable<T>(reader: Reader<T>): Reader<T | null> {
   return (value, path) => (value === null ? null : reader(value, path));
 }
 
+/**
+ * Longueur maximale d'une liste du fichier projet. Aucun bâtiment réel n'en approche ; au-delà, le fichier est
+ * corrompu ou hostile, et les contrôles géométriques (quadratiques) figeraient l'onglet.
+ */
+export const MAX_LIST_LENGTH = 5000;
+
 function listOf<T>(reader: Reader<T>): Reader<T[]> {
   return (value, path) => {
     if (!Array.isArray(value)) return wrongType(path, 'array', value);
+    if (value.length > MAX_LIST_LENGTH) return fail('export.file.tooLong', { path, found: value.length, max: MAX_LIST_LENGTH });
     return value.map((entry: unknown, i) => reader(entry, `${path}[${i}]`));
   };
 }

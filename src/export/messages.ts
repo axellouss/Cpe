@@ -276,7 +276,7 @@ export const EXPORT_MESSAGES: Dictionary = {
       "Menu « {menu} ». Chaque zone et chaque volume tient en une ligne : nombre 1 × largeur 1 × longueur = surface, comme dans l'exemple du manuel. Attribuez ensuite la ventilation de chaque zone dans la colonne « {column} ».",
     'export.guide.check.title': 'Contrôle de la géométrie saisie',
     'export.guide.check.help':
-      "Menu « {menu} ». Comparez ces totaux avec la feuille de synthèse de l'outil : un écart signale une ligne oubliée, saisie deux fois ou un « x » manquant.",
+      "Menu « {menu} ». Comparez ces totaux avec la feuille de synthèse de l'outil : sur les surfaces et les volumes, un écart signale une ligne oubliée, saisie deux fois ou un « x » manquant. Le rapport A/V et le volume d'air Vn, eux, diffèrent normalement de ceux de l'outil (voir leurs notes).",
     'export.guide.remaining.title': "Reste à saisir à la main dans l'outil",
     'export.guide.remaining.help':
       "Ces feuilles ne se déduisent pas des plans. Voici vos réponses en clair : choisissez vous-même les entrées correspondantes dans les listes de l'outil (les libellés exacts sont ceux de votre version).",
@@ -370,6 +370,7 @@ export const EXPORT_MESSAGES: Dictionary = {
     'export.file.enum': 'Fichier de projet invalide : « {path} » vaut « {value} » ; valeurs admises : {allowed}.',
     'export.file.length':
       'Fichier de projet invalide : « {path} » compte {found} élément(s) au lieu de {expected} (un par côté du contour).',
+    'export.file.tooLong': 'Fichier de projet invalide : « {path} » compte {found} éléments (maximum : {max}).',
     'export.file.unexpected': "Le fichier de projet n'a pas pu être lu ({detail}).",
     'export.file.expected.string': 'un texte',
     'export.file.expected.number': 'un nombre',
@@ -650,7 +651,7 @@ export const EXPORT_MESSAGES: Dictionary = {
       'Menü „{menu}“. Jede Zone und jedes Volumen passt in eine Zeile: Anzahl 1 × Breite 1 × Länge = Fläche, wie im Beispiel des Handbuchs. Ordnen Sie danach jeder Zone in der Spalte „{column}“ ihre Lüftung zu.',
     'export.guide.check.title': 'Kontrolle der eingegebenen Geometrie',
     'export.guide.check.help':
-      'Menü „{menu}“. Vergleichen Sie diese Summen mit dem Übersichtsblatt des Tools: Eine Abweichung weist auf eine vergessene oder doppelt eingegebene Zeile oder ein fehlendes „x“ hin.',
+      'Menü „{menu}“. Vergleichen Sie diese Summen mit dem Übersichtsblatt des Tools: Bei Flächen und Volumen weist eine Abweichung auf eine vergessene oder doppelt eingegebene Zeile oder ein fehlendes „x“ hin. Das A/V-Verhältnis und das Luftvolumen Vn weichen dagegen normalerweise von den Werten des Tools ab (siehe deren Hinweise).',
     'export.guide.remaining.title': 'Noch von Hand im Tool einzugeben',
     'export.guide.remaining.help':
       'Diese Blätter lassen sich nicht aus den Plänen ableiten. Hier stehen Ihre Antworten im Klartext: Wählen Sie die passenden Einträge in den Listen des Tools selbst (maßgebend sind die Bezeichnungen Ihrer Version).',
@@ -743,6 +744,7 @@ export const EXPORT_MESSAGES: Dictionary = {
     'export.file.enum': 'Projektdatei ungültig: „{path}“ hat den Wert „{value}“; zulässig sind: {allowed}.',
     'export.file.length':
       'Projektdatei ungültig: „{path}“ enthält {found} Element(e) statt {expected} (eines je Seite des Umrisses).',
+    'export.file.tooLong': 'Projektdatei ungültig: „{path}“ enthält {found} Elemente (Maximum: {max}).',
     'export.file.unexpected': 'Die Projektdatei konnte nicht gelesen werden ({detail}).',
     'export.file.expected.string': 'ein Text',
     'export.file.expected.number': 'eine Zahl',

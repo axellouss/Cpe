@@ -37,13 +37,15 @@ export function rowKey(sectionKey: string, tableKey: string, index: number, cell
   return `${sectionKey}/${tableKey}/${index}/${shortHash(cells.join('␟'))}`;
 }
 
-/** Texte copié pour une ligne : sa ligne du bloc à coller si le tableau en a un, sinon ses cellules tabulées. */
+/**
+ * Texte copié pour une ligne : sa ligne du bloc à coller. Un tableau sans bloc (types de parois, de fenêtres) n'a
+ * PAS de copie de ligne : ses colonnes ne sont pas celles de l'outil, et une ligne collée telle quelle décalerait
+ * les valeurs dans de mauvaises cellules sans qu'aucune erreur ne s'affiche. Il reste la copie cellule par cellule.
+ */
 export function rowCopyText(table: GuideTable, index: number): string {
-  if (table.pasteBlock) {
-    const lines = table.pasteBlock.split(PASTE_EOL);
-    if (lines.length === table.rows.length) return lines[index] ?? '';
-  }
-  return (table.rows[index]?.cells ?? []).join('\t');
+  if (!table.pasteBlock) return '';
+  const lines = table.pasteBlock.split(PASTE_EOL);
+  return lines.length === table.rows.length ? (lines[index] ?? '') : '';
 }
 
 /** « Terme allemand — traduction » → les deux moitiés (la seconde vide s'il n'y a pas de traduction). */
@@ -266,7 +268,9 @@ function TableBlock({ section, table }: { section: GuideSection; table: GuideTab
                       <ProvenanceTag from={row.from} />
                     </td>
                     <td className="gtable__rowcopy">
-                      <CopyButton text={rowCopyText(table, i)} label={tr('shell.result.copyRow.short')} ariaLabel={tr('shell.result.copyRow.aria', { n: i + 1 })} testId="copy-row" />
+                      {rowCopyText(table, i) ? (
+                        <CopyButton text={rowCopyText(table, i)} label={tr('shell.result.copyRow.short')} ariaLabel={tr('shell.result.copyRow.aria', { n: i + 1 })} testId="copy-row" />
+                      ) : null}
                     </td>
                   </tr>
                   {row.note && !(row.deduct && table.rows[i - 1]?.deduct && table.rows[i - 1]?.note === row.note) ? (

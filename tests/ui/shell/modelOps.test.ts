@@ -20,6 +20,7 @@ import {
   STORAGE_KEYS,
 } from '../../../src/ui/shell/autosave';
 import {
+  relocalizeDefaults,
   addConstruction,
   addManualRow,
   addRoom,
@@ -295,6 +296,13 @@ describe('enregistrement dans le navigateur', () => {
     expect(() => parseWorkspace('{"bonjour":1}')).toThrow();
   });
 
+  it('ne laisse pas une clé du fichier toucher au prototype des repères', () => {
+    const marks = sanitizeMarks(JSON.parse('{"plan":{"__proto__":{"scale":true},"constructor":{"scale":true},"storey-1":{"scale":true}}}'));
+    expect(Object.getPrototypeOf(marks.plan)).toBe(Object.prototype);
+    expect(Object.keys(marks.plan)).toEqual(['storey-1']);
+    expect((marks.plan as Record<string, unknown>).scale).toBeUndefined();
+  });
+
   it('se méfie de ce qu’il relit', () => {
     expect(sanitizeMarks(null)).toEqual(emptyMarks());
     expect(sanitizeMarks('texte')).toEqual(emptyMarks());
@@ -331,5 +339,25 @@ describe('enregistrement dans le navigateur', () => {
 
   it('sans navigateur, il n’y a pas de stockage', () => {
     expect(browserStorage()).toBeNull();
+  });
+});
+
+describe('changement de langue', () => {
+  it('les noms par défaut suivent la langue ; un nom personnalisé ne change jamais', () => {
+    let project = house();
+    project = updateConstruction(project, DEFAULT_CONSTRUCTION_IDS.roof, { name: 'Toit ardoise' });
+    const de = relocalizeDefaults(project, 'fr', 'de');
+    const names = (p: Project): Record<string, string> => Object.fromEntries(p.model.constructions.map((c) => [c.id, c.name]));
+    expect(names(de)[DEFAULT_CONSTRUCTION_IDS.wallOutside]).toBe('Außenwand');
+    expect(names(de)[DEFAULT_CONSTRUCTION_IDS.roof]).toBe('Toit ardoise');
+    expect(de.model.windowTypes[0]!.name).toBe('Fenster');
+    expect(de.model.storeys[0]!.name).toBe('Erdgeschoss');
+    // Retour au français : on retrouve le projet de départ ; même langue : même objet.
+    expect(relocalizeDefaults(de, 'de', 'fr')).toEqual(project);
+    expect(relocalizeDefaults(project, 'fr', 'fr')).toBe(project);
+    // Tableaux dans la nouvelle langue.
+    const rows = deriveSheets(de, 'de').envelope.map((r) => r.elementName);
+    expect(rows).toContain('Außenwand');
+    expect(rows).not.toContain('Mur extérieur');
   });
 });

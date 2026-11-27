@@ -121,6 +121,10 @@ describe('textes sûrs', () => {
     expect(excelSafeText('@SUM(A1)')).toBe("'@SUM(A1)");
     expect(excelSafeText('\t=A1')).toBe("'=A1");
     expect(excelSafeText('＝A1')).toBe("'＝A1");
+    // Un guillemet en tête ferait avaler tabulations et sauts de ligne par Excel au collage : il est écarté.
+    expect(excelSafeText('"><script>alert(1)</script>')).toBe('><script>alert(1)</script>');
+    expect(excelSafeText('"=1+1')).toBe("'=1+1");
+    expect(excelSafeText('Chambre "parents"')).toBe('Chambre "parents"');
   });
 
   it('laisse les textes ordinaires intacts', () => {

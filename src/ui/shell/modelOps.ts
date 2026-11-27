@@ -9,6 +9,7 @@ import type {
   BuildingModel,
   Construction,
   ConstructionCategory,
+  Lang,
   ManualRow,
   Opening,
   PlanSheet,
@@ -25,10 +26,13 @@ import {
   createStorey,
   DEFAULT_CONSTRUCTION_IDS,
   DEFAULT_WINDOW_TYPE_ID,
+  defaultConstructions,
+  defaultWindowTypes,
   excludeRoomFromOutline,
   rescaleStorey,
   restoreFootprint,
 } from '../../engine';
+import { guessStorey } from '../../semantics/labels';
 
 // ───────────────────────────── Outils ─────────────────────────────
 
@@ -53,6 +57,35 @@ export function findStorey(project: Project, storeyId: string | null): Storey | 
 /** Nombre strictement positif et fini, sinon null. */
 function positive(value: number): number | null {
   return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+// ───────────────────────────── Langue ─────────────────────────────
+
+/**
+ * Changement de langue : les noms que l'expert n'a pas touchés (types de parois et de fenêtres par défaut, niveaux
+ * reconnus comme « Rez-de-chaussée ») passent dans la nouvelle langue. Un nom personnalisé n'est jamais modifié.
+ */
+export function relocalizeDefaults(project: Project, from: Lang, to: Lang): Project {
+  if (from === to) return project;
+  const model = project.model;
+  const oldConstructions = new Map(defaultConstructions(from).map((c) => [c.id, c.name]));
+  const newConstructions = new Map(defaultConstructions(to).map((c) => [c.id, c.name]));
+  const oldWindows = new Map(defaultWindowTypes(from).map((w) => [w.id, w.name]));
+  const newWindows = new Map(defaultWindowTypes(to).map((w) => [w.id, w.name]));
+  const renamed = <T extends { id: string; name: string }>(items: readonly T[], before: Map<string, string>, after: Map<string, string>): T[] =>
+    items.map((item) => (before.get(item.id) === item.name && after.has(item.id) ? { ...item, name: after.get(item.id)! } : item));
+  const constructions = renamed(model.constructions, oldConstructions, newConstructions);
+  const windowTypes = renamed(model.windowTypes, oldWindows, newWindows);
+  const taken = new Set<string>();
+  const storeys = model.storeys.map((s) => {
+    const guess = guessStorey(s.name);
+    const next = guess && guess[from] === s.name && !taken.has(guess[to]) ? guess[to] : s.name;
+    taken.add(next);
+    return next === s.name ? s : { ...s, name: next };
+  });
+  const same = (a: readonly { name: string }[], b: readonly { name: string }[]): boolean => a.every((x, i) => x.name === b[i]!.name);
+  if (same(constructions, model.constructions) && same(windowTypes, model.windowTypes) && same(storeys, model.storeys)) return project;
+  return withModel(project, { ...model, constructions, windowTypes, storeys });
 }
 
 // ───────────────────────────── Étages ─────────────────────────────

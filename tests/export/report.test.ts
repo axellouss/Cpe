@@ -173,9 +173,9 @@ describe('reportHtml — contenu', () => {
       'Dalle sur terre-plein',
       'Plancher bas',
       'terre',
+      '0,406',
       'Bauteil gegen Erdreich',
       '80,00',
-      '0,406',
       '80,00',
       '28,00',
       'estimé',
@@ -187,8 +187,8 @@ describe('reportHtml — contenu', () => {
       '1,35',
       '2',
       '3,24',
-      '1,30',
       '0,60',
+      '1,30',
       'défaut',
     ]);
     expect(cells(tableUnder(doc, 'Energiebezugsflächen / Zonen — Surface de référence énergétique (zones)').tBodies[0]!.rows[0]!)).toEqual([

@@ -173,7 +173,7 @@ function uNote(lang: Lang, u: ConstructionSummary['u']): string {
   return u ? sourcedNote(lang, 'export.note.uFrom', u) : t(lang, 'export.note.uMissing');
 }
 
-function constructionRow(c: ConstructionSummary, lang: Lang): GuideRow {
+function constructionRow(c: ConstructionSummary, lang: Lang, contributing: readonly Provenance[] = []): GuideRow {
   const proposal = proposeSituation(c.category, c.boundary);
   const notes: string[] = [];
   if (c.boundary === 'heated') notes.push(t(lang, 'export.note.heatedBoundary'));
@@ -181,17 +181,19 @@ function constructionRow(c: ConstructionSummary, lang: Lang): GuideRow {
   if (c.boundary === 'ground') notes.push(t(lang, c.category === 'wall' ? 'export.note.groundWall' : 'export.note.groundFloor'));
   if (proposal.toCheck) notes.push(t(lang, 'export.note.situationCheck'));
   return {
+    // Ordre de l'outil (« Eigene Angaben ») : Bezeichnung, puis U-Wert, puis Einbausituation.
     cells: [
       excelSafeText(c.name),
       enumText(lang, 'category', c.category) ?? '',
       enumText(lang, 'boundary', c.boundary) ?? '',
+      c.u ? luxeebUValue(c.u.value) : '',
       proposal.option ?? '',
       luxeebNumber(c.area),
-      c.u ? luxeebUValue(c.u.value) : '',
       c.ground?.slabArea === undefined ? '' : luxeebNumber(c.ground.slabArea),
       c.ground?.perimeter === undefined ? '' : luxeebNumber(c.ground.perimeter),
     ],
-    from: weakestProvenance(['calc', c.u?.from]),
+    // Une surface calculée vaut ce que valent les lignes d'enveloppe dont elle est la somme.
+    from: weakestProvenance(['calc', c.u?.from, ...contributing]),
     note: notes.join(' '),
   };
 }
@@ -230,13 +232,19 @@ function opaqueSection(sheets: LuxeebSheets, project: Project, lang: Lang): Guid
       termLabel(lang, O.designation, 'export.tr.designation'),
       t(lang, 'export.col.category'),
       t(lang, 'export.col.boundary'),
+      termLabel(lang, O.uValue, 'export.tr.uValue', 'W/(m²K)'),
       termLabel(lang, O.situation, 'export.tr.situation'),
       t(lang, 'export.col.totalArea'),
-      termLabel(lang, O.uValue, 'export.tr.uValue', 'W/(m²K)'),
       termLabel(lang, O.slabArea, 'export.tr.slabArea', 'm²'),
       termLabel(lang, O.perimeter, 'export.tr.perimeter', 'm'),
     ],
-    rows: sheets.constructions.map((c) => constructionRow(c, lang)),
+    rows: sheets.constructions.map((c) =>
+      constructionRow(
+        c,
+        lang,
+        sheets.envelope.filter((r) => r.constructionId === c.constructionId && r.boundary === c.boundary).map((r) => r.from),
+      ),
+    ),
     pasteBlock: '',
     pasteHint: t(lang, sheets.constructions.length > 0 ? 'export.paste.none' : 'export.paste.empty'),
   };
@@ -253,7 +261,7 @@ function opaqueSection(sheets: LuxeebSheets, project: Project, lang: Lang): Guid
 
 // ───────────────────────────── 3. Fenêtres ─────────────────────────────
 
-function windowRow(w: WindowSummary, lang: Lang): GuideRow {
+function windowRow(w: WindowSummary, lang: Lang, contributing: readonly Provenance[] = []): GuideRow {
   const notes: string[] = [];
   if (w.uw) notes.push(uNote(lang, w.uw));
   else notes.push(t(lang, 'export.note.windowValues', { psi: LUXEEB_WINDOWS.psiDefault }));
@@ -265,10 +273,11 @@ function windowRow(w: WindowSummary, lang: Lang): GuideRow {
       luxeebNumber(w.typicalHeight),
       Number.isInteger(w.count) ? String(w.count) : luxeebNumber(w.count),
       luxeebNumber(w.area),
-      w.uw ? luxeebUValue(w.uw.value) : '',
+      // Ordre de l'outil : g-Wert avant U-Wert Fenster.
       w.g ? luxeebNumber(w.g.value) : '',
+      w.uw ? luxeebUValue(w.uw.value) : '',
     ],
-    from: weakestProvenance(['calc', w.uw?.from, w.g?.from]),
+    from: weakestProvenance(['calc', w.uw?.from, w.g?.from, ...contributing]),
     note: notes.join(' '),
   };
 }
@@ -288,10 +297,12 @@ function windowsSection(sheets: LuxeebSheets, project: Project, lang: Lang): Gui
       termLabel(lang, W.height, 'export.tr.typicalHeight', 'm'),
       t(lang, 'export.col.windowCount'),
       t(lang, 'export.col.totalArea'),
-      termLabel(lang, W.uWindow, 'export.tr.uWindow', 'W/(m²K)'),
       termLabel(lang, W.gValue, 'export.tr.gValue', '-'),
+      termLabel(lang, W.uWindow, 'export.tr.uWindow', 'W/(m²K)'),
     ],
-    rows: sheets.windows.map((w) => windowRow(w, lang)),
+    rows: sheets.windows.map((w) =>
+      windowRow(w, lang, sheets.envelope.filter((r) => r.windowTypeId === w.windowTypeId).map((r) => r.from)),
+    ),
     pasteBlock: '',
     pasteHint: t(lang, sheets.windows.length > 0 ? 'export.paste.none' : 'export.paste.empty'),
   };
@@ -318,14 +329,14 @@ function envelopeSection(rows: readonly EnvelopeRow[], lang: Lang): GuideSection
   const tableRows: GuideRow[] = rows.map((r, i) => {
     const cells = [
       String(i + 1),
-      cleanText(r.elementName),
+      excelSafeText(r.elementName),
       luxeebNumber(r.count),
       luxeebNumber(r.length),
       luxeebNumber(r.width),
       luxeebOrientation(r.orientation),
       r.deduct ? E.deductMark : '',
       luxeebNumber(r.netArea),
-      cleanText(r.label),
+      excelSafeText(r.label),
       orientationLabel(r.orientation, lang),
       enumText(lang, 'boundary', r.boundary) ?? '',
     ];

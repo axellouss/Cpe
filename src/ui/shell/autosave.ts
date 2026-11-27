@@ -93,6 +93,8 @@ export function sanitizeMarks(raw: unknown): Marks {
   if (!isRecord(raw)) return marks;
   if (isRecord(raw.plan)) {
     for (const [storeyId, steps] of Object.entries(raw.plan)) {
+      // Une clé venue d'un fichier ne doit jamais toucher au prototype de l'objet.
+      if (storeyId === '__proto__' || storeyId === 'constructor' || storeyId === 'prototype') continue;
       if (!isRecord(steps)) continue;
       const clean: Partial<Record<PlanStepKey, true>> = {};
       for (const key of PLAN_STEP_KEYS) if (steps[key] === true) clean[key] = true;

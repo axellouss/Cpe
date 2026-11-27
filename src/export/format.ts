@@ -75,7 +75,9 @@ export function cleanText(text: string): string {
  * d'une apostrophe, que Excel traite comme la marque « ceci est du texte ».
  */
 export function excelSafeText(text: string): string {
-  const clean = cleanText(text);
+  // Un guillemet double en tête ferait lire la suite comme un champ entre guillemets (tabulations et sauts de
+  // ligne compris) lors d'un collage : on l'écarte.
+  const clean = cleanText(text).replace(/^"+/, '');
   return /^[=+\-@＝＋－＠]/.test(clean) ? `'${clean}` : clean;
 }
 

@@ -225,19 +225,21 @@ describe('buildGuide — types d’éléments et de fenêtres', () => {
       'Bezeichnung — désignation',
       'Catégorie',
       'Contre',
+      // ordre de l'outil (« Eigene Angaben ») : U-Wert avant Einbausituation
+      'U-Wert [W/(m²K)] — valeur U',
       'Einbausituation — situation proposée pour la saisie manuelle',
       'Surface totale [m²]',
-      'U-Wert [W/(m²K)] — valeur U',
       'Fläche des Bauteils A [m²] — surface de la dalle contre terre',
       'Perimeter P [m] — périmètre caractéristique',
     ]);
     expect(tb.rows.map((r) => r.cells)).toEqual([
-      ['Mur extérieur', 'Mur', 'extérieur', 'Außenwand', '75,16', '0,35', '', ''],
-      ['Toiture plate', 'Toiture', 'extérieur', 'Dach gegen außen', '80,00', '', '', ''],
-      ['Dalle sur terre-plein', 'Plancher bas', 'terre', 'Bauteil gegen Erdreich', '80,00', '0,406', '80,00', '28,00'],
+      ['Mur extérieur', 'Mur', 'extérieur', '0,35', 'Außenwand', '75,16', '', ''],
+      ['Toiture plate', 'Toiture', 'extérieur', '', 'Dach gegen außen', '80,00', '', ''],
+      ['Dalle sur terre-plein', 'Plancher bas', 'terre', '0,406', 'Bauteil gegen Erdreich', '80,00', '80,00', '28,00'],
     ]);
-    // provenance la plus faible : U par défaut, U absent (surface calculée), U estimé
-    expect(tb.rows.map((r) => r.from)).toEqual(['default', 'calc', 'estimate']);
+    // Provenance la plus faible entre la valeur U et les lignes d'enveloppe dont la surface est la somme :
+    // U par défaut ; toiture sans U mais dont la ligne d'enveloppe repose sur une valeur par défaut ; U estimé.
+    expect(tb.rows.map((r) => r.from)).toEqual(['default', 'default', 'estimate']);
     expect(tb.rows[1]!.note).toContain('Valeur U à définir dans LuxEeB-Tool');
     expect(tb.rows[2]!.note).toBe(
       'Valeur U : estimation — à remplacer. Typologie 1970-1980. Dalle contre terre : reportez la surface (A) et le périmètre (P).',
@@ -259,7 +261,7 @@ describe('buildGuide — types d’éléments et de fenêtres', () => {
       { ...base, category: 'wall', boundary: 'heated' },
     ];
     const tb = table(section(buildGuide(sheets, makeProject(), 'de'), 'opaque'), 'constructions');
-    expect(tb.rows.map((r) => r.cells[3])).toEqual([
+    expect(tb.rows.map((r) => r.cells[4])).toEqual([
       'Bauteil gegen Erdreich',
       'Bauteil gegen unbeheizt',
       'Bauteil gegen unbeheizt',
@@ -300,7 +302,8 @@ describe('buildGuide — types d’éléments et de fenêtres', () => {
     ]);
     expect(tb.rows).toEqual([
       {
-        cells: ['Fenêtre PVC', '1,20', '1,35', '2', '3,24', '1,30', '0,60'],
+        // ordre de l'outil : g-Wert avant U-Wert Fenster
+        cells: ['Fenêtre PVC', '1,20', '1,35', '2', '3,24', '0,60', '1,30'],
         from: 'default',
         note: "Valeur U : saisi ou confirmé par l'expert. Facteur g : valeur par défaut — à confirmer.",
       },
@@ -311,7 +314,8 @@ describe('buildGuide — types d’éléments et de fenêtres', () => {
     sheets.windows = [{ ...sheets.windows[0]!, uw: null, g: null }];
     const row = table(section(buildGuide(sheets, makeProject(), 'fr'), 'windows'), 'windowTypes').rows[0]!;
     expect(row.cells.slice(5)).toEqual(['', '']);
-    expect(row.from).toBe('calc');
+    // Sans U ni g : la ligne vaut ce que valent les fenêtres relevées (ici lues sur le plan), pas « calculé ».
+    expect(row.from).toBe('plan');
     expect(row.note).toContain('0,06 W/(mK)');
   });
 });

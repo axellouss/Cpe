@@ -44,6 +44,7 @@ import {
   moveStorey as moveStoreyOp,
   removeStorey as removeStoreyOp,
   renameStorey as renameStoreyOp,
+  relocalizeDefaults,
   replaceStorey,
   setAnswers,
   setBottom as setBottomOp,
@@ -388,9 +389,12 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       saveState: deps.storage ? 'idle' : 'off',
 
       setLang(next) {
-        if (next === get().lang) return;
+        const previous = get().lang;
+        if (next === previous) return;
         saveLang(deps.storage, next);
         set({ lang: next });
+        // Les noms par défaut (types de parois, niveaux reconnus) suivent la langue ; sans effet s'il n'y en a pas.
+        updateProject((p) => relocalizeDefaults(p, previous, next), { label: 'shell.undo.language' });
       },
 
       goTo(step) {
@@ -538,7 +542,9 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         }
         const project = opened.project;
         replaceWorkspace(opened, 'shell.undo.openProject');
-        set({ saved: null, proposal: null });
+        // Autre projet : les coches « saisi dans LuxEeB-Tool » du précédent ne valent plus rien.
+        saveEntered(deps.storage, {});
+        set({ saved: null, proposal: null, entered: {} });
         const state = get();
         if (project.model.storeys.length > 0) enterPlan(null);
         else set({ step: 'questions', question: 'context', questionPart: null });

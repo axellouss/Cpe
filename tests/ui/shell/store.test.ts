@@ -450,8 +450,13 @@ describe('ouverture d’un projet enregistré en fichier', () => {
     source.store.getState().acceptProposal();
     const json = serializeProject(selectProject(source.store.getState()));
 
-    const { store } = testStore();
+    const { store, storage } = testStore();
+    // Des lignes cochées « saisies » dans un projet précédent ne doivent pas apparaître cochées dans celui-ci.
+    store.getState().toggleEntered('envelope/rows/0/abc');
+    expect(Object.keys(store.getState().entered)).toHaveLength(1);
     expect(store.getState().openProjectText(json)).toBe(true);
+    expect(store.getState().entered).toEqual({});
+    expect(JSON.parse(storage.getItem(STORAGE_KEYS.entered) ?? '[]')).toEqual([]);
     expect(store.getState().step).toBe('plan');
     expect(selectProject(store.getState()).model.storeys).toHaveLength(2);
     expect(store.getState().toast?.text).toContain('redéposez');

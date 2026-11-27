@@ -242,6 +242,23 @@ describe('parseProject — refus avec un message clair en français', () => {
     expect(errorWith('answers.ventilation', 'none').message).toContain('« answers.ventilation » vaut « none »');
   });
 
+  it('cite une valeur venue du fichier telle quelle, même si elle ressemble à une clé de message', () => {
+    expect(errorWith('model.storeys[0].edges[1].boundary', 'export.file.notJson').message).toBe(
+      'Fichier de projet invalide : « model.storeys[0].edges[1].boundary » vaut « export.file.notJson » ; valeurs admises : outside, ground, unheated, heated.',
+    );
+  });
+
+  it('refuse une liste démesurée avant de la parcourir (fichier corrompu ou hostile)', () => {
+    const data = JSON.parse(serializeProject(makeProject())) as { model: { storeys: { outline: unknown[]; edges: unknown[] }[] } };
+    const storey = data.model.storeys[0]!;
+    storey.outline = Array.from({ length: 5001 }, (_, i) => ({ x: i, y: i % 2 }));
+    storey.edges = storey.outline.map(() => ({ boundary: 'outside', constructionId: null }));
+    const error = errorOf(JSON.stringify(data));
+    expect(error.key).toBe('export.file.tooLong');
+    expect(error.message).toBe('Fichier de projet invalide : « model.storeys[0].outline » compte 5001 éléments (maximum : 5000).');
+    expect(error.localized('de')).toContain('5001 Elemente');
+  });
+
   it('refuse un contour dont les côtés n’ont pas tous leur condition aux limites', () => {
     expect(errorWith('model.storeys[0].edges[3]', undefined).message).toBe(
       'Fichier de projet invalide : « model.storeys[0].edges » compte 3 élément(s) au lieu de 4 (un par côté du contour).',
