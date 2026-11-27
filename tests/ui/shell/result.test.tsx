@@ -312,8 +312,8 @@ describe('résultat — coches « saisie dans LuxEeB-Tool »', () => {
     await click(box(rowsOf('envelope')[3]!));
     const before = { constructions: rowsOf('constructions').length, envelope: rowsOf('envelope').length };
     expect(progress()).toEqual([`saisies : 1/${before.constructions}`, 'saisies : 1/1', `saisies : 2/${before.envelope}`, 'saisies : 2/2']);
-    const stored = JSON.parse(m.storage.getItem(STORAGE_KEYS.entered)!) as string[];
-    expect(stored).toHaveLength(6);
+    const stored = (): string[] => Object.keys((JSON.parse(m.storage.getItem(STORAGE_KEYS.marks)!) as { entered: Record<string, true> }).entered);
+    expect(stored()).toHaveLength(6);
 
     await setLang(m, 'de');
     // Les textes ont bien changé de langue…
@@ -334,7 +334,7 @@ describe('résultat — coches « saisie dans LuxEeB-Tool »', () => {
     await setLang(m, 'fr');
     expect(box(rowsOf('envelope')[1]!).checked).toBe(true);
     expect(progress()[2]).toBe(`saisies : 3/${before.envelope}`);
-    expect(JSON.parse(m.storage.getItem(STORAGE_KEYS.entered)!)).toHaveLength(7);
+    expect(stored()).toHaveLength(7);
   });
 
   it('construit la clé sans aucun texte traduit', async () => {

@@ -533,7 +533,8 @@ describe('résultat', () => {
     await click(box);
     expect(Array.from(envelope.querySelectorAll('[data-testid="guide-row"]'))[0]!.className).toContain('is-entered');
     expect(envelope.textContent).toContain(`saisies : 1/${rows.length}`);
-    expect(JSON.parse(m.storage.getItem(STORAGE_KEYS.entered)!)).toHaveLength(1);
+    // La coche fait partie des repères du projet : elle est enregistrée avec lui.
+    expect(Object.keys((JSON.parse(m.storage.getItem(STORAGE_KEYS.marks)!) as { entered: Record<string, true> }).entered)).toHaveLength(1);
   });
 
   it('place les contrôles en haut, bloquants d’abord, chacun avec son bouton vers l’endroit à corriger', async () => {

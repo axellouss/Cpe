@@ -245,7 +245,7 @@ function ItemRow({ item }: { item: GuideItem }) {
 function TableBlock({ section, table }: { section: GuideSection; table: GuideTable }) {
   const tr = useT();
   const store = useShellStore();
-  const entered = useShell((s) => s.entered);
+  const entered = useShell((s) => selectMarks(s).entered);
   const keys = table.rows.map((row) => rowKey(section.key, table.key, row));
   const done = keys.filter((k) => entered[k]).length;
   const layout = tableLayout(table);
@@ -504,7 +504,7 @@ export function ResultScreen() {
   const store = useShellStore();
   const project = useShell(selectProject);
   const lang = useShell((s) => s.lang);
-  const entered = useShell((s) => s.entered);
+  const entered = useShell((s) => selectMarks(s).entered);
   const derived = derive(project, lang);
   const sheets = derived.sheets;
   const built = useMemo(() => (sheets ? guide(sheets, project, lang) : null), [sheets, project, lang]);

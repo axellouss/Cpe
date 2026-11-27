@@ -18,7 +18,7 @@ import { t } from '../../i18n';
 import { readPlanFile, UnsupportedFormatError } from '../../readers';
 import type { FileLike } from '../../readers';
 import type { PlanTool } from '../plan';
-import { browserStorage, clearWorkspace, initialLang, loadEntered, loadWorkspace, parseWorkspace, saveEntered, saveLang, saveWorkspace } from './autosave';
+import { browserStorage, clearWorkspace, dropLegacyEntered, initialLang, loadWorkspace, parseWorkspace, saveLang, saveWorkspace } from './autosave';
 import type { StorageLike } from './autosave';
 import { dropStoreyMarks, firstOpenStep, markPlanStep, nextOpenStep, sameScaleStoreyIds, stepOfTool, storeySteps } from './checklist';
 import {
@@ -158,7 +158,6 @@ export interface ShellState {
   expertOpen: boolean;
   expertTab: ExpertTab;
   /** Lignes du résultat cochées « saisies dans LuxEeB-Tool ». */
-  entered: Record<string, true>;
 
   toast: Toast | null;
   /** Projet retrouvé dans le navigateur au démarrage, pas encore repris. */
@@ -266,11 +265,26 @@ function savedInfo(workspace: Workspace): SavedProjectInfo {
   return { name: workspace.project.answers.projectName.trim(), storeys: workspace.project.model.storeys.length };
 }
 
+/** Pas d'historique qui remplacent le bâtiment : les annuler ou les rétablir ramène un autre projet, avec ses coches. */
+const PROJECT_SWAP_LABELS: ReadonlySet<string> = new Set(['shell.undo.openProject', 'shell.undo.newProject', 'shell.undo.acceptProposal']);
+
+/**
+ * Annuler ou rétablir ne touche pas aux lignes cochées « saisies dans LuxEeB-Tool » : ce que l'expert a déjà
+ * reporté dans l'outil reste reporté. (Une ligne dont une valeur change perd de toute façon sa coche : sa clé
+ * porte l'empreinte des valeurs à saisir.) Exception : le pas qui ramène un autre projet reprend ses coches à lui.
+ */
+function keepEntered(history: History<Workspace>, before: Workspace, label: string | null | undefined): History<Workspace> {
+  const present = history.present;
+  if (present.marks.entered === before.marks.entered || (label && PROJECT_SWAP_LABELS.has(label))) return history;
+  return { ...history, present: { ...present, marks: { ...present.marks, entered: before.marks.entered } } };
+}
+
 // ───────────────────────────── Fabrique ─────────────────────────────
 
 export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore {
   const deps: ShellDeps = { ...defaultDeps(), ...overrides };
   const lang = initialLang(deps.storage, deps.languages);
+  dropLegacyEntered(deps.storage);
   const found = loadWorkspace(deps.storage);
   const saved = found && !isEmptyWorkspace(found) ? savedInfo(found) : null;
 
@@ -402,7 +416,6 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       questionPart: null,
       expertOpen: false,
       expertTab: 'constructions',
-      entered: loadEntered(deps.storage),
       toast: null,
       saved,
       saveState: deps.storage ? 'idle' : 'off',
@@ -448,8 +461,9 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           toast(tr('shell.undo.nothing'));
           return;
         }
-        set({ history: result.history });
-        scheduleSave(result.history.present);
+        const history = keepEntered(result.history, get().history.present, result.label);
+        set({ history });
+        scheduleSave(history.present);
         toast(result.label ? tr('shell.undo.done', { what: tr(result.label) }) : tr('shell.undo.doneBare'));
       },
 
@@ -459,8 +473,9 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           toast(tr('shell.redo.nothing'));
           return;
         }
-        set({ history: result.history });
-        scheduleSave(result.history.present);
+        const history = keepEntered(result.history, get().history.present, result.label);
+        set({ history });
+        scheduleSave(history.present);
         toast(result.label ? tr('shell.redo.done', { what: tr(result.label) }) : tr('shell.redo.doneBare'));
       },
 
@@ -573,10 +588,9 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           return false;
         }
         const project = opened.project;
+        // Les coches « saisi dans LuxEeB-Tool » viennent du fichier ouvert, avec ses autres repères.
         replaceWorkspace(opened, 'shell.undo.openProject');
-        // Autre projet : les coches « saisi dans LuxEeB-Tool » du précédent ne valent plus rien.
-        saveEntered(deps.storage, {});
-        set({ saved: null, proposal: null, entered: {} });
+        set({ saved: null, proposal: null });
         const state = get();
         if (project.model.storeys.length > 0) enterPlan(null);
         else set({ step: 'questions', question: FIRST_QUESTION, questionPart: null });
@@ -600,7 +614,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       discardSaved() {
         clearWorkspace(deps.storage);
         lastSaved = null;
-        set({ saved: null, entered: {} });
+        set({ saved: null });
       },
 
       newProject() {
@@ -621,7 +635,6 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           planFocus: null,
           question: FIRST_QUESTION,
           questionPart: null,
-          entered: {},
           saved: null,
         });
       },
@@ -668,7 +681,8 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           apply(
             (ws) => ({
               project: applyProposal(proposal, state.documents, ws.project, state.lang),
-              marks: proposal.mode === 'replace' ? { ...ws.marks, plan: {} } : ws.marks,
+              // Autre bâtiment : ni les étapes validées ni les lignes cochées « saisies » du précédent ne valent encore.
+              marks: proposal.mode === 'replace' ? { ...ws.marks, plan: {}, entered: {} } : ws.marks,
             }),
             { label: 'shell.undo.acceptProposal' },
           );
@@ -895,11 +909,17 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       },
 
       toggleEntered(key) {
-        const entered = { ...get().entered };
-        if (entered[key]) delete entered[key];
-        else entered[key] = true;
-        saveEntered(deps.storage, entered);
-        set({ entered });
+        // Une coche fait partie des repères du projet (enregistrement automatique, fichier de projet), sans créer
+        // d'étape à annuler : « annuler » ne décoche rien (voir keepEntered).
+        apply(
+          (ws) => {
+            const entered = { ...ws.marks.entered };
+            if (entered[key]) delete entered[key];
+            else entered[key] = true;
+            return { ...ws, marks: { ...ws.marks, entered } };
+          },
+          { silent: true },
+        );
       },
 
       jumpTo(target) {

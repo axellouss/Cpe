@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlanDocument } from '../../../src/core/types';
 import { serializeProject } from '../../../src/export';
-import { STORAGE_KEYS } from '../../../src/ui/shell/autosave';
+import { parseWorkspace, serializeWorkspace, STORAGE_KEYS } from '../../../src/ui/shell/autosave';
 import type { StorageLike } from '../../../src/ui/shell/autosave';
 import { canGoTo, currentStorey, selectCanRedo, selectCanUndo, selectMarks, selectProject } from '../../../src/ui/shell/store';
 import { doc, file, houseDoc, rect, sheet, testStore } from './helpers';
@@ -458,10 +458,10 @@ describe('ouverture d’un projet enregistré en fichier', () => {
     const { store, storage } = testStore();
     // Des lignes cochées « saisies » dans un projet précédent ne doivent pas apparaître cochées dans celui-ci.
     store.getState().toggleEntered('envelope/rows/0/abc');
-    expect(Object.keys(store.getState().entered)).toHaveLength(1);
+    expect(Object.keys(selectMarks(store.getState()).entered)).toHaveLength(1);
     expect(store.getState().openProjectText(json)).toBe(true);
-    expect(store.getState().entered).toEqual({});
-    expect(JSON.parse(storage.getItem(STORAGE_KEYS.entered) ?? '[]')).toEqual([]);
+    expect(selectMarks(store.getState()).entered).toEqual({});
+    expect((JSON.parse(storage.getItem(STORAGE_KEYS.marks)!) as { entered: unknown }).entered).toEqual({});
     expect(store.getState().step).toBe('plan');
     expect(selectProject(store.getState()).model.storeys).toHaveLength(2);
     expect(store.getState().toast?.text).toContain('redéposez');
@@ -609,14 +609,96 @@ describe('navigation', () => {
     expect(selectProject(store.getState()).model.storeys).toHaveLength(1);
   });
 
-  it('coche et décoche les lignes saisies, et s’en souvient', () => {
+  it('coche et décoche les lignes saisies, et s’en souvient avec le projet', () => {
     const first = testStore();
+    first.store.getState().startBlank();
     first.store.getState().toggleEntered('envelope/envelope/0/abc');
     first.store.getState().toggleEntered('areas/zones/1/def');
     first.store.getState().toggleEntered('areas/zones/1/def');
-    expect(first.store.getState().entered).toEqual({ 'envelope/envelope/0/abc': true });
+    expect(selectMarks(first.store.getState()).entered).toEqual({ 'envelope/envelope/0/abc': true });
+    // Une coche n'ajoute aucun pas à annuler.
+    const undoable = first.store.getState().history.past.length;
+    first.store.getState().toggleEntered('areas/zones/1/def');
+    first.store.getState().toggleEntered('areas/zones/1/def');
+    expect(first.store.getState().history.past).toHaveLength(undoable);
+
+    // Au démarrage suivant, les coches reviennent avec le projet repris — pas avant.
     const second = testStore({}, first.storage.dump());
-    expect(second.store.getState().entered).toEqual({ 'envelope/envelope/0/abc': true });
+    expect(selectMarks(second.store.getState()).entered).toEqual({});
+    second.store.getState().resumeSaved();
+    expect(selectMarks(second.store.getState()).entered).toEqual({ 'envelope/envelope/0/abc': true });
+  });
+
+  it('un autre bâtiment repart sans coche : projet retrouvé non repris, puis nouveaux plans', async () => {
+    provide(houseDoc());
+    const first = testStore();
+    await first.store.getState().ingestFiles([file('maison.dxf')]);
+    first.store.getState().acceptProposal();
+    first.store.getState().toggleEntered('areas/zones/zone:storey-1#abc');
+    first.store.getState().toggleEntered('envelope/envelope/wall:wall-outside|outside|N|280#def');
+    expect(Object.keys(selectMarks(first.store.getState()).entered)).toHaveLength(2);
+
+    // Nouvelle session sur le même poste : le projet retrouvé n'est PAS repris, d'autres plans sont déposés.
+    provide(doc('autre.dxf', [sheet('autre-1', 'Rez-de-chaussée', { outline: rect(1200, 900) })]));
+    const second = testStore({}, first.storage.dump());
+    expect(second.store.getState().saved).not.toBeNull();
+    await second.store.getState().ingestFiles([file('autre.dxf')]);
+    second.store.getState().acceptProposal();
+    expect(second.store.getState().saved).toBeNull();
+    expect(selectProject(second.store.getState()).model.storeys).toHaveLength(1);
+    expect(selectMarks(second.store.getState()).entered).toEqual({});
+    expect((JSON.parse(second.storage.getItem(STORAGE_KEYS.marks)!) as { entered: unknown }).entered).toEqual({});
+  });
+
+  it('« repartir de ces plans » efface aussi les coches du bâtiment remplacé', async () => {
+    provide(houseDoc());
+    const { store } = testStore();
+    await store.getState().ingestFiles([file('maison.dxf')]);
+    store.getState().acceptProposal();
+    store.getState().toggleEntered('areas/zones/zone:storey-1#abc');
+    store.getState().goTo('read');
+    store.getState().setProposalMode('replace');
+    store.getState().acceptProposal();
+    expect(selectMarks(store.getState()).entered).toEqual({});
+  });
+
+  it('le fichier de projet emporte les coches ; le rouvrir les rend', async () => {
+    provide(houseDoc());
+    const source = testStore();
+    await source.store.getState().ingestFiles([file('maison.dxf')]);
+    source.store.getState().acceptProposal();
+    source.store.getState().toggleEntered('areas/zones/zone:storey-1#abc');
+    const state = source.store.getState();
+    const json = serializeWorkspace({ project: selectProject(state), marks: selectMarks(state) });
+    expect(parseWorkspace(json).marks.entered).toEqual({ 'areas/zones/zone:storey-1#abc': true });
+
+    const target = testStore();
+    target.store.getState().toggleEntered('autre/projet#zzz');
+    expect(target.store.getState().openProjectText(json)).toBe(true);
+    expect(selectMarks(target.store.getState()).entered).toEqual({ 'areas/zones/zone:storey-1#abc': true });
+  });
+
+  it('annuler ne décoche rien ; annuler « nouveau projet » rend au projet retrouvé ses propres coches', async () => {
+    provide(houseDoc());
+    const { store } = testStore();
+    await store.getState().ingestFiles([file('maison.dxf')]);
+    store.getState().acceptProposal();
+    const storey = currentStorey(store.getState())!;
+    store.getState().renameStorey(storey.id, 'Niveau 0');
+    store.getState().toggleEntered('areas/zones/zone:storey-1#abc');
+    // Annuler le renommage ne retire pas la coche posée depuis.
+    store.getState().undo();
+    expect(currentStorey(store.getState())?.name).not.toBe('Niveau 0');
+    expect(selectMarks(store.getState()).entered).toEqual({ 'areas/zones/zone:storey-1#abc': true });
+    store.getState().redo();
+    expect(selectMarks(store.getState()).entered).toEqual({ 'areas/zones/zone:storey-1#abc': true });
+
+    // Nouveau projet : plus aucune coche ; l'annuler ramène le bâtiment et ses coches.
+    store.getState().newProject();
+    expect(selectMarks(store.getState()).entered).toEqual({});
+    store.getState().undo();
+    expect(selectProject(store.getState()).model.storeys.length).toBeGreaterThan(0);
+    expect(selectMarks(store.getState()).entered).toEqual({ 'areas/zones/zone:storey-1#abc': true });
   });
 
   it('les étapes verrouillées ne s’ouvrent pas', () => {

@@ -8,13 +8,13 @@ import { parseProject, serializeProject } from '../../../src/export';
 import {
   browserStorage,
   clearWorkspace,
+  dropLegacyEntered,
   initialLang,
-  loadEntered,
+  LEGACY_ENTERED_KEY,
   loadWorkspace,
   memoryStorage,
   parseWorkspace,
   sanitizeMarks,
-  saveEntered,
   saveWorkspace,
   serializeWorkspace,
   STORAGE_KEYS,
@@ -312,7 +312,7 @@ describe('enregistrement dans le navigateur', () => {
         questions: { year: 'skipped', windows: 'answered', heating: 'peut-être', autre: 'answered' },
         yearFromPeriod: 'true',
       }),
-    ).toEqual({ plan: { 'storey-1': { outline: true } }, questions: { year: 'skipped', windows: 'answered' }, yearFromPeriod: false });
+    ).toEqual({ plan: { 'storey-1': { outline: true } }, questions: { year: 'skipped', windows: 'answered' }, yearFromPeriod: false, entered: {} });
 
     const storage = memoryStorage({ [STORAGE_KEYS.project]: serializeProject(house()), [STORAGE_KEYS.marks]: '{illisible' });
     expect(loadWorkspace(storage)?.marks).toEqual(emptyMarks());
@@ -328,13 +328,26 @@ describe('enregistrement dans le navigateur', () => {
     expect(initialLang(null)).toBe('fr');
   });
 
-  it('retient les lignes cochées et ignore un contenu inattendu', () => {
-    const storage = memoryStorage();
-    saveEntered(storage, { a: true, b: true });
-    expect(loadEntered(storage)).toEqual({ a: true, b: true });
-    expect(loadEntered(memoryStorage({ [STORAGE_KEYS.entered]: '{"a":1}' }))).toEqual({});
-    expect(loadEntered(memoryStorage({ [STORAGE_KEYS.entered]: '["ok", 3, null]' }))).toEqual({ ok: true });
-    expect(loadEntered(null)).toEqual({});
+  it('relit les lignes cochées « saisies » avec prudence : seules les clés à vrai sont gardées', () => {
+    expect(sanitizeMarks({ entered: { a: true, b: true } }).entered).toEqual({ a: true, b: true });
+    expect(sanitizeMarks({ entered: { a: 1, b: 'oui', c: null, d: true, '': true } }).entered).toEqual({ d: true });
+    expect(sanitizeMarks({ entered: ['a', 'b'] }).entered).toEqual({});
+    expect(sanitizeMarks({}).entered).toEqual({});
+    // Clés démesurées ou visant le prototype : écartées.
+    const hostile = JSON.parse(`{"entered":{"__proto__":true,"constructor":true,"prototype":true,"${'x'.repeat(401)}":true,"ok":true}}`) as unknown;
+    const clean = sanitizeMarks(hostile);
+    expect(Object.keys(clean.entered)).toEqual(['ok']);
+    expect(({} as Record<string, unknown>).ok).toBeUndefined();
+    // Un fichier ne peut pas en faire porter des dizaines de milliers.
+    const many = Object.fromEntries(Array.from({ length: 6000 }, (_, i) => [`k${i}`, true]));
+    expect(Object.keys(sanitizeMarks({ entered: many }).entered)).toHaveLength(5000);
+  });
+
+  it('efface l’ancienne clé des coches, du temps où elles vivaient à part du projet', () => {
+    const storage = memoryStorage({ [LEGACY_ENTERED_KEY]: '["a"]', [STORAGE_KEYS.lang]: 'de' });
+    dropLegacyEntered(storage);
+    expect(storage.dump()).toEqual({ [STORAGE_KEYS.lang]: 'de' });
+    dropLegacyEntered(null);
   });
 
   it('sans navigateur, il n’y a pas de stockage', () => {

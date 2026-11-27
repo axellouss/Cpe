@@ -13,8 +13,17 @@ export const STORAGE_KEYS = {
   project: 'plan2cpe.project.v1',
   marks: 'plan2cpe.marks.v1',
   lang: 'plan2cpe.lang',
-  entered: 'plan2cpe.entered.v1',
 } as const;
+
+/**
+ * Ancienne clé des lignes cochées « saisies », du temps où elles vivaient à part du projet : les coches d'un
+ * bâtiment réapparaissaient alors sur le suivant. Elles font maintenant partie des repères ; la clé est effacée.
+ */
+export const LEGACY_ENTERED_KEY = 'plan2cpe.entered.v1';
+
+/** Garde-fous sur les coches relues d'un fichier ou du stockage. */
+const MAX_ENTERED = 5000;
+const MAX_ENTERED_KEY_LENGTH = 400;
 
 /** Sous-ensemble de l'interface Storage dont on a besoin (facile à simuler dans les tests). */
 export interface StorageLike {
@@ -108,6 +117,16 @@ export function sanitizeMarks(raw: unknown): Marks {
     }
   }
   marks.yearFromPeriod = raw.yearFromPeriod === true;
+  if (isRecord(raw.entered)) {
+    let kept = 0;
+    for (const [key, value] of Object.entries(raw.entered)) {
+      if (kept >= MAX_ENTERED) break;
+      if (value !== true || key.length === 0 || key.length > MAX_ENTERED_KEY_LENGTH) continue;
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+      marks.entered[key] = true;
+      kept += 1;
+    }
+  }
   return marks;
 }
 
@@ -188,7 +207,12 @@ export function loadWorkspace(storage: StorageLike | null): Workspace | null {
 export function clearWorkspace(storage: StorageLike | null): void {
   remove(storage, STORAGE_KEYS.project);
   remove(storage, STORAGE_KEYS.marks);
-  remove(storage, STORAGE_KEYS.entered);
+  remove(storage, LEGACY_ENTERED_KEY);
+}
+
+/** Efface l'ancienne clé des coches (voir LEGACY_ENTERED_KEY). Sans effet si elle n'existe pas. */
+export function dropLegacyEntered(storage: StorageLike | null): void {
+  remove(storage, LEGACY_ENTERED_KEY);
 }
 
 // ───────────────────────────── Langue ─────────────────────────────
@@ -212,24 +236,4 @@ export function initialLang(storage: StorageLike | null, navigatorLanguages: rea
     if (base === 'de' || base === 'lb') return 'de';
   }
   return 'fr';
-}
-
-// ───────────────────────────── Lignes cochées « saisies » ─────────────────────────────
-
-export function loadEntered(storage: StorageLike | null): Record<string, true> {
-  const raw = read(storage, STORAGE_KEYS.entered);
-  if (!raw) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return {};
-    const out: Record<string, true> = {};
-    for (const key of parsed) if (typeof key === 'string' && key.length < 400) out[key] = true;
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-export function saveEntered(storage: StorageLike | null, entered: Record<string, true>): void {
-  write(storage, STORAGE_KEYS.entered, JSON.stringify(Object.keys(entered)));
 }

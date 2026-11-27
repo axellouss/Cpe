@@ -43,10 +43,15 @@ export interface Marks {
   questions: Partial<Record<QuestionId, 'answered' | 'skipped'>>;
   /** Vrai si l'année de construction vient d'une période (année approximative à préciser). */
   yearFromPeriod: boolean;
+  /**
+   * Lignes du résultat cochées « saisie dans LuxEeB-Tool » (clé de ligne → vrai). Elles appartiennent au projet :
+   * un autre bâtiment repart sans coche, et le fichier de projet les emporte.
+   */
+  entered: Record<string, true>;
 }
 
 export function emptyMarks(): Marks {
-  return { plan: {}, questions: {}, yearFromPeriod: false };
+  return { plan: {}, questions: {}, yearFromPeriod: false, entered: {} };
 }
 
 /** Ce que l'historique annule et rétablit d'un bloc. */
