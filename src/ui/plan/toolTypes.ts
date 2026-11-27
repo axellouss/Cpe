@@ -78,6 +78,12 @@ export interface ToolContext {
    * Avec un doigt ou un stylet posé, l'éditeur l'affiche dans une loupe — le doigt cache ce qu'il vise.
    */
   aim(point: Vec2 | null): void;
+  /**
+   * Une feuille posée en bas de l'écran (bulle en présentation téléphone) couvre `height` px du plan : l'éditeur
+   * remonte le plan juste assez pour que `focus` (unités de feuille : la façade touchée, le côté saisi) reste visible
+   * au-dessus d'elle. `null` à la fermeture : le plan reprend sa place. Sans effet s'il n'y a pas la place.
+   */
+  cover(focus: Vec2 | null, height: number): void;
   /** L'outil y dépose son contrôleur. */
   controller: { current: ToolController | null };
   /** Rend le clavier à la zone de plan (après un bouton, une bulle…). */

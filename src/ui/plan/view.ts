@@ -96,6 +96,58 @@ export function fitViewInsets(bbox: BBox, size: Size, insets: Insets, padding = 
   return { scale: v.scale, tx: v.tx + insets.left, ty: v.ty + insets.top };
 }
 
+/**
+ * Comme `fitViewInsets`, avec en plus une marge propre à ce qui s'écrit AUTOUR du rectangle (longueurs des côtés,
+ * dimensions des ouvertures) : `margin.x` px à gauche et à droite, `margin.y` px en haut et en bas.
+ */
+export function fitViewMargins(bbox: BBox, size: Size, insets: Insets, margin: { x: number; y: number }): View {
+  return fitViewInsets(
+    bbox,
+    size,
+    { top: insets.top + margin.y, right: insets.right + margin.x, bottom: insets.bottom + margin.y, left: insets.left + margin.x },
+    0,
+  );
+}
+
+/** Emprise d'un élément d'interface dans la zone de plan (px, origine en haut à gauche de la zone). */
+export interface ScreenBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Place prise par l'interface posée sur le plan (bandeau, boutons, compteurs, navigation, boussole) : chaque élément
+ * est rattaché au bord qu'il longe — celui dont il s'éloigne le moins. Chaque marge vaut au moins `gap` + 4 px.
+ * null si rien n'est mesurable, ou si l'interface ne laisserait pas au plan au moins 96 px dans chaque sens.
+ */
+export function hudInsets(size: Size, boxes: readonly ScreenBox[], gap = 4): Insets | null {
+  if (!(size.width > 0) || !(size.height > 0)) return null;
+  const used: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  let any = false;
+  for (const b of boxes) {
+    if (!(b.right - b.left > 0) || !(b.bottom - b.top > 0)) continue;
+    any = true;
+    const reach: Insets = { top: b.bottom, right: size.width - b.left, bottom: size.height - b.top, left: b.right };
+    const least = Math.min(reach.top, reach.right, reach.bottom, reach.left);
+    if (least === reach.top) used.top = Math.max(used.top, reach.top);
+    else if (least === reach.bottom) used.bottom = Math.max(used.bottom, reach.bottom);
+    else if (least === reach.right) used.right = Math.max(used.right, reach.right);
+    else used.left = Math.max(used.left, reach.left);
+  }
+  if (!any) return null;
+  const floor = gap + 4;
+  const insets: Insets = {
+    top: Math.max(floor, used.top + gap),
+    right: Math.max(floor, used.right + gap),
+    bottom: Math.max(floor, used.bottom + gap),
+    left: Math.max(floor, used.left + gap),
+  };
+  if (size.width - insets.left - insets.right < 96 || size.height - insets.top - insets.bottom < 96) return null;
+  return insets;
+}
+
 export interface ZoomLimits {
   min: number;
   max: number;

@@ -118,6 +118,8 @@ export function BoundaryTool({ ctx }: { ctx: ToolContext }) {
           onClose={close}
           className="p2c-plan__popover--choices"
           testId="plan-boundary-popover"
+          focus={current.at}
+          cover={ctx.cover}
         >
           <p className="p2c-plan__popover-title">
             {tr('plan.boundary.title')} <span className="p2c-plan__muted">· {formatDecimal(lengthOf(current.edge), 2)} m</span>

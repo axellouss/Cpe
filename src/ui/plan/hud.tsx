@@ -59,10 +59,27 @@ export function Popover(props: {
   testId?: string;
   /** Vrai = simple bulle d'actions : elle ne prend pas le clavier (les flèches continuent d'agir sur le plan). */
   passive?: boolean;
+  /**
+   * Ce dont parle la bulle, en unités de feuille (façade touchée, côté saisi). Avec `cover` (celui du contexte de
+   * l'outil), la feuille du téléphone signale la place qu'elle prend : l'éditeur garde ce point visible au-dessus.
+   */
+  focus?: Vec2 | null;
+  cover?(focus: Vec2 | null, height: number): void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  const { anchor, size, compact, passive } = props;
+  const { anchor, size, compact, passive, focus, cover } = props;
+  const sheet = compact || !anchor;
+
+  // Feuille en bas d'écran : elle cache le bas du plan. On dit à l'éditeur ce qu'elle couvre et ce qui doit rester
+  // visible ; à la fermeture, le plan reprend sa place.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && cover && sheet && focus) cover(focus, el.offsetHeight);
+  });
+  const coverRef = useRef(cover);
+  coverRef.current = cover;
+  useLayoutEffect(() => () => coverRef.current?.(null, 0), []);
 
   useLayoutEffect(() => {
     const el = ref.current;

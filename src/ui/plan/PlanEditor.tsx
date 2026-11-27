@@ -42,8 +42,22 @@ import { OutlineTool } from './tools/OutlineTool';
 import { PanTool } from './tools/PanTool';
 import { RoomsTool } from './tools/RoomsTool';
 import { ScaleTool } from './tools/ScaleTool';
-import type { Insets, Size, View, ZoomLimits } from './view';
-import { fitViewInsets, inflateBBox, isUsableBBox, panBy, pinch, sameView, screenToSheet, unionBBox, wheelZoomFactor, zoomAt } from './view';
+import type { Insets, ScreenBox, Size, View, ZoomLimits } from './view';
+import {
+  fitViewInsets,
+  fitViewMargins,
+  hudInsets,
+  inflateBBox,
+  isUsableBBox,
+  panBy,
+  pinch,
+  sameView,
+  screenToSheet,
+  sheetToScreen,
+  unionBBox,
+  wheelZoomFactor,
+  zoomAt,
+} from './view';
 
 /** Feuille vierge : étendue montrée au départ (m). */
 const BLANK_BOX: BBox = { minX: 0, minY: 0, maxX: 20, maxY: 14 };
@@ -121,31 +135,18 @@ function sameInsets(a: Insets | null, b: Insets | null): boolean {
 }
 
 /**
- * Place réellement prise par l'interface posée sur le plan (bandeau, boutons, compteurs, navigation, boussole) :
- * chaque élément est rattaché au bord qu'il longe. null si rien n'est mesurable (rendu hors navigateur) ou si
- * l'interface ne laisserait pas de place au plan.
+ * Place réellement prise par l'interface posée sur le plan (bandeau, boutons, compteurs, navigation, boussole),
+ * mesurée dans le DOM (règle de rattachement aux bords : `hudInsets`). null si rien n'est mesurable (rendu hors
+ * navigateur) ou si l'interface ne laisserait pas de place au plan. Les bulles, passagères, ne comptent pas.
  */
 function measureHud(root: HTMLElement): Insets | null {
   const frame = root.getBoundingClientRect();
-  if (!(frame.width > 0) || !(frame.height > 0)) return null;
-  const used = { top: 0, right: 0, bottom: 0, left: 0 };
-  let any = false;
+  const boxes: ScreenBox[] = [];
   for (const el of root.querySelectorAll('.p2c-plan__top > *, .p2c-plan__bottom > *, .p2c-plan__nav, .p2c-plan__compass')) {
     const r = el.getBoundingClientRect();
-    if (!(r.width > 0) || !(r.height > 0)) continue;
-    any = true;
-    const reach = { top: r.bottom - frame.top, right: frame.right - r.left, bottom: frame.bottom - r.top, left: r.right - frame.left };
-    const least = Math.min(reach.top, reach.right, reach.bottom, reach.left);
-    if (least === reach.top) used.top = Math.max(used.top, reach.top);
-    else if (least === reach.bottom) used.bottom = Math.max(used.bottom, reach.bottom);
-    else if (least === reach.right) used.right = Math.max(used.right, reach.right);
-    else used.left = Math.max(used.left, reach.left);
+    boxes.push({ left: r.left - frame.left, top: r.top - frame.top, right: r.right - frame.left, bottom: r.bottom - frame.top });
   }
-  if (!any) return null;
-  const gap = 4;
-  const insets = { top: Math.max(8, used.top + gap), right: Math.max(8, used.right + gap), bottom: Math.max(8, used.bottom + gap), left: Math.max(8, used.left + gap) };
-  if (frame.width - insets.left - insets.right < 96 || frame.height - insets.top - insets.bottom < 96) return null;
-  return insets;
+  return hudInsets({ width: frame.width, height: frame.height }, boxes);
 }
 
 export function PlanEditor(props: PlanEditorProps) {
@@ -238,8 +239,7 @@ export function PlanEditor(props: PlanEditorProps) {
       if (!(size.width > 0) || !(size.height > 0)) return null;
       if (kind === 'all' || !focusBox) return fitViewInsets(allBox, size, free);
       if (!compact) return fitViewInsets(inflateBBox(focusBox, 0.1), size, free);
-      const m = COMPACT_MARGIN[tool];
-      return fitViewInsets(focusBox, size, { top: free.top + m.y, right: free.right + m.x, bottom: free.bottom + m.y, left: free.left + m.x }, 0);
+      return fitViewMargins(focusBox, size, free, COMPACT_MARGIN[tool]);
     },
     [allBox, focusBox, size, compact, tool],
   );
@@ -287,6 +287,38 @@ export function PlanEditor(props: PlanEditorProps) {
     setViewState(next);
   }, []);
 
+  // Feuille en bas d'écran (bulle d'un outil sur téléphone) : le plan remonte de `coverLift` px pour que ce dont elle
+  // parle reste visible, et redescend à sa fermeture. Ce décalage n'est pas un geste de l'utilisateur : la vue reste
+  // « automatique » si elle l'était.
+  const coverLift = useRef(0);
+  const coverKey = useRef<string | null>(null);
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+  const insetsRef = useRef(insets);
+  insetsRef.current = insets;
+  const cover = useCallback(
+    (focus: Vec2 | null, height: number) => {
+      const current = viewRef.current;
+      if (!current) return;
+      // Une seule décision par feuille et par point : on ne lutte pas contre un déplacement fait entre-temps.
+      const key = focus ? `${focus.x.toFixed(6)}|${focus.y.toFixed(6)}|${Math.round(height)}` : null;
+      if (key === coverKey.current) return;
+      coverKey.current = key;
+      let lift = 0;
+      if (focus) {
+        // Bande où le point doit se trouver : sous le bandeau du haut, à 44 px au-dessus de la feuille.
+        const upper = insetsRef.current.top + 20;
+        const lower = sizeRef.current.height - height - 44;
+        const y = sheetToScreen(current, focus).y + coverLift.current;
+        if (lower >= upper && y > lower) lift = y - lower;
+      }
+      const delta = lift - coverLift.current;
+      coverLift.current = lift;
+      if (Math.abs(delta) > 0.5) setViewNow(panBy(current, 0, -delta), autoFit.current);
+    },
+    [setViewNow],
+  );
+
   // Taille de la zone de plan.
   useLayoutEffect(() => {
     const el = rootRef.current;
@@ -311,6 +343,7 @@ export function PlanEditor(props: PlanEditorProps) {
     previousSize.current = size;
     if (fitted.current !== fitKey || !viewRef.current) {
       fitted.current = fitKey;
+      coverLift.current = 0;
       setViewNow(preferFocus() && fitFocus ? fitFocus : fitAll, 'auto');
       return;
     }
@@ -336,7 +369,9 @@ export function PlanEditor(props: PlanEditorProps) {
     const current = viewRef.current;
     if (!kind || !current) return;
     const focus = kind === 'focus' || (kind === 'auto' && preferFocus());
-    const target = fitOf(focus ? 'focus' : 'all', measured ?? staticInsets);
+    const framed = fitOf(focus ? 'focus' : 'all', measured ?? staticInsets);
+    // Une feuille ouverte en bas d'écran garde son décalage (voir `cover`).
+    const target = framed ? panBy(framed, 0, -coverLift.current) : null;
     if (target && !sameView(current, target, 0.5)) setViewNow(target, kind);
   }, [hudKey, compact, size.width, size.height, hasView, staticInsets]);
 
@@ -422,6 +457,8 @@ export function PlanEditor(props: PlanEditorProps) {
     const all = fitOf('all', free);
     const focus = focusBox ? fitOf('focus', free) : null;
     if (!all) return;
+    // « Ajuster » repart d'une vue propre : le décalage d'une feuille ouverte n'a plus à être rendu.
+    coverLift.current = 0;
     if (focus && !sameView(viewRef.current, focus)) scheduleView(focus, 'focus');
     else scheduleView(all, 'all');
   };
@@ -730,6 +767,7 @@ export function PlanEditor(props: PlanEditorProps) {
         changeNorth: onNorthChange,
         coarse,
         aim,
+        cover,
         controller,
         focusSurface,
       }

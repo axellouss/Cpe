@@ -548,6 +548,16 @@ export function OutlineTool({ ctx }: { ctx: ToolContext }) {
     </Button>
   );
 
+  /** Milieu (unités de feuille) du côté en cours de saisie : ce que la feuille du téléphone ne doit pas cacher. */
+  const lengthFocus = ((): Vec2 | null => {
+    const pts = editEdge ? storey.outline : editLast ? trace : null;
+    if (!pts) return null;
+    const i = editEdge ? editEdge.edge : pts.length - 2;
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    return a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null;
+  })();
+
   /** Bulle de saisie d'une longueur (feuille en bas d'écran sur téléphone : le clavier du téléphone la remplit). */
   const lengthPopover = (anchor: Vec2 | null) =>
     lengthOpen ? (
@@ -560,6 +570,8 @@ export function OutlineTool({ ctx }: { ctx: ToolContext }) {
         onClose={closeLength}
         className="p2c-plan__popover--length"
         testId="plan-length-popover"
+        focus={lengthFocus}
+        cover={ctx.cover}
       >
         <form
           className="p2c-plan__form"

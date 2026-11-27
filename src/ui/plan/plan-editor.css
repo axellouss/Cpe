@@ -731,6 +731,30 @@
   border-top: 1px solid var(--_border);
   background: var(--_surface);
 }
+/* Saisie d'une longueur sur téléphone : champ et boutons sur une rangée, la feuille cache le moins possible. */
+.p2c-plan__popover--length.p2c-plan__popover--sheet .p2c-plan__form {
+  display: grid;
+  grid-template: 'field actions' auto 'note note' auto / minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 6px 8px;
+}
+.p2c-plan__popover--length.p2c-plan__popover--sheet .p2c-plan__field {
+  grid-area: field;
+}
+.p2c-plan__popover--length.p2c-plan__popover--sheet .p2c-plan__input {
+  width: 5.6em;
+}
+.p2c-plan__popover--length.p2c-plan__popover--sheet .p2c-plan__note {
+  grid-area: note;
+}
+.p2c-plan__popover--length.p2c-plan__popover--sheet .p2c-plan__form-actions {
+  position: static;
+  grid-area: actions;
+  flex-wrap: nowrap;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .p2c-plan__note {
   margin: 0;
   max-width: 300px;
