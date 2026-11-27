@@ -242,6 +242,16 @@ const STOREY_RULES: StoreyRule[] = [
   { re: /\betage\b|obergeschoss|\bog\b|upper floor|first floor/, fr: 'Étage', de: 'Obergeschoss', rank: 1 },
 ];
 
+const ROOF_LEVEL_RE = /\broof\b|\btoit\b|toiture|\bdach\b|dachaufsicht|dachdraufsicht|dachebene|\bfirst\b.*\bridge\b|\bfaitage\b/;
+
+/**
+ * Vrai si le nom désigne un plan de TOITURE (« Roof », « Roof Line », « Plan de toiture », « Dachaufsicht ») :
+ * un tel niveau n'est pas un étage. « Dachgeschoss » et « Combles » sont des étages et ne sont pas concernés.
+ */
+export function isRoofLevelName(name: string): boolean {
+  return ROOF_LEVEL_RE.test(fold(name));
+}
+
 /** Reconnaît un nom de niveau dans un titre de plan ou un nom de calque/feuille. */
 export function guessStorey(text: string): { fr: string; de: string; rank: number } | null {
   const f = fold(text);

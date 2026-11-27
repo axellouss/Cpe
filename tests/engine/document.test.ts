@@ -267,6 +267,60 @@ describe('modelFromDocument : un document → premier jet de bâtiment', () => {
     expect(withCellar.bottom.kind).toBe('above-unheated');
   });
 
+  it('murs de hauteurs inégales au dernier niveau : toiture inclinée proposée sous des combles, jamais sous un étage plein', () => {
+    // Combles façon FZK-Haus : 12 × 10 m, jambette 0,67 m, faîtage 3,39 m → pente = atan(2,72 / 5) ≈ 28,5°
+    const attic = withOutline('c', 'Dachgeschoss', 12, 10);
+    attic.detected.storeyHeight = 3.39;
+    attic.detected.eavesHeight = 0.67;
+    const ground = withOutline('e', 'Erdgeschoss', 12, 10);
+    ground.detected.storeyHeight = 2.7;
+    const model = modelFromDocument(doc([ground, attic]), 'fr');
+    expect(model.top).toMatchObject({ kind: 'pitched-roof', shape: 'gable', pitchDeg: 29, kneeWallHeight: 0.67, from: 'estimate' });
+    expect(model.storeys[0]!.grossHeight).toEqual({ value: 2.7, from: 'plan' });
+    // La hauteur lue au faîtage n'est pas une hauteur d'étage : jamais présentée comme « lue sur le plan ».
+    expect(model.storeys[1]!.grossHeight).toEqual({ value: 3.39, from: 'estimate' });
+
+    // Étage plein dont seuls des acrotères ou des pignons dépassent : pas de toiture inclinée d'office.
+    const full = withOutline('n', 'Level 2', 12, 10);
+    full.detected.storeyHeight = 3.51;
+    full.detected.eavesHeight = 2.6;
+    full.detected.clearHeight = 2.3;
+    const flat = modelFromDocument(doc([full]), 'fr');
+    expect(flat.top).toMatchObject({ kind: 'attic-ceiling', from: 'default' });
+    expect(flat.storeys[0]!.grossHeight).toEqual({ value: 2.6, from: 'estimate' });
+    // … et la hauteur proposée ne passe jamais sous la hauteur libre.
+    full.detected.clearHeight = 2.5;
+    expect(modelFromDocument(doc([full]), 'fr').storeys[0]!.grossHeight).toEqual({ value: 3.51, from: 'estimate' });
+  });
+
+  it('un plan de toiture ou une feuille minuscule ne devient pas un étage', () => {
+    const model = modelFromDocument(
+      doc([withOutline('a', 'Level 1', 14, 10), withOutline('b', 'Level 2', 12, 10), withOutline('r', 'Roof Line', 2, 3), withOutline('t', 'Roof', 14, 10)]),
+      'fr',
+    );
+    expect(model.storeys.map((s) => s.name)).toEqual(['Level 1', 'Level 2']);
+    // « Dachgeschoss » reste un étage ; une petite maison seule reste un étage.
+    expect(modelFromDocument(doc([withOutline('d', 'Dachgeschoss', 10, 8)]), 'de').storeys).toHaveLength(1);
+    expect(modelFromDocument(doc([withOutline('x', 'Abri', 3, 3)]), 'fr').storeys).toHaveLength(1);
+  });
+
+  it('surface d’une pièce : écrite si elle concorde avec la mesure, mesurée (avec les deux en note) si elles divergent', () => {
+    const s = withOutline('c', 'Combles', 12, 10);
+    s.detected.rooms = [
+      { name: 'Galerie', statedArea: 74.51, measuredArea: 94.05, heatedGuess: 'yes' },
+      { name: 'Chambre', statedArea: 21.41, measuredArea: 22.07, heatedGuess: 'yes' },
+      { name: 'Bureau', measuredArea: 12.984, heatedGuess: 'yes' },
+      { name: 'Hall', statedArea: 8, heatedGuess: 'yes' },
+    ];
+    const rooms = createStorey(s, 'Combles', createEmptyProject('fr').model).rooms;
+    expect(rooms.map((r) => r.area)).toEqual([
+      { value: 94.05, from: 'plan', note: '74.51 / 94.05' },
+      { value: 21.41, from: 'plan' },
+      { value: 12.984, from: 'plan' },
+      { value: 8, from: 'plan' },
+    ]);
+  });
+
   it('pose les hypothèses de départ, toutes marquées « par défaut »', () => {
     const model = modelFromDocument(doc([withOutline('e', 'RDC', 10, 8)]), 'fr');
     expect(model.top).toEqual({

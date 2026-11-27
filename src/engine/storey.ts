@@ -7,6 +7,9 @@ import {
   closestOnSegment,
   distance,
   edgeEnds,
+  extentAlong,
+  longestEdgeAngle,
+  radToDeg,
   edgeLength,
   lerp,
   pointInPolygon,
@@ -28,13 +31,14 @@ import type {
   StoreyEdge,
   Vec2,
 } from '../core/types';
-import { guessStorey } from '../semantics/labels';
+import { guessStorey, isRoofLevelName } from '../semantics/labels';
 import {
   DEFAULT_CLEAR_HEIGHT,
   DEFAULT_DOOR_HEIGHT,
   DEFAULT_GROSS_HEIGHT,
   DEFAULT_WINDOW_HEIGHT,
   defaultBottom,
+  defaultTop,
   emptyModel,
 } from './defaults';
 import type { StoreyMetrics } from './index';
@@ -158,6 +162,40 @@ function openingsFromDetection(
   return openings;
 }
 
+/**
+ * Murs de hauteurs inégales au dernier niveau : en dessous de cette hauteur de mur bas (m), ce sont des combles
+ * sous toiture inclinée (jambette) ; au-dessus, un étage plein dont seuls pignons ou acrotères dépassent.
+ */
+const ATTIC_MAX_EAVES = 2.0;
+
+/** Épaisseur minimale d'un plancher ou d'un plafond entre la hauteur libre et la hauteur brute (m). */
+const MIN_SLAB = 0.2;
+
+/** Hauteur d'étage à proposer quand les murs du dernier niveau ont des hauteurs inégales (toujours « à confirmer »). */
+function unevenStoreyHeight(ridge: number, eaves: number, clear: number | undefined): number {
+  if (eaves < ATTIC_MAX_EAVES) return ridge;
+  // Le plus bas sommet de mur, sauf s'il ne laisse pas la place d'un plafond au-dessus de la hauteur libre.
+  return clear !== undefined && eaves < clear + MIN_SLAB ? ridge : eaves;
+}
+
+/** Écart relatif au-delà duquel la surface écrite et la surface mesurée d'une pièce ne disent plus la même chose. */
+const ROOM_AREA_MISMATCH = 0.05;
+
+/**
+ * Surface d'une pièce : celle écrite sur le plan quand elle concorde avec la mesure (l'expert peut la relire sur
+ * le plan). Quand elles divergent de plus de 5 %, la surface écrite suit une autre règle que celle de An —
+ * surface habitable au-dessus de 1,80 ou 2,00 m sous rampant, typiquement — et c'est la mesure (faces intérieures,
+ * hauteur libre ≥ 1,00 m quand le lecteur la connaît) qui est retenue, avec les deux valeurs en note.
+ */
+function pickRoomArea(stated: number | undefined, measured: number | undefined): { value: number; note?: string } {
+  const s = stated !== undefined && stated > 0 ? stated : undefined;
+  const m = measured !== undefined && measured > 0 ? measured : undefined;
+  if (s !== undefined && m !== undefined && Math.abs(s - m) / m > ROOM_AREA_MISMATCH) {
+    return { value: round(m, 2), note: `${round(s, 2)} / ${round(m, 2)}` };
+  }
+  return { value: s ?? m ?? 0 };
+}
+
 export function createStorey(sheet: PlanSheet | null, name: string, model: BuildingModel): Storey {
   const id = nextStoreyId(model);
   if (!sheet) {
@@ -194,11 +232,12 @@ export function createStorey(sheet: PlanSheet | null, name: string, model: Build
     : footprintOpenings;
 
   const rooms: Room[] = detected.rooms.map((r, i) => {
-    const area = r.statedArea ?? r.measuredArea ?? 0;
+    const picked = pickRoomArea(r.statedArea, r.measuredArea);
+    const area = picked.value;
     const room: Room = {
       id: `${id}-r${i + 1}`,
       name: r.name,
-      area: { value: area, from: area > 0 ? 'plan' : 'default' },
+      area: picked.note ? { value: area, from: 'plan', note: picked.note } : { value: area, from: area > 0 ? 'plan' : 'default' },
       heated: r.heatedGuess === 'yes',
       needsReview: r.heatedGuess === 'ask' || !(area > 0),
     };
@@ -215,9 +254,14 @@ export function createStorey(sheet: PlanSheet | null, name: string, model: Build
     edges,
     metresPerUnit,
     grossHeight:
-      detected.storeyHeight !== undefined
-        ? { value: detected.storeyHeight, from: 'plan' }
-        : { value: DEFAULT_GROSS_HEIGHT, from: 'default' },
+      detected.storeyHeight === undefined
+        ? { value: DEFAULT_GROSS_HEIGHT, from: 'default' }
+        : detected.eavesHeight === undefined
+          ? { value: detected.storeyHeight, from: 'plan' }
+          : // Murs de hauteurs inégales : ni le faîtage ni un acrotère ne sont une hauteur d'étage. Sous des combles
+            // (murs bas), la valeur ne sert que si l'expert écarte la toiture inclinée ; sinon on retient le plus
+            // bas sommet de mur. Dans les deux cas : à confirmer.
+            { value: unevenStoreyHeight(detected.storeyHeight, detected.eavesHeight, detected.clearHeight), from: 'estimate' },
     clearHeight:
       detected.clearHeight !== undefined
         ? { value: detected.clearHeight, from: 'plan' }
@@ -316,6 +360,18 @@ export function rescaleStorey(storey: Storey, metresPerUnit: Sourced<number>): S
 
 // ───────────────────────────── Premier jet à partir d'un document ─────────────────────────────
 
+/** En dessous, une feuille n'est proposée comme étage que si elle est seule (m²). */
+const MIN_STOREY_AREA = 12;
+/** … ou si elle pèse au moins cette part de la plus grande feuille. */
+const MIN_STOREY_SHARE = 0.1;
+
+function sheetFootprintArea(sheet: PlanSheet): number {
+  const outline = sheet.detected.outline;
+  if (!outline || outline.length < 3) return 0;
+  const scale = sheet.metresPerUnit?.value ?? 1;
+  return polygonArea(outline) * scale * scale;
+}
+
 interface Candidate {
   sheet: PlanSheet;
   docIndex: number;
@@ -358,8 +414,17 @@ export function modelFromDocument(doc: PlanDocument, lang: Lang): BuildingModel 
       return;
     }
     if ((sheet.detected.outline?.length ?? 0) < 3) return;
+    // Un plan de toiture (« Roof Line », « Dachaufsicht ») n'est pas un étage.
+    if (!guess && isRoofLevelName(sheet.name)) return;
     candidates.push({ sheet, docIndex, elevation: sheet.detected.elevation, guess });
   });
+
+  // Une feuille minuscule à côté des autres (édicule, lanterneau, détail pris pour un plan) n'est pas un étage.
+  const footprints = candidates.map((c) => sheetFootprintArea(c.sheet));
+  const largest = Math.max(0, ...footprints);
+  const kept = candidates.filter((_, i) => footprints[i]! >= Math.min(MIN_STOREY_AREA, largest) && footprints[i]! >= MIN_STOREY_SHARE * largest);
+  candidates.length = 0;
+  candidates.push(...kept);
 
   // Nom du niveau dans la langue demandée quand il est reconnu ; si deux feuilles donnent le même niveau
   // (« Étage aile A », « Étage aile B »), leurs propres noms sont plus parlants.
@@ -373,5 +438,25 @@ export function modelFromDocument(doc: PlanDocument, lang: Lang): BuildingModel 
     model.storeys.push(createStorey(c.sheet, name, model));
   });
   if (hasBasement) model.bottom = defaultBottom('above-unheated');
+
+  // Dernier niveau aux murs de hauteurs inégales (pignons) : toiture inclinée sur combles chauffés, à confirmer.
+  const top = sorted[sorted.length - 1]?.sheet.detected;
+  const topStorey = model.storeys[model.storeys.length - 1];
+  if (top && topStorey && top.eavesHeight !== undefined && top.storeyHeight !== undefined) {
+    const rise = top.storeyHeight - top.eavesHeight;
+    const scale = topStorey.metresPerUnit.value;
+    const span = extentAlong(topStorey.outline, longestEdgeAngle(topStorey.outline)).across * scale;
+    if (rise > 0.5 && span > 1 && top.eavesHeight < ATTIC_MAX_EAVES) {
+      const pitch = radToDeg(Math.atan2(rise, span / 2));
+      model.top = {
+        ...defaultTop(),
+        kind: 'pitched-roof',
+        shape: 'gable',
+        pitchDeg: Math.round(Math.min(70, Math.max(5, pitch))),
+        kneeWallHeight: round(Math.max(0, top.eavesHeight), 2),
+        from: 'estimate',
+      };
+    }
+  }
   return model;
 }

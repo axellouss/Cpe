@@ -93,17 +93,25 @@ export interface DetectedOpening {
 }
 
 export interface SheetDetection {
-  /** Contour extérieur brut proposé pour la zone chauffée (uf, polygone simple). */
+  /**
+   * Contour extérieur brut (uf, polygone simple) : l'EMPRISE de tout le bâtiment dessiné, annexes comprises.
+   * C'est le moteur (`createStorey`) qui en retire les locaux hors enveloppe pour proposer le contour chauffé.
+   */
   outline?: Vec2[];
   rooms: DetectedRoom[];
   openings: DetectedOpening[];
-  /** Hauteur d'étage brute (m) si lisible (IFC, coupe). */
+  /** Hauteur d'étage brute (m) si lisible (IFC, coupe). Dernier niveau : jusqu'au plus haut sommet de mur (faîtage). */
   storeyHeight?: number;
+  /**
+   * Dernier niveau dont les murs ont des hauteurs inégales (toiture inclinée probable) : hauteur du plus bas
+   * sommet de mur (m), c'est-à-dire la jambette. `storeyHeight` est alors la hauteur au faîtage, pas une hauteur d'étage.
+   */
+  eavesHeight?: number;
   /** Hauteur libre (m) si lisible. */
   clearHeight?: number;
   /** Altitude du niveau (m) si lisible. */
   elevation?: number;
-  /** Remarques du lecteur (non traduites : texte libre court, en français). */
+  /** Remarques du lecteur : texte libre court, dans la langue demandée à la lecture. */
   notes: string[];
 }
 

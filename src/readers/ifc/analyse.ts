@@ -462,6 +462,7 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
     // Hauteur d'étage : de niveau à niveau ; dernier niveau : jusqu'au sommet des murs du volume proposé.
     const isTop = k === kept.length - 1;
     let storeyHeight: number | undefined;
+    let eavesHeight: number | undefined;
     if (!isTop) {
       storeyHeight = round(kept[k + 1]!.level.z - band.level.z, 2);
     } else {
@@ -479,7 +480,11 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
         const low = Math.min(...tops);
         storeyHeight = round(high, 2);
         notes.push(msg('ifc.note.topHeight'));
-        if (high - low > 0.5) notes.push(msg('ifc.note.unevenWalls', { low: fmt(low), high: fmt(high) }));
+        if (high - low > 0.5) {
+          // Murs pignons : `high` est le faîtage, `low` la jambette. Le moteur en fait une proposition de toiture.
+          eavesHeight = round(low, 2);
+          notes.push(msg('ifc.note.unevenWalls', { low: fmt(low), high: fmt(high) }));
+        }
       }
     }
     if (storeyHeight !== undefined && (storeyHeight < HEIGHT_RANGE.min || storeyHeight > HEIGHT_RANGE.max)) {
@@ -688,6 +693,7 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
       detected: { outline, rooms, openings, elevation: round(band.level.elevation, 3), notes },
     };
     if (storeyHeight !== undefined) sheet.detected.storeyHeight = storeyHeight;
+    if (eavesHeight !== undefined) sheet.detected.eavesHeight = eavesHeight;
     if (clearHeight !== null) sheet.detected.clearHeight = round(clearHeight, 2);
     sheetOf.set(band, sheet);
   });
