@@ -135,6 +135,53 @@ describe('classement des pièces', () => {
     }
   });
 
+  it('reconnaît le vocabulaire courant des plans allemands et français', () => {
+    const expected: Record<string, 'yes' | 'ask'> = {
+      'Kind 1': 'yes',
+      Kind: 'yes',
+      Kochen: 'yes',
+      Arbeiten: 'yes',
+      Empore: 'yes',
+      Eingang: 'yes',
+      Gang: 'yes',
+      Korridor: 'yes',
+      Vorraum: 'yes',
+      'Ch. 1': 'yes',
+      'CH 2': 'yes',
+      SDE: 'yes',
+      'Salle d’eau': 'yes',
+      'S.d.B.': 'yes',
+      'W.C.': 'yes',
+      Bain: 'yes',
+      Repas: 'yes',
+      'Pièce de vie': 'yes',
+      'Suite parentale': 'yes',
+      Bibliothèque: 'yes',
+      'Salle de jeux': 'yes',
+      Circulation: 'yes',
+      Buero: 'yes',
+      HWR: 'ask',
+      Hauswirtschaftsraum: 'ask',
+      Speis: 'ask',
+      Speisekammer: 'ask',
+      Kammer: 'ask',
+      Lingerie: 'ask',
+      Kinderwagenraum: 'ask',
+    };
+    for (const [name, guess] of Object.entries(expected)) {
+      expect(looksLikeRoomName(name), name).toBe(true);
+      expect(classifyRoomName(name), name).toBe(guess);
+    }
+  });
+
+  it('ne compte pas deux fois une surface : totaux, logements et raisons sociales ne sont pas des pièces', () => {
+    for (const text of ['Wohnfläche EG', 'Wohnung 1', 'Wohnbau GmbH', 'Zimmerei Müller', 'Kinderspielplatz', 'Essen 45127', 'Surface habitable', 'Nutzfläche gesamt', 'Appartement 3', 'Logement A']) {
+      expect(looksLikeRoomName(text), text).toBe(false);
+    }
+    expect(parseRoomLabel('Wohnfläche EG 69,39 m²')).toEqual({ name: '', area: 69.39 });
+    expect(parseRoomLabel('Wohnen 45,43 m²')).toEqual({ name: 'Wohnen', area: 45.43 });
+  });
+
   it('sait quels locaux sont hors de l’enveloppe par nature', () => {
     for (const name of ['Garage', 'Doppelgarage', 'Carport', 'Abri de jardin', 'Cave non chauffée', 'Kaltraum', 'Terrasse']) {
       expect(isOutsideEnvelopeName(name), name).toBe(true);
@@ -211,6 +258,15 @@ describe('niveaux, ouvertures, nord, hauteurs', () => {
     expect(guessStorey('Kellergeschoss')?.rank).toBe(-1);
     expect(guessStorey('Dachgeschoss')?.rank).toBe(9);
     expect(guessStorey('Coupe A-A')).toBeNull();
+    // Niveaux enterrés désignés par un numéro ou un usage.
+    for (const name of ['Niveau -1', 'R-1', '-1', 'N-1', '-1 - Garage', 'Tiefgarage', 'Parking', 'Souterrain', 'Sockelgeschoss', 'U1', 'E-1', 'Étage -1', 'Grundriss Keller', 'Keller', 'Cave']) {
+      expect(guessStorey(name)?.rank, name).toBe(-1);
+    }
+    // « Keller » et « KG » dans un nom de fichier ne font pas un sous-sol.
+    expect(guessStorey('Haus Keller EG')?.rank).toBe(0);
+    expect(guessStorey('Wohnhaus Keller')).toBeNull();
+    expect(guessStorey('Müller GmbH & Co KG')).toBeNull();
+    expect(guessStorey('Plan KG')?.rank).toBe(-1);
   });
 
   it('lit les dimensions d’ouvertures en m, cm ou mm', () => {

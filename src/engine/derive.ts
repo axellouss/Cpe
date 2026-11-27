@@ -657,6 +657,12 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
       floorBlocks.push({ host, deductions: [] });
       overhang -= overUnheated;
     }
+    // Il reste un surplomb alors que le niveau du dessous a un mur contre un local non chauffé dont on ne connaît pas
+    // l'emprise : ce plancher donne peut-être sur ce local. On ne l'affirme pas « sur extérieur » comme une lecture.
+    const overhangUncertain = overhang > STEP_MIN_AREA && lower.storey.edges.some((e) => e.boundary === 'unheated');
+    if (overhangUncertain) {
+      note('stepback.overhangUncertain', 'warn', { lower: lower.storey.name, upper: upper.storey.name, area: fmt(overhang) });
+    }
     if (overhang > STEP_MIN_AREA) {
       const host = draft({
         id: `floor:overhang:${upper.storey.id}`,
@@ -669,7 +675,7 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
         orientation: 'H',
         boundary: 'outside',
         deduct: false,
-        from,
+        from: overhangUncertain ? weakest(from, 'estimate') : from,
         storeyId: upper.storey.id,
         manual: false,
         label: () => t(lang, 'engine.row.floorOverhang', { storey: upper.storey.name }),

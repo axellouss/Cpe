@@ -14,6 +14,8 @@ export function fold(text: string): string {
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .replace(/ß/g, 'ss')
+    // Apostrophes typographiques : « Salle d’eau » et « Salle d'eau » sont le même libellé.
+    .replace(/[’‘`´]/g, "'")
     .toLowerCase()
     .trim();
 }
@@ -87,16 +89,22 @@ const ROOM_RULES: RoomRule[] = [
   { re: /chaufferie|heizraum|heizung|chaudiere|local tech|technique|technik|hausanschluss|haustechnik/, guess: 'no' },
   { re: /poubelle|mull|gaine|schacht|citerne|tank|pellet|combustible|brennstoff|ollager/, guess: 'no' },
   { re: /terrasse|balcon|balkon|loggia|veranda|wintergarten|jardin d'hiver|\babri\b|remise|schuppen/, guess: 'no' },
-  { re: /buanderie|waschkuche|wasch|laundry|hobby|loisir|fitness|atelier|werkstatt|bricolage/, guess: 'ask' },
   {
-    re: /sejour|salon|living|wohn|stube|salle a manger|\bess|chambre|schlaf|zimmer|bureau|\bburo|cuisine|kuche|kitchen|sdb|salle de bain|salle d'eau|\bbad|douche|dusch|\bwc\b|toilet|dressing|ankleide|kinder|enfant|parents|eltern|gast|\bamis?\b|mezzanine|studio|galerie/,
+    re: /buanderie|waschkuche|wasch|laundry|hobby|loisir|fitness|atelier|werkstatt|bricolage|\bhwr\b|hauswirtschaft|lingerie|kinderwagen|speisekammer|\bspeis\b|\bkammer\b/,
+    guess: 'ask',
+  },
+  {
+    re: /sejour|salon|living|wohn|stube|salle a manger|\bess|\brepas\b|piece de vie|chambre|\bch\.? ?\d|suite parentale|schlaf|zimmer|bureau|\bburo|\bbuero|arbeiten|bibliotheque|bibliothek|salle de jeux|spielzimmer|cuisine|kuche|kochen|kitchen|\bsdb\b|\bs\.d\.b|\bsde\b|salle de bain|salle d'eau|\bbain\b|\bbad|douche|dusch|\bwc\b|\bw\.c|toilet|dressing|ankleide|\bkind\b|\bkind ?\d|kinderzimmer|enfant|parents|eltern|gast|\bamis?\b|mezzanine|studio|galerie|empore/,
     guess: 'yes',
   },
   {
     re: /cave|keller|cellier|vorrat|abstell|debarras|rangement|lager|grenier|speicher|combles|dachboden|reserve|archiv/,
     guess: 'ask',
   },
-  { re: /hall|entree|couloir|flur|diele|degagement|palier|escalier|treppe|cage|sas|windfang|vestiaire|garderobe/, guess: 'yes' },
+  {
+    re: /hall|entree|eingang|couloir|korridor|flur|\bgang\b|diele|vorraum|degagement|circulation|palier|escalier|treppe|cage|sas|windfang|vestiaire|garderobe/,
+    guess: 'yes',
+  },
 ];
 
 /** Proposition « comptée dans An ? » d'après le nom de la pièce. */
@@ -126,8 +134,20 @@ const ROOM_WORD_RE = new RegExp(ROOM_RULES.map((r) => r.re.source).join('|'));
  * Textes de cartouche ou de légende qui contiennent un mot de pièce sans en être une : « Bureau d'études Schmit »,
  * « Einfamilienwohnhaus », « Kindergarten », « Plan des combles », « Voir détail cuisine », « Mur entre garage et séjour ».
  */
-const NOT_A_ROOM_RE =
-  /bureau d'etudes|d'architecture|architekt|architecte|ingenieur|einfamilien|mehrfamilien|zweifamilien|wohnhaus|wohnanlage|kindergarten|^plan\b|^grundriss\b|^voir\b|^siehe\b|^detail\b|^hauteur\b|^hohe\b|^mur\b|^wand\b|parking public|^bad [a-z]+$/;
+const NOT_A_ROOM_RE = new RegExp(
+  [
+    // bureaux d'études, entreprises, programmes
+    "bureau d'etudes|d'architecture|architekt|architecte|ingenieur|\\bgmbh\\b|\\bsarl\\b|\\bs\\.a\\b|wohnbau|zimmerei",
+    'einfamilien|mehrfamilien|zweifamilien|wohnhaus|wohnanlage|kindergarten|kinderspielplatz',
+    // totaux de surfaces et libellés de logements : « Wohnfläche EG 69,39 m² » compterait deux fois dans An
+    'wohnflache|nutzflache|grundflache|surface habitable|surface utile|surface totale|surface nette|\\btotal\\b|\\bgesamt|\\bsumme\\b',
+    '\\bwohnung\\b|\\bappartement\\b|\\blogement\\b',
+    // légendes et renvois
+    '^plan\\b|^grundriss\\b|^voir\\b|^siehe\\b|^detail\\b|^hauteur\\b|^hohe\\b|^mur\\b|^wand\\b|parking public|^bad [a-z]+$',
+    // code postal : « Essen 45127 », « L-1234 Luxembourg »
+    '\\b\\d{5}\\b|\\bl-\\d{4}\\b',
+  ].join('|'),
+);
 
 /** Mots de liaison : un texte qui commence ou finit par l'un d'eux est un bout de phrase, pas un nom de pièce. */
 const LINK_WORD_RE = /^(?:and|or|the|between|with|et|ou|avec|entre|und|oder|mit|zwischen)$/;
@@ -140,7 +160,7 @@ export function looksLikeRoomName(text: string): boolean {
   const words = f.split(/\s+/).filter(Boolean);
   if (words.length > 5) return false;
   if (LINK_WORD_RE.test(words[0]!) || LINK_WORD_RE.test(words[words.length - 1]!)) return false;
-  if (NOT_A_ROOM_RE.test(f.replace(/[’`]/g, "'"))) return false;
+  if (NOT_A_ROOM_RE.test(f)) return false;
   return ROOM_WORD_RE.test(f);
 }
 
@@ -244,8 +264,29 @@ interface StoreyRule {
   rank: number;
 }
 
+/** Désignations sans ambiguïté d'un niveau enterré ou d'un niveau de stationnement. */
+const BASEMENT_STRONG_RE =
+  /sous[- ]?sol|kellergeschoss|untergeschoss|\bug\b|\bss\b|basement|souterrain|sockelgeschoss|tiefgarage|\bgarage\b|\bparking\b|(?:niveau|etage|ebene|\bn|\br|\be|\bu)\s?-\s?\d|^-\s?\d|\bu\d\b/;
+/** « KG » vaut Kellergeschoss… sauf dans une raison sociale (« Müller GmbH & Co KG »). */
+const BASEMENT_KG_RE = /\bkg\b/;
+const COMPANY_RE = /gmbh|& ?co\b|\bco\.? kg\b/;
+/** « Keller », « cave » : un sous-sol dans un titre de plan, mais aussi un nom de famille dans un nom de fichier. */
+const BASEMENT_WEAK_RE = /\bcave\b|keller/;
+const PLAN_WORD_RE = /grundriss|\bplan\b|niveau|ebene|geschoss|etage/;
+const ABOVE_GROUND_RE = /rez[- ]de[- ]chaussee|\brdc\b|erdgeschoss|\beg\b|\bog\b|obergeschoss|\betage\b|dachgeschoss|\bdg\b|combles/;
+
+function isBasementText(f: string): boolean {
+  if (BASEMENT_STRONG_RE.test(f)) return true;
+  if (BASEMENT_KG_RE.test(f) && !COMPANY_RE.test(f)) return true;
+  if (!BASEMENT_WEAK_RE.test(f)) return false;
+  // Un niveau hors sol nommé dans le même texte l'emporte (« Haus Keller EG »).
+  if (ABOVE_GROUND_RE.test(f)) return false;
+  // Seul, ou à côté d'un mot de plan (« Grundriss Keller ») : un sous-sol. « Wohnhaus Keller » : un nom.
+  const words = f.split(/[\s_\-.]+/).filter(Boolean);
+  return words.length <= 1 || PLAN_WORD_RE.test(f) || /kellerplan|kellerraum/.test(f);
+}
+
 const STOREY_RULES: StoreyRule[] = [
-  { re: /sous[- ]?sol|\bcave\b|kellergeschoss|untergeschoss|\bkg\b|\bug\b|\bss\b|basement|keller/, fr: 'Sous-sol', de: 'Kellergeschoss', rank: -1 },
   { re: /rez[- ]de[- ]jardin|gartengeschoss/, fr: 'Rez-de-jardin', de: 'Gartengeschoss', rank: -0.5 },
   { re: /rez[- ]de[- ]chaussee|\brdc\b|\br\.d\.c|erdgeschoss|\beg\b|ground floor|parterre/, fr: 'Rez-de-chaussée', de: 'Erdgeschoss', rank: 0 },
   { re: /combles|dachgeschoss|\bdg\b|grenier|speicher|attic|mansarde/, fr: 'Combles', de: 'Dachgeschoss', rank: 9 },
@@ -270,6 +311,7 @@ const UPPER_STOREY_RE = /\b(\d{1,2})\s*(?:e|eme|ieme)\s*etage\b|\betage\s*(\d{1,
 export function guessStorey(text: string): { fr: string; de: string; rank: number } | null {
   const f = fold(text);
   // Étages 3 et plus (« 3e étage », « 4. Obergeschoss », « R+5 ») : une seule règle, le rang est le numéro.
+  if (isBasementText(f)) return { fr: 'Sous-sol', de: 'Kellergeschoss', rank: -1 };
   const upper = UPPER_STOREY_RE.exec(f);
   const n = upper ? Number(upper[1] ?? upper[2] ?? upper[3] ?? upper[4] ?? upper[5]) : 0;
   if (n >= 3 && n <= 60) return { fr: `${n}e étage`, de: `${n}. Obergeschoss`, rank: n };

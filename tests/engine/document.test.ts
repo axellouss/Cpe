@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PlanDocument, PlanSheet } from '../../src/core/types';
 import {
+  basementSheetIds,
   createEmptyProject,
   createStorey,
   deriveSheets,
@@ -422,6 +423,26 @@ describe('modelFromDocument : un document → premier jet de bâtiment', () => {
     expect(isBasementSheetName('Sous-sol')).toBe(true);
     expect(isBasementSheetName('Rez-de-jardin')).toBe(false);
     expect(isBasementSheetName('Plan 3')).toBe(false);
+  });
+
+  it('un niveau enterré d’une maquette est proposé non chauffé d’après son altitude, quel que soit son nom', () => {
+    const levels = [
+      withOutline('g', 'Level A', 30, 30, -2.5),
+      withOutline('e', 'Level B', 20, 10, 0),
+      withOutline('o', 'Level C', 20, 10, 3),
+    ];
+    expect([...basementSheetIds(levels)]).toEqual(['g']);
+    const model = modelFromDocument(doc(levels), 'fr');
+    expect(model.storeys.map((s) => s.name)).toEqual(['Level B', 'Level C']);
+    expect(model.bottom.kind).toBe('above-unheated');
+    // Altitudes absolues (NGF) : le zéro ne dit rien, on ne déduit rien de l'altitude.
+    const absolute = [withOutline('a', 'Level A', 20, 10, 312.5), withOutline('b', 'Level B', 20, 10, 315.3)];
+    expect(basementSheetIds(absolute).size).toBe(0);
+    // Un demi-niveau à −1,20 m n'est pas tenu pour enterré.
+    const split = [withOutline('a', 'Level A', 20, 10, -1.2), withOutline('b', 'Level B', 20, 10, 0)];
+    expect(basementSheetIds(split).size).toBe(0);
+    // Sans altitude : le nom seul.
+    expect([...basementSheetIds([withOutline('k', 'Keller', 10, 8), withOutline('e', 'Erdgeschoss', 10, 8)])]).toEqual(['k']);
   });
 
   it('propose la fermeture haute d’après la feuille du dernier étage, ou rien', () => {

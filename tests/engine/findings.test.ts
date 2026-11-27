@@ -334,6 +334,18 @@ const SCENARIOS: Record<FindingCode, Scenario> = {
     },
     params: { lower: 'RDC', upper: 'Étage', area: '20,00' },
   },
+  'stepback.overhangUncertain': {
+    severity: 'warn',
+    why: 'étage plus grand que le rez-de-chaussée, dont un mur donne sur un local non chauffé d’emprise inconnue',
+    build: () => {
+      const p = project([
+        storey('rdc', 'RDC', rect(10, 8), { netArea: 64, boundaries: { [EAST]: 'unheated' } }),
+        storey('etage', 'Étage', rect(14, 8), { netArea: 90 }),
+      ]);
+      return p;
+    },
+    params: { lower: 'RDC', upper: 'Étage', area: '32,00' },
+  },
   'manual.heatedIgnored': {
     severity: 'info',
     why: 'ligne manuelle contre un local chauffé',

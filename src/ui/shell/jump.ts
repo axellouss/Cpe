@@ -37,6 +37,7 @@ const TARGETS: Record<string, Kind> = {
   'rooms.needReview': { plan: 'rooms' },
   'outline.containsUnheated': { plan: 'outline' },
   'outline.unconditionedInside': { plan: 'outline' },
+  'stepback.overhangUncertain': { plan: 'boundary' },
   'north.default': { plan: 'north' },
   'orientation.borderline': { plan: 'north' },
   'windows.none': { plan: 'opening' },

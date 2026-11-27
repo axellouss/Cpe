@@ -44,6 +44,7 @@ export const FINDING_CODES = [
   'roof.pitchImplausible',
   'attic.heightRule',
   'stepback.byAreas',
+  'stepback.overhangUncertain',
   'manual.heatedIgnored',
   'manual.deductMismatch',
   'abzug.dangling',
@@ -119,6 +120,8 @@ export const ENGINE_MESSAGES: Dictionary = {
       '{storey} sous rampants : seule la surface dont la hauteur libre dépasse 1,00 m compte dans An. Vérifiez la surface nette retenue.',
     'finding.stepback.byAreas':
       'Entre {lower} et {upper} : décalage de {area} m² calculé par simple différence de surfaces (plans non superposables). Vérifiez toitures-terrasses et surplombs.',
+    'finding.stepback.overhangUncertain':
+      "{upper} dépasse de {area} m² au-dessus de {lower}, qui a un mur contre un local non chauffé : ce plancher donne peut-être sur ce local plutôt que sur l'extérieur. Vérifiez, et corrigez l'élément (plancher sur local non chauffé) si c'est le cas.",
     'finding.manual.heatedIgnored':
       '{count} ligne(s) manuelle(s) contre un local chauffé : hors enveloppe, non reprise(s) dans le tableau.',
     'finding.manual.deductMismatch':
@@ -247,6 +250,8 @@ export const ENGINE_MESSAGES: Dictionary = {
       '{storey} unter Dachschrägen: Nur die Fläche mit einer lichten Höhe über 1,00 m zählt zu An. Prüfen Sie die angesetzte Nettofläche.',
     'finding.stepback.byAreas':
       'Zwischen {lower} und {upper}: Versatz von {area} m² nur aus der Flächendifferenz berechnet (Pläne nicht deckungsgleich). Prüfen Sie Dachterrassen und Auskragungen.',
+    'finding.stepback.overhangUncertain':
+      '{upper} kragt um {area} m² über {lower} aus, das eine Wand zu einem unbeheizten Raum hat: Dieser Boden grenzt möglicherweise an diesen Raum statt an Außenluft. Prüfen und das Bauteil (Boden über unbeheiztem Raum) gegebenenfalls korrigieren.',
     'finding.manual.heatedIgnored':
       '{count} manuelle Zeile(n) gegen beheizte Räume: nicht Teil der Hülle, nicht in die Tabelle übernommen.',
     'finding.manual.deductMismatch':

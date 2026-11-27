@@ -443,6 +443,29 @@ export function isBasementSheetName(name: string): boolean {
   return guess !== null && guess.rank <= -1;
 }
 
+/** Un niveau d'une maquette situé au moins aussi bas sous le niveau de référence est tenu pour enterré (m). */
+const UNDERGROUND_DROP = 1.5;
+/** Le niveau de référence (± 0,00) doit être à moins de cela de zéro pour que les altitudes soient parlantes (m). */
+const GROUND_REFERENCE_MAX = 0.6;
+
+/**
+ * Feuilles à proposer NON chauffées d'office : sous-sols reconnus à leur nom, et — quand toutes les feuilles
+ * portent une altitude (maquette IFC) — niveaux situés au moins 1,50 m sous le niveau le plus proche de ± 0,00
+ * (« -1 - Garage » à −2,50 m), quel que soit leur nom. L'expert peut toujours les cocher.
+ */
+export function basementSheetIds(sheets: readonly PlanSheet[]): Set<string> {
+  const ids = new Set(sheets.filter((s) => isBasementSheetName(s.name)).map((s) => s.id));
+  const levels = sheets.filter((s) => s.detected.elevation !== undefined);
+  if (levels.length >= 2 && levels.length === sheets.length) {
+    const ground = levels.reduce((best, s) => (Math.abs(s.detected.elevation!) < Math.abs(best.detected.elevation!) ? s : best));
+    const zero = ground.detected.elevation!;
+    if (Math.abs(zero) <= GROUND_REFERENCE_MAX) {
+      for (const s of levels) if (s.detected.elevation! <= zero - UNDERGROUND_DROP) ids.add(s.id);
+    }
+  }
+  return ids;
+}
+
 /**
  * Range des feuilles du bas vers le haut avec la règle du premier jet : altitudes si toutes connues, sinon rang
  * des noms reconnus puis feuilles au nom inconnu dans l'ordre reçu.
@@ -463,11 +486,12 @@ export function modelFromDocument(doc: PlanDocument, lang: Lang): BuildingModel 
   if (doc.northAngle) model.northAngle = { ...doc.northAngle };
 
   let hasBasement = false;
+  const basements = basementSheetIds(doc.sheets);
   const candidates: Candidate[] = [];
   doc.sheets.forEach((sheet, docIndex) => {
     const guess = guessStorey(sheet.name);
     // Rang ≤ −1 : sous-sol. Un rez-de-jardin (−0,5) est un niveau habité : il reste un étage chauffé.
-    if (isBasementSheetName(sheet.name)) {
+    if (basements.has(sheet.id)) {
       // Sous-sol reconnu : hors volume chauffé par défaut → le premier étage chauffé repose sur un local non chauffé.
       hasBasement = true;
       return;

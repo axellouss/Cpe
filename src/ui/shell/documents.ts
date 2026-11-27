@@ -8,7 +8,7 @@
  * ce qui permet de retrouver le fond de plan d'un projet rouvert.
  */
 import type { BottomKind, Lang, PlanDocument, PlanSheet, Project, Sourced } from '../../core/types';
-import { createEmptyProject, createStorey, isBasementSheetName, modelFromDocument, proposeHeatedOutline, proposeTopClosure } from '../../engine';
+import { basementSheetIds, createEmptyProject, createStorey, modelFromDocument, proposeHeatedOutline, proposeTopClosure } from '../../engine';
 import { t } from '../../i18n';
 import { guessStorey } from '../../semantics/labels';
 import type { LoadedDocument } from './types';
@@ -143,11 +143,6 @@ export interface Proposal {
   storeysAligned: boolean;
 }
 
-/** Même règle que le moteur : un sous-sol est écarté d'office, un rez-de-jardin est un niveau habité. */
-function isBasementName(name: string): boolean {
-  return isBasementSheetName(name);
-}
-
 function proposedName(sheet: PlanSheet, lang: Lang): string {
   const guess = guessStorey(sheet.name);
   return guess ? guess[lang] : sheet.name.trim() || t(lang, 'shell.storey.default.0');
@@ -172,6 +167,8 @@ export function proposeStoreys(documents: readonly LoadedDocument[], project: Pr
   const refs = allSheets(documents);
   const combined = combineDocuments(documents);
   const effectiveMode = mode ?? (project.model.storeys.length > 0 ? 'append' : 'replace');
+  // Sous-sols par leur nom, et niveaux enterrés d'une maquette par leur altitude : proposés non chauffés.
+  const basements = basementSheetIds(combined.sheets);
 
   // Premier jet du moteur ; s'il échoue (module en cours d'écriture), on retombe sur les feuilles avec contour.
   let draft: { sheetId: string; name: string }[];
@@ -179,7 +176,7 @@ export function proposeStoreys(documents: readonly LoadedDocument[], project: Pr
     draft = modelFromDocument(combined, lang).storeys.flatMap((s) => (s.sheetId === null ? [] : [{ sheetId: s.sheetId, name: s.name }]));
   } catch {
     draft = refs
-      .filter((r) => !isBasementName(r.sheet.name) && (r.sheet.detected.outline?.length ?? 0) >= 3)
+      .filter((r) => !basements.has(r.sheet.id) && (r.sheet.detected.outline?.length ?? 0) >= 3)
       .map((r) => ({ sheetId: r.sheet.id, name: proposedName(r.sheet, lang) }));
   }
 
@@ -220,7 +217,7 @@ export function proposeStoreys(documents: readonly LoadedDocument[], project: Pr
   let firstTaken = false;
   for (const ref of refs) {
     if (seen.has(ref.sheet.id)) continue;
-    if (isBasementName(ref.sheet.name)) {
+    if (basements.has(ref.sheet.id)) {
       push(ref, 'basement', false, proposedName(ref.sheet, lang));
       continue;
     }
