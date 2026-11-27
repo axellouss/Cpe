@@ -29,14 +29,24 @@ const u16le = (v: number): number[] => [v & 0xff, (v >> 8) & 0xff];
 const u32le = (v: number): number[] => [v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff];
 const chars = (s: string): number[] => [...s].map((c) => c.charCodeAt(0));
 
-/** PNG minimal : signature, IHDR et, si demandé, un bloc pHYs (pixels par mètre). */
-function png(width: number, height: number, dpi?: number): ArrayBuffer {
+/** En-tête TIFF petit-boutiste à un seul champ : Orientation (0x0112), type SHORT. */
+const tiffOrientation = (orientation: number): number[] => [...chars('II'), ...u16le(42), ...u32le(8), ...u16le(1), ...u16le(0x0112), ...u16le(3), ...u32le(1), ...u16le(orientation), 0, 0, ...u32le(0)];
+
+/**
+ * PNG minimal : signature, IHDR, bloc pHYs (pixels par mètre) et bloc eXIf (orientation) si demandés, IDAT,
+ * puis IEND sauf si `truncated` (fichier coupé après les données). Les CRC ne sont pas vérifiés par le lecteur.
+ */
+function png(width: number, height: number, dpi?: number, options: { orientation?: number; exifAfterData?: boolean; truncated?: boolean } = {}): ArrayBuffer {
   const bytes = [0x89, ...chars('PNG'), 0x0d, 0x0a, 0x1a, 0x0a, ...u32be(13), ...chars('IHDR'), ...u32be(width), ...u32be(height), 8, 0, 0, 0, 0, 0, 0, 0, 0];
   if (dpi !== undefined) {
     const perMetre = Math.round(dpi / 0.0254);
     bytes.push(...u32be(9), ...chars('pHYs'), ...u32be(perMetre), ...u32be(perMetre), 1, 0, 0, 0, 0);
   }
+  const exif = options.orientation === undefined ? [] : [...u32be(tiffOrientation(options.orientation).length), ...chars('eXIf'), ...tiffOrientation(options.orientation), 0, 0, 0, 0];
+  if (!options.exifAfterData) bytes.push(...exif);
   bytes.push(...u32be(0), ...chars('IDAT'), 0, 0, 0, 0);
+  if (options.exifAfterData) bytes.push(...exif);
+  if (!options.truncated) bytes.push(...u32be(0), ...chars('IEND'), 0xae, 0x42, 0x60, 0x82);
   return buffer(bytes);
 }
 
@@ -45,9 +55,7 @@ function jpeg(width: number, height: number, options: { dpi?: number; orientatio
   const bytes = [0xff, 0xd8];
   if (options.dpi !== undefined) bytes.push(0xff, 0xe0, ...u16be(16), ...chars('JFIF'), 0, 1, 1, 1, ...u16be(options.dpi), ...u16be(options.dpi), 0, 0);
   if (options.orientation !== undefined) {
-    // TIFF petit-boutiste, un seul champ : Orientation (0x0112), type SHORT.
-    const tiff = [...chars('II'), ...u16le(42), ...u32le(8), ...u16le(1), ...u16le(0x0112), ...u16le(3), ...u32le(1), ...u16le(options.orientation), 0, 0, ...u32le(0)];
-    const body = [...chars('Exif'), 0, 0, ...tiff];
+    const body = [...chars('Exif'), 0, 0, ...tiffOrientation(options.orientation)];
     bytes.push(0xff, 0xe1, ...u16be(body.length + 2), ...body);
   }
   // Une table de Huffman (marqueur C4) avant le SOF : elle ne doit pas être prise pour lui.
@@ -80,6 +88,42 @@ describe('en-têtes d’images', () => {
     }
     const flipped = readImageInfo(jpeg(4000, 3000, { orientation: 3 }))!;
     expect([flipped.width, flipped.height]).toEqual([4000, 3000]);
+  });
+
+  it('PNG tourné par son bloc eXIf : dimensions telles qu’affichées par le navigateur', () => {
+    // Cas du relecteur : 1600 × 1000 px, orientation 6 ; Chromium l'affiche en 1000 × 1600.
+    for (const orientation of [5, 6, 7, 8]) {
+      expect(readImageInfo(png(1600, 1000, undefined, { orientation }))).toEqual({ format: 'png', mime: 'image/png', width: 1000, height: 1600 });
+    }
+    for (const orientation of [1, 2, 3, 4]) {
+      expect(readImageInfo(png(1600, 1000, 300, { orientation }))).toMatchObject({ width: 1600, height: 1000, dpi: 300 });
+    }
+    // eXIf après les données d'image : ignoré, comme le fait le navigateur.
+    expect(readImageInfo(png(1600, 1000, undefined, { orientation: 6, exifAfterData: true }))).toMatchObject({ width: 1600, height: 1000 });
+  });
+
+  it('JPEG et PNG coupés avant leur marque de fin (EOI, IEND) : signalés comme tronqués', () => {
+    expect(readImageInfo(png(800, 600))!.truncated).toBeUndefined();
+    expect(readImageInfo(png(800, 600, undefined, { truncated: true }))!.truncated).toBe(true);
+    const whole = new Uint8Array(jpeg(640, 480, { orientation: 6 }));
+    expect(readImageInfo(whole)!.truncated).toBeUndefined();
+    // Sans les deux derniers octets (FF D9).
+    expect(readImageInfo(whole.slice(0, -2))!.truncated).toBe(true);
+    // Octets ajoutés après la fin par certains appareils : le fichier reste complet.
+    expect(readImageInfo(new Uint8Array([...whole, 0, 0, 0x41, 0x42]))!.truncated).toBeUndefined();
+  });
+
+  it('scans d’essai coupés à 1 % et à 50 % : tronqués ; entiers : complets', () => {
+    for (const name of ['scan_fr_100dpi.jpg', 'scan_fr_100dpi_bilevel.png']) {
+      const all = new Uint8Array(fixtureBytes(name));
+      expect(readImageInfo(all)!.truncated).toBeUndefined();
+      for (const share of [0.5, 0.01]) {
+        const cut = all.slice(0, Math.max(40, Math.floor(all.length * share)));
+        const info = readImageInfo(cut);
+        // 1 % d'un PNG peut ne même plus contenir d'en-tête complet : alors le format n'est pas reconnu.
+        if (info) expect(info.truncated).toBe(true);
+      }
+    }
   });
 
   it('GIF, BMP et WebP', () => {
@@ -158,6 +202,25 @@ describe('readImage', () => {
   it('photo tenue debout : la feuille a les dimensions affichées', async () => {
     const doc = await readImage(jpeg(4000, 3000, { orientation: 6 }), 'photo.jpg');
     expect(doc.sheets[0]!.bbox).toEqual({ minX: 0, minY: 0, maxX: 3000, maxY: 4000 });
+  });
+
+  it('image tronquée : avertissement en tête, en français et en allemand', async () => {
+    const all = new Uint8Array(fixtureBytes('scan_fr_100dpi.jpg'));
+    const cut = all.slice(0, Math.floor(all.length / 2)).buffer as ArrayBuffer;
+    const fr = await readImage(cut, 'scan.jpg');
+    expect(fr.warnings[0]).toMatch(/Fichier image incomplet/);
+    const de = await readImage(cut, 'scan.jpg', { lang: 'de' });
+    expect(de.warnings[0]).toMatch(/Bilddatei unvollständig/);
+    // Le fichier entier n'a pas cet avertissement.
+    expect((await readImage(fixtureBytes('scan_fr_100dpi.jpg'), 'scan.jpg')).warnings.some((w) => /incomplet/.test(w))).toBe(false);
+    const png1 = await readImage(png(4961, 3508, 300, { truncated: true }), 'plan.png');
+    expect(png1.warnings).toHaveLength(2);
+    expect(png1.warnings[0]).toMatch(/incomplet/);
+  });
+
+  it('PNG tenu debout (eXIf orientation 6) : la feuille a les dimensions affichées', async () => {
+    const doc = await readImage(png(1600, 1000, undefined, { orientation: 6 }), 'photo.png');
+    expect(doc.sheets[0]!.bbox).toEqual({ minX: 0, minY: 0, maxX: 1000, maxY: 1600 });
   });
 
   it('fichier qui n’est pas une image : erreur claire, en français', async () => {

@@ -80,6 +80,38 @@ export function numbers(v: unknown): number[] {
   return out;
 }
 
+const STEP_HEADER = 'ISO-10303-21;';
+const STEP_TRAILER = 'END-ISO-10303-21;';
+
+function isPadding(b: number): boolean {
+  // Blancs, NUL et SUB (bourrage de certains outils de copie) après la dernière ligne.
+  return b === 0x20 || b === 0x09 || b === 0x0a || b === 0x0d || b === 0x00 || b === 0x1a;
+}
+
+function matchesAt(data: Uint8Array, at: number, text: string): boolean {
+  if (at < 0 || at + text.length > data.length) return false;
+  for (let i = 0; i < text.length; i++) {
+    let b = data[at + i]!;
+    if (b >= 0x61 && b <= 0x7a) b -= 0x20; // mots-clés STEP : casse indifférente
+    if (b !== text.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
+/**
+ * Forme d'un fichier STEP, vue à ses deux bouts sans le lire : « ISO-10303-21; » en tête (après un éventuel BOM
+ * et des blancs), « END-ISO-10303-21; » en fin (blancs de fin ignorés). Un fichier qui a la tête sans la queue a
+ * été tronqué : web-ifc l'ouvrirait quand même et l'on proposerait un bâtiment incomplet.
+ */
+export function stepShape(data: Uint8Array): { header: boolean; trailer: boolean } {
+  let start = 0;
+  if (data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) start = 3;
+  while (start < data.length && start < 4096 && isPadding(data[start]!)) start++;
+  let end = data.length;
+  while (end > 0 && isPadding(data[end - 1]!)) end--;
+  return { header: matchesAt(data, start, STEP_HEADER), trailer: end > start && matchesAt(data, end - STEP_TRAILER.length, STEP_TRAILER) };
+}
+
 /** Modèle IFC ouvert dans une instance web-ifc déjà initialisée. */
 export class IfcSource {
   private readonly codes = new Map<string, number>();
@@ -90,17 +122,15 @@ export class IfcSource {
     private readonly modelID: number,
   ) {}
 
-  /** Ouvre le modèle ; lève une erreur (message en français) si le fichier n'est pas un IFC lisible. */
-  static open(api: IfcAPI, data: Uint8Array): IfcSource {
+  /** Ouvre le modèle ; null si web-ifc refuse le fichier (le message localisé est donné par l'appelant). */
+  static open(api: IfcAPI, data: Uint8Array): IfcSource | null {
     let modelID = -1;
     try {
       modelID = api.OpenModel(data, { COORDINATE_TO_ORIGIN: false });
     } catch {
       modelID = -1;
     }
-    if (typeof modelID !== 'number' || modelID < 0) {
-      throw new Error('Fichier IFC illisible : ce n’est pas un fichier STEP (.ifc) valide.');
-    }
+    if (typeof modelID !== 'number' || modelID < 0) return null;
     return new IfcSource(api, modelID);
   }
 

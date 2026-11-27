@@ -29,7 +29,7 @@ import { openingGeometry, probeExterior, type OpeningGeometry } from './openings
 import { PointIndex, cleanOutline } from './outline';
 import { labelAt, makeGrid, traceOuterBoundary, type Grid } from './raster';
 import { roomGeometry, type RoomGeometry } from './spaces';
-import { IfcSource, type Origin } from './webifc';
+import { IfcSource, stepShape, type Origin } from './webifc';
 
 export interface AnalyseOptions {
   /** Langue des avertissements et remarques (français par défaut, comme le veut le contrat). */
@@ -55,6 +55,34 @@ const SPACE_GAP = 0.5; // m : écart entre locaux fermé quand le niveau n'a auc
 const ARM_HALF_WIDTH = 0.25; // m : une saillie de moins de ~0,5 m de large (mur isolé accolé) est retirée de l'emprise
 const CORE_RADIUS = 0.6; // m : un morceau d'emprise doit contenir un carré de 1,2 m (sinon c'est un mur isolé)
 const MAX_SEGMENTS = 150_000; // par feuille
+const MAX_EXTENT = 10_000; // m : murs et locaux étalés sur plus de 10 km = coordonnées aberrantes, pas un bâtiment
+
+/** Erreur de lecture IFC dont le message, localisé, peut être montré tel quel à l'utilisateur. */
+export class IfcReadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IfcReadError';
+  }
+}
+
+/**
+ * Rend la main à la boucle d'événements entre deux étapes lourdes, pour que la page puisse se redessiner
+ * (barre d'attente, bouton « annuler »). N'altère aucun résultat : rien d'autre ne touche à l'instance web-ifc.
+ */
+function breathe(): Promise<void> {
+  // MessageChannel : une vraie tâche (la page peut se redessiner) sans le délai minimal imposé aux minuteurs.
+  if (typeof MessageChannel === 'function') {
+    return new Promise((resolve) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => {
+        channel.port1.close();
+        resolve();
+      };
+      channel.port2.postMessage(null);
+    });
+  }
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 interface Solid {
   id: number;
@@ -161,23 +189,34 @@ function quote(names: readonly string[]): string {
 
 /**
  * Lit un fichier IFC avec une instance web-ifc INITIALISÉE et renvoie les feuilles proposées.
- * Lève une erreur si le fichier n'est pas un IFC lisible ; un modèle sans mur ni local donne un document
- * sans feuille, avec un avertissement.
+ * Lève `IfcReadError` (message localisé) si le fichier n'est pas un IFC lisible, s'il est tronqué (pas de
+ * « END-ISO-10303-21; » final) ou si l'analyse échoue (fichier abîmé, mémoire épuisée) ; un modèle sans mur ni
+ * local donne un document sans feuille, avec un avertissement. Rend la main entre les étapes lourdes.
  */
-export function analyseIfc(api: IfcAPI, data: Uint8Array, fileName: string, options: AnalyseOptions = {}): PlanDocument {
+export async function analyseIfc(api: IfcAPI, data: Uint8Array, fileName: string, options: AnalyseOptions = {}): Promise<PlanDocument> {
+  const lang: Lang = options.lang ?? 'fr';
+  const shape = stepShape(data);
+  if (!shape.trailer) throw new IfcReadError(t(lang, shape.header ? 'ifc.error.truncated' : 'ifc.error.unreadable'));
   const src = IfcSource.open(api, data);
+  if (!src) throw new IfcReadError(t(lang, 'ifc.error.unreadable'));
   try {
-    return analyse(src, fileName, options);
+    await breathe();
+    return await analyse(src, fileName, options);
+  } catch (e) {
+    if (e instanceof IfcReadError) throw e;
+    // RangeError (« Array buffer allocation failed »), erreur interne de web-ifc… : jamais le texte brut anglais.
+    throw new IfcReadError(t(lang, 'ifc.error.internal'));
   } finally {
     src.close();
   }
 }
 
-function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): PlanDocument {
+async function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Promise<PlanDocument> {
   const lang: Lang = options.lang ?? 'fr';
   const msg = (key: string, params?: Record<string, string | number>): string => t(lang, key, params);
   const fmt = (v: number, digits = 2): string => formatNumber(v, digits);
   const model = readModel(src);
+  await breathe();
   const warnings: string[] = [];
   const doc: PlanDocument = { fileName, kind: 'ifc', sheets: [], storeysAligned: true, warnings };
 
@@ -217,6 +256,7 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
       solids.push({ id: cw.id, soup, ...zRange(soup), kind: 'curtain' });
     }
   }
+  await breathe();
   const spaceInfo = new Map<number, SpaceInfo>(model.spaces.map((s) => [s.id, s]));
   const spaces: SpaceSolid[] = [];
   const meshed = new Set<number>();
@@ -226,6 +266,8 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
     meshed.add(id);
     spaces.push({ info, soup, ...zRange(soup) });
   });
+
+  await breathe();
 
   // ── Géométrie : fenêtres et portes, par leur réservation ──
   const placed: PlacedOpening[] = [];
@@ -277,6 +319,8 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
     }
   }
 
+  await breathe();
+
   // ── Étendue et trame ──
   const footprintSoups: Float32Array[] = [...solids.map((s) => s.soup), ...spaces.map((s) => s.soup)];
   let minX = Infinity;
@@ -296,6 +340,9 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
   if (!Number.isFinite(minX)) {
     warnings.unshift(msg('ifc.warn.empty'));
     return doc;
+  }
+  if (maxX - minX > MAX_EXTENT || maxY - minY > MAX_EXTENT) {
+    throw new IfcReadError(msg('ifc.error.extent', { size: fmt(Math.max(maxX - minX, maxY - minY) / 1000, 0) }));
   }
   const grid: Grid = makeGrid({ minX, minY, maxX, maxY }, options.cell ?? CELL, options.maxCells ?? MAX_CELLS);
   const cell = grid.cell;
@@ -366,7 +413,9 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
     return { x: x / n, y: y / n };
   };
 
-  kept.forEach((band, k) => {
+  for (let k = 0; k < kept.length; k++) {
+    const band = kept[k]!;
+    await breathe();
     const lo = Math.max(band.zFrom, zLow);
     const hi = Math.min(band.zTo, zHigh);
     // Emprise : murs ∪ locaux, interstices fermés, trous remplis ; murs isolés ou en saillie et miettes écartés.
@@ -381,7 +430,7 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
     const pieces = footprint.pieces;
     if (pieces.cells.length === 0) {
       ignored.push(band.level, ...band.absorbed);
-      return;
+      continue;
     }
     // Les murs laissés hors de l'emprise restent dessinés sur le plan mais ne comptent plus pour le contour.
     const memberSolids = allSolids.filter((_, i) => !footprint.detached.has(i));
@@ -702,7 +751,7 @@ function analyse(src: IfcSource, fileName: string, options: AnalyseOptions): Pla
     if (eavesHeight !== undefined) sheet.detected.eavesHeight = eavesHeight;
     if (clearHeight !== null) sheet.detected.clearHeight = round(clearHeight, 2);
     sheetOf.set(band, sheet);
-  });
+  }
 
   for (const band of kept) {
     const sheet = sheetOf.get(band);

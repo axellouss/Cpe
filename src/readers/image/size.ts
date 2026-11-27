@@ -2,8 +2,12 @@
  * Dimensions d'une image lues dans son en-tête, sans la décoder (PNG, JPEG, GIF, BMP, WebP).
  * Sert sous Node (tests) et de secours dans le navigateur. Fonctions pures.
  *
- * Les dimensions rendues sont celles de l'image AFFICHÉE : un JPEG dont l'étiquette EXIF demande un quart de
- * tour (photo prise en tenant le téléphone debout) a largeur et hauteur échangées, comme le fait le navigateur.
+ * Les dimensions rendues sont celles de l'image AFFICHÉE : un JPEG (segment APP1) ou un PNG (bloc eXIf) dont
+ * l'étiquette EXIF demande un quart de tour (photo prise en tenant le téléphone debout) a largeur et hauteur
+ * échangées, comme le fait le navigateur.
+ *
+ * Pour JPEG et PNG, le lecteur dit aussi si le fichier s'arrête avant sa marque de fin (EOI, IEND) : un fichier
+ * coupé (téléchargement interrompu) n'affiche qu'une partie du plan.
  */
 
 export type ImageFormat = 'png' | 'jpeg' | 'gif' | 'bmp' | 'webp';
@@ -17,6 +21,8 @@ export interface ImageInfo {
   height: number;
   /** Résolution déclarée dans le fichier (pixels par pouce), si elle y figure et paraît sérieuse. */
   dpi?: number;
+  /** JPEG ou PNG qui s'arrête avant sa marque de fin (EOI, IEND) : fichier tronqué. Absent sinon. */
+  truncated?: true;
 }
 
 const MIME: Readonly<Record<ImageFormat, string>> = {
@@ -40,43 +46,65 @@ function plausibleDpi(dpi: number): number | undefined {
   return r === 72 || r === 96 ? undefined : r;
 }
 
-function result(format: ImageFormat, width: number, height: number, dpi?: number): ImageInfo | null {
+function result(format: ImageFormat, width: number, height: number, dpi?: number, truncated = false): ImageInfo | null {
   if (!(width > 0 && height > 0) || !Number.isFinite(width + height)) return null;
   const info: ImageInfo = { format, mime: MIME[format], width, height };
   const d = dpi === undefined ? undefined : plausibleDpi(dpi);
   if (d !== undefined) info.dpi = d;
+  if (truncated) info.truncated = true;
   return info;
 }
+
+/** Orientations EXIF 5 à 8 : quart de tour, largeur et hauteur affichées échangées. */
+const isQuarterTurn = (orientation: number): boolean => orientation >= 5 && orientation <= 8;
 
 function readPng(bytes: Uint8Array, view: DataView): ImageInfo | null {
   if (bytes.length < 24 || ascii(bytes, 12, 4) !== 'IHDR') return null;
   const width = view.getUint32(16);
   const height = view.getUint32(20);
-  // Bloc pHYs (pixels par mètre), toujours placé avant les données d'image.
+  // Parcours des blocs : pHYs (pixels par mètre) et eXIf (orientation), placés avant les données d'image,
+  // puis jusqu'à IEND pour savoir si le fichier est complet. Quelques centaines de blocs au plus.
   let dpi: number | undefined;
+  let orientation = 1;
+  let ended = false;
+  let beforeData = true;
   let p = 8;
   while (p + 12 <= bytes.length) {
     const length = view.getUint32(p);
     const type = ascii(bytes, p + 4, 4);
-    if (type === 'pHYs' && length >= 9 && p + 17 <= bytes.length) {
-      const perMetreX = view.getUint32(p + 8);
-      const unit = bytes[p + 16];
-      if (unit === 1 && perMetreX > 0) dpi = perMetreX * 0.0254;
+    const body = p + 8;
+    if (type === 'IEND') {
+      ended = true;
       break;
     }
-    if (type === 'IDAT' || type === 'IEND') break;
-    p += 12 + length;
+    if (type === 'IDAT') beforeData = false;
+    if (beforeData && type === 'pHYs' && length >= 9 && body + 9 <= bytes.length) {
+      const perMetreX = view.getUint32(body);
+      const unit = bytes[body + 8];
+      if (unit === 1 && perMetreX > 0) dpi = perMetreX * 0.0254;
+    } else if (beforeData && type === 'eXIf' && body + length <= bytes.length) {
+      // Le navigateur n'applique l'orientation que si eXIf précède les données d'image : même règle ici.
+      const exif = readTiff(view, body, length);
+      if (exif.orientation !== undefined) orientation = exif.orientation;
+    }
+    p = body + length + 4;
   }
-  return result('png', width, height, dpi);
+  const turned = isQuarterTurn(orientation);
+  return result('png', turned ? height : width, turned ? width : height, dpi, !ended);
 }
 
 /** Orientation EXIF (1..8) et résolution lues dans un segment APP1 ; valeurs absentes = undefined. */
 function readExif(view: DataView, start: number, length: number): { orientation?: number; dpi?: number } {
-  const out: { orientation?: number; dpi?: number } = {};
-  const end = start + length;
   // « Exif\0\0 » puis un en-tête TIFF.
-  if (length < 14 || view.getUint32(start) !== 0x45786966) return out;
-  const tiff = start + 6;
+  if (length < 14 || view.getUint32(start) !== 0x45786966) return {};
+  return readTiff(view, start + 6, length - 6);
+}
+
+/** Orientation EXIF et résolution lues dans un en-tête TIFF (segment APP1 d'un JPEG, bloc eXIf d'un PNG). */
+function readTiff(view: DataView, tiff: number, length: number): { orientation?: number; dpi?: number } {
+  const out: { orientation?: number; dpi?: number } = {};
+  const end = tiff + length;
+  if (length < 8 || end > view.byteLength) return out;
   const order = view.getUint16(tiff);
   const little = order === 0x4949;
   if (!little && order !== 0x4d4d) return out;
@@ -101,6 +129,18 @@ function readExif(view: DataView, start: number, length: number): { orientation?
   }
   if (xRes !== undefined) out.dpi = unit === 3 ? xRes * 2.54 : xRes;
   return out;
+}
+
+/**
+ * Marque de fin EOI (FF D9) présente après le début d'image `from` ? Dans les données compressées un octet FF est
+ * toujours suivi de 00 ou d'une marque de reprise (D0..D7) : un FF D9 après le SOF est donc la vraie fin, et une
+ * vignette EXIF (avant le SOF) ne compte pas. Les octets ajoutés après la fin par certains appareils sont tolérés.
+ */
+function hasJpegEnd(bytes: Uint8Array, from: number): boolean {
+  for (let i = bytes.length - 1; i > from; i--) {
+    if (bytes[i] === 0xd9 && bytes[i - 1] === 0xff) return true;
+  }
+  return false;
 }
 
 function readJpeg(bytes: Uint8Array, view: DataView): ImageInfo | null {
@@ -140,8 +180,8 @@ function readJpeg(bytes: Uint8Array, view: DataView): ImageInfo | null {
       if (body + 5 > bytes.length) return null;
       const height = view.getUint16(body + 1);
       const width = view.getUint16(body + 3);
-      const turned = orientation >= 5 && orientation <= 8;
-      return result('jpeg', turned ? height : width, turned ? width : height, dpi);
+      const turned = isQuarterTurn(orientation);
+      return result('jpeg', turned ? height : width, turned ? width : height, dpi, !hasJpegEnd(bytes, body));
     }
     p = body + length - 2;
   }

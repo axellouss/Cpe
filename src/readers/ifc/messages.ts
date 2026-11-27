@@ -7,6 +7,10 @@ import { registerMessages, type Dictionary } from '../../i18n';
 
 export const IFC_MESSAGES: Dictionary = {
   fr: {
+    'ifc.error.unreadable': 'Fichier IFC illisible : ce n’est pas un fichier STEP (.ifc) valide.',
+    'ifc.error.truncated': 'Fichier IFC incomplet : il ne se termine pas par « END-ISO-10303-21; » (téléchargement ou copie interrompu ?). Un IFC tronqué donnerait un bâtiment plus petit que le vrai : récupérez le fichier complet.',
+    'ifc.error.extent': 'Fichier IFC illisible : les murs et locaux s’étendent sur {size} km, ce n’est pas un bâtiment (coordonnées aberrantes ou fichier abîmé).',
+    'ifc.error.internal': 'Fichier IFC illisible : le modèle n’a pas pu être analysé (fichier abîmé, ou trop volumineux pour ce poste).',
     'ifc.scale.note': 'IFC : coordonnées converties en mètres (unité du fichier : {unit})',
     'ifc.north.note': 'TrueNorth du fichier IFC : nord à {bearing}° de l’axe +Y (sens horaire) — à vérifier',
     'ifc.warn.empty': 'Aucun mur ni local exploitable dans ce fichier IFC : rien à proposer, tracez le contour à la main.',
@@ -47,6 +51,10 @@ export const IFC_MESSAGES: Dictionary = {
     'ifc.room.unnamed': 'Local {n}',
   },
   de: {
+    'ifc.error.unreadable': 'IFC-Datei nicht lesbar: keine gültige STEP-Datei (.ifc).',
+    'ifc.error.truncated': 'IFC-Datei unvollständig: sie endet nicht mit „END-ISO-10303-21;“ (Download oder Kopie abgebrochen?). Eine abgeschnittene IFC-Datei ergäbe ein kleineres Gebäude als das wirkliche: bitte die vollständige Datei besorgen.',
+    'ifc.error.extent': 'IFC-Datei nicht lesbar: Wände und Räume erstrecken sich über {size} km, das ist kein Gebäude (unplausible Koordinaten oder beschädigte Datei).',
+    'ifc.error.internal': 'IFC-Datei nicht lesbar: das Modell konnte nicht ausgewertet werden (beschädigte Datei oder zu groß für diesen Rechner).',
     'ifc.scale.note': 'IFC: Koordinaten in Meter umgerechnet (Einheit der Datei: {unit})',
     'ifc.north.note': 'TrueNorth der IFC-Datei: Norden {bearing}° von der +Y-Achse (im Uhrzeigersinn) — bitte prüfen',
     'ifc.warn.empty': 'Keine verwertbaren Wände oder Räume in dieser IFC-Datei: kein Vorschlag, bitte den Umriss von Hand zeichnen.',

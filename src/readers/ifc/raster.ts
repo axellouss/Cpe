@@ -22,15 +22,33 @@ export interface Extent {
   maxY: number;
 }
 
-/** Grille couvrant l'étendue + une marge ; la maille est grossie pour rester sous `maxCells`. */
+/**
+ * Grille couvrant l'étendue + une marge ; la maille est grossie pour que nx·ny reste sous `maxCells`, QUELLES QUE
+ * SOIENT les proportions (une étendue très allongée ne doit pas allouer des gigaoctets).
+ * Lève une RangeError si l'étendue, la maille ou le plafond ne sont pas des nombres finis et positifs.
+ */
 export function makeGrid(extent: Extent, cell: number, maxCells: number, pad = 1): Grid {
+  const values = [extent.minX, extent.minY, extent.maxX, extent.maxY, cell, maxCells, pad];
+  if (!values.every((v) => Number.isFinite(v)) || !(cell > 0) || !(maxCells >= 1) || !(pad >= 0)) {
+    throw new RangeError('makeGrid : étendue ou maille non finie');
+  }
   const minX = extent.minX - pad;
   const minY = extent.minY - pad;
   const w = Math.max(extent.maxX - extent.minX, 0) + 2 * pad;
   const h = Math.max(extent.maxY - extent.minY, 0) + 2 * pad;
+  if (!Number.isFinite(w) || !Number.isFinite(h)) throw new RangeError('makeGrid : étendue non finie');
   let c = cell;
   if ((w * h) / (c * c) > maxCells) c = Math.sqrt((w * h) / maxCells);
-  return { minX, minY, cell: c, nx: Math.max(1, Math.ceil(w / c)), ny: Math.max(1, Math.ceil(h / c)) };
+  // Proportions extrêmes : un côté tient dans une seule rangée, c'est l'autre qui doit rester sous le plafond.
+  c = Math.max(c, w / maxCells, h / maxCells);
+  const cells = (size: number): number => Math.max(1, Math.ceil(size / c));
+  // Les arrondis par excès ajoutent au plus une rangée et une colonne (≈ 0,1 % pour une étendue ordinaire, toléré
+  // tel quel pour ne rien changer aux résultats) ; sur une étendue très allongée ils peuvent tripler le compte :
+  // on grossit alors un peu la maille jusqu'à revenir à 1 % du plafond.
+  const limit = maxCells * 1.01;
+  for (let guard = 0; guard < 200 && cells(w) * cells(h) > limit; guard++) c *= 1.01;
+  if (cells(w) * cells(h) > limit) c = Math.max(w, h);
+  return { minX, minY, cell: c, nx: cells(w), ny: cells(h) };
 }
 
 const EDGE_EPS = 1e-9;

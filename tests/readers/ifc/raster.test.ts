@@ -49,6 +49,34 @@ describe('trame d’occupation', () => {
     expect(small.minX).toBe(-1);
   });
 
+  it('plafond de cellules tenu pour toutes les proportions, même une étendue de 6·10¹⁴ m sur 26 m', () => {
+    // Étendue relevée sur un IFC tronqué (Duplex à 50 %) : avant correction, nx·ny ≈ 9·10⁹ cellules.
+    const cases = [
+      { minX: 0, minY: -17.8, maxX: 25.97, maxY: 5.95e14 },
+      { minX: 0, minY: 0, maxX: 1e9, maxY: 0 },
+      { minX: 0, minY: 0, maxX: 0, maxY: 0 },
+      { minX: -3, minY: 0, maxX: 40_000, maxY: 12 },
+    ];
+    for (const e of cases) {
+      for (const maxCells of [1, 10, 1_000, 4_000_000]) {
+        const g = makeGrid(e, 0.025, maxCells);
+        expect(g.nx * g.ny).toBeLessThanOrEqual(Math.max(1, maxCells * 1.01));
+        expect(g.nx).toBeGreaterThanOrEqual(1);
+        expect(g.ny).toBeGreaterThanOrEqual(1);
+        expect(Number.isFinite(g.cell) && g.cell > 0).toBe(true);
+        // La grille couvre toujours toute l'étendue.
+        expect(g.minX + g.nx * g.cell).toBeGreaterThanOrEqual(e.maxX);
+        expect(g.minY + g.ny * g.cell).toBeGreaterThanOrEqual(e.maxY);
+      }
+    }
+  });
+
+  it('refuse une étendue non finie au lieu d’allouer une trame absurde', () => {
+    expect(() => makeGrid({ minX: 0, minY: 0, maxX: Infinity, maxY: 1 }, 0.025, 1000)).toThrow(RangeError);
+    expect(() => makeGrid({ minX: Number.NaN, minY: 0, maxX: 1, maxY: 1 }, 0.025, 1000)).toThrow(RangeError);
+    expect(() => makeGrid({ minX: 0, minY: 0, maxX: 1, maxY: 1 }, 0, 1000)).toThrow(RangeError);
+  });
+
   it('couvre exactement un rectangle aligné sur la trame, sans trou entre les deux triangles', () => {
     const grid = makeGrid({ minX: 0, minY: 0, maxX: 4, maxY: 3 }, 0.05, 1e7);
     const occ = new Uint8Array(grid.nx * grid.ny);

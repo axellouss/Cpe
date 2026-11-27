@@ -347,11 +347,11 @@ describe('cas limites et langue', () => {
   it('analyse pure avec une instance web-ifc fournie, messages en allemand sur demande', async () => {
     const api = await createIfcApi();
     try {
-      const de = analyseIfc(api, new Uint8Array(toBuffer(pavillonText)), 'pavillon-mm.ifc', { lang: 'de' });
+      const de = await analyseIfc(api, new Uint8Array(toBuffer(pavillonText)), 'pavillon-mm.ifc', { lang: 'de' });
       expect(de.warnings.some((w) => /Kompass/.test(w))).toBe(true);
       expect(de.sheets[0]!.detected.outline).toHaveLength(4);
       // La même instance relit un second fichier.
-      const fr = analyseIfc(api, new Uint8Array(toBuffer(maisonText)), 'maison-test.ifc');
+      const fr = await analyseIfc(api, new Uint8Array(toBuffer(maisonText)), 'maison-test.ifc');
       expect(fr.sheets).toHaveLength(2);
     } finally {
       api.Dispose();
@@ -361,7 +361,7 @@ describe('cas limites et langue', () => {
   it('une maille plus grossière garde les mêmes sommets (accrochage aux coins des murs)', async () => {
     const api = await createIfcApi();
     try {
-      const doc = analyseIfc(api, new Uint8Array(toBuffer(maisonText)), 'maison-test.ifc', { cell: 0.06 });
+      const doc = await analyseIfc(api, new Uint8Array(toBuffer(maisonText)), 'maison-test.ifc', { cell: 0.06 });
       const outline = sheetNamed(doc, 'Rez-de-chaussée').detected.outline!;
       expect(outline).toHaveLength(6);
       expect(polygonArea(outline)).toBeCloseTo(68, 1);

@@ -5,8 +5,11 @@
  * (origine en haut à gauche, y vers le bas), sans échelle et sans proposition. L'utilisateur pose la règle sur
  * une cote connue puis trace le contour par-dessus l'image.
  *
- *  - Navigateur : l'image est exposée par une adresse d'objet (« blob: ») couvrant toute la feuille.
+ *  - Navigateur : l'image est DÉCODÉE une fois (comme l'éditeur la dessinera) : une image indécodable est refusée,
+ *    et la taille de la feuille est celle de l'image décodée, orientation EXIF appliquée par le navigateur.
+ *    Elle est ensuite exposée par une adresse d'objet (« blob: ») couvrant toute la feuille.
  *  - Node (tests) : pas d'image, mais l'étendue exacte, lue dans l'en-tête du fichier.
+ *  - Partout : un JPEG ou un PNG qui s'arrête avant sa marque de fin est signalé (plan peut-être incomplet).
  * Rien n'est envoyé nulle part.
  */
 import type { Lang, PlanDocument, PlanSheet } from '../../core/types';
@@ -56,24 +59,49 @@ const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   avif: 'image/avif',
 };
 
+interface DecodableImage {
+  src: string;
+  decode(): Promise<void>;
+  readonly naturalWidth: number;
+  readonly naturalHeight: number;
+}
+
 interface BrowserGlobals {
+  Image?: new () => DecodableImage;
   createImageBitmap?: (blob: Blob) => Promise<{ width: number; height: number; close?: () => void }>;
-  URL?: { createObjectURL?: (blob: Blob) => string };
+  URL?: { createObjectURL?: (blob: Blob) => string; revokeObjectURL?: (url: string) => void };
   Blob?: typeof Blob;
 }
 
-/** Dimensions obtenues en laissant le navigateur décoder l'image (secours quand l'en-tête n'a pas suffi). */
-async function decodedSize(blob: Blob): Promise<{ width: number; height: number } | null> {
+/**
+ * Décodage par le navigateur : taille de l'image telle qu'elle sera dessinée (orientation EXIF appliquée), ou
+ * null si elle ne se décode pas (fichier abîmé, tronqué avant les pixels, format inconnu).
+ * `undefined` : aucun moyen de décoder ici (on garde alors l'en-tête).
+ * Élément <img> de préférence (c'est lui que l'éditeur dessine), sinon createImageBitmap (hors fil principal).
+ */
+async function decodedSize(blob: Blob, url: string | undefined): Promise<{ width: number; height: number } | null | undefined> {
   const g = globalThis as unknown as BrowserGlobals;
-  if (typeof g.createImageBitmap !== 'function') return null;
-  try {
-    const bitmap = await g.createImageBitmap(blob);
-    const size = { width: bitmap.width, height: bitmap.height };
-    bitmap.close?.();
-    return size.width > 0 && size.height > 0 ? size : null;
-  } catch {
-    return null;
+  if (typeof g.Image === 'function' && url !== undefined) {
+    try {
+      const img = new g.Image();
+      img.src = url;
+      await img.decode();
+      return img.naturalWidth > 0 && img.naturalHeight > 0 ? { width: img.naturalWidth, height: img.naturalHeight } : null;
+    } catch {
+      return null;
+    }
   }
+  if (typeof g.createImageBitmap === 'function') {
+    try {
+      const bitmap = await g.createImageBitmap(blob);
+      const size = { width: bitmap.width, height: bitmap.height };
+      bitmap.close?.();
+      return size.width > 0 && size.height > 0 ? size : null;
+    } catch {
+      return null;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -93,17 +121,23 @@ export async function readImageDetailed(data: ArrayBuffer, fileName: string, opt
       const extension = (/\.([a-z0-9]+)$/i.exec(fileName)?.[1] ?? '').toLowerCase();
       const mime = info?.mime ?? MIME_BY_EXTENSION[extension] ?? '';
       const blob = new g.Blob([data], mime ? { type: mime } : {});
-      if (!info) {
-        // Format que l'en-tête ne dit pas (AVIF, TIFF…) : le navigateur sait peut-être le décoder.
-        const size = await decodedSize(blob);
-        if (size) ({ width, height } = size);
+      const candidate = g.URL.createObjectURL(blob);
+      // Décodée une fois, comme l'éditeur la dessinera ; aussi pour les formats que l'en-tête ne dit pas (AVIF…).
+      const size = await decodedSize(blob, candidate);
+      if (size === null) {
+        g.URL.revokeObjectURL?.(candidate);
+        throw new ImageReadError(msg(lang, info ? 'image.error.decode' : 'image.error.unreadable'));
       }
-      if (width > 0 && height > 0) url = g.URL.createObjectURL(blob);
+      // La taille du dessin fait foi : l'en-tête ignore certaines rotations que le navigateur applique.
+      if (size) ({ width, height } = size);
+      if (width > 0 && height > 0) url = candidate;
+      else g.URL.revokeObjectURL?.(candidate);
     }
   }
   if (!(width > 0 && height > 0)) throw new ImageReadError(msg(lang, 'image.error.unreadable'));
 
   const warnings: string[] = [msg(lang, 'image.warn.scale')];
+  if (info?.truncated) warnings.unshift(msg(lang, 'image.warn.truncated'));
   if (info?.dpi !== undefined && info.dpi < MIN_SCAN_DPI) warnings.push(msg(lang, 'image.warn.lowDpi', { dpi: info.dpi }));
   else if (info?.dpi === undefined && Math.max(width, height) < SMALL_IMAGE_PIXELS) warnings.push(msg(lang, 'image.warn.small', { width, height }));
   const megapixels = (width * height) / 1e6;
