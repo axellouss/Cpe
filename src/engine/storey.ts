@@ -351,7 +351,8 @@ export function modelFromDocument(doc: PlanDocument, lang: Lang): BuildingModel 
   const candidates: Candidate[] = [];
   doc.sheets.forEach((sheet, docIndex) => {
     const guess = guessStorey(sheet.name);
-    if (guess && guess.rank < 0) {
+    // Rang ≤ −1 : sous-sol. Un rez-de-jardin (−0,5) est un niveau habité : il reste un étage chauffé.
+    if (guess && guess.rank <= -1) {
       // Sous-sol reconnu : hors volume chauffé par défaut → le premier étage chauffé repose sur un local non chauffé.
       hasBasement = true;
       return;

@@ -258,11 +258,13 @@ describe('modelFromDocument : un document → premier jet de bâtiment', () => {
     expect(twins.storeys.map((s) => s.name)).toEqual(['Plan', 'Plan (2)']);
   });
 
-  it('RÈGLE ACTUELLE : tout niveau reconnu sous le rez-de-chaussée (sous-sol, mais aussi rez-de-jardin) est proposé NON chauffé', () => {
-    // Un rez-de-jardin est souvent habité : l'expert doit alors l'ajouter lui-même comme étage chauffé.
-    const model = modelFromDocument(doc([withOutline('j', 'Rez-de-jardin', 10, 8), withOutline('e', 'Rez-de-chaussée', 10, 8)]), 'fr');
-    expect(model.storeys.map((s) => s.name)).toEqual(['Rez-de-chaussée']);
-    expect(model.bottom.kind).toBe('above-unheated');
+  it('un rez-de-jardin est un niveau habité : il reste un étage chauffé, sous le rez-de-chaussée ; seul un sous-sol est écarté', () => {
+    const model = modelFromDocument(doc([withOutline('e', 'Rez-de-chaussée', 10, 8), withOutline('j', 'Rez-de-jardin', 10, 8)]), 'fr');
+    expect(model.storeys.map((s) => s.name)).toEqual(['Rez-de-jardin', 'Rez-de-chaussée']);
+    expect(model.bottom.kind).toBe('slab-on-ground');
+    const withCellar = modelFromDocument(doc([withOutline('k', 'Sous-sol', 10, 8), withOutline('e', 'Rez-de-chaussée', 10, 8)]), 'fr');
+    expect(withCellar.storeys.map((s) => s.name)).toEqual(['Rez-de-chaussée']);
+    expect(withCellar.bottom.kind).toBe('above-unheated');
   });
 
   it('pose les hypothèses de départ, toutes marquées « par défaut »', () => {

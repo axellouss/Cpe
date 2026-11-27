@@ -3,6 +3,7 @@ import {
   classifyRoomName,
   guessStorey,
   isNorthArrowName,
+  isOutsideEnvelopeName,
   looksLikeRoomName,
   parseArea,
   parseClearHeight,
@@ -48,6 +49,18 @@ describe('parseScaleText', () => {
     expect(parseScaleText('21:30')).toBeNull();
     expect(parseScaleText('1:37')).toBeNull();
     expect(parseScaleText('Séjour')).toBeNull();
+    // Un numéro de page n'est pas une échelle, même si le texte contient la lettre « m ».
+    expect(parseScaleText('Page 1/2')).toBeNull();
+    expect(parseScaleText('Blatt 1/5')).toBeNull();
+    expect(parseScaleText('Plan masse 1/2')).toBeNull();
+    expect(parseScaleText('Chambre 1:37')).toBeNull();
+    expect(parseScaleText('1:2')).toBeNull();
+  });
+
+  it('accepte la lettre M collée au rapport', () => {
+    expect(parseScaleText('M=1:50')).toBe(50);
+    expect(parseScaleText('M. 1:100')).toBe(100);
+    expect(parseScaleText('Echelle 1/50')).toBe(50);
   });
 });
 
@@ -77,6 +90,28 @@ describe('classement des pièces', () => {
     ['Local 12', 'ask'],
   ] as const)('%s → %s', (name, expected) => {
     expect(classifyRoomName(name)).toBe(expected);
+  });
+
+  it('ne prend pas un cartouche ou une note pour une pièce', () => {
+    // « ami » ne doit pas être trouvé dans « unifamiliale » ni « Einfamilienhaus »
+    expect(looksLikeRoomName('Maison unifamiliale à Strassen')).toBe(false);
+    expect(looksLikeRoomName('Einfamilienhaus')).toBe(false);
+    expect(classifyRoomName('Chambre d’amis')).toBe('yes');
+    expect(looksLikeRoomName('AND WALL BETWEEN GARAGE AND')).toBe(false);
+    expect(looksLikeRoomName('Mur entre garage et cuisine à isoler selon étude')).toBe(false);
+    expect(looksLikeRoomName('Salle de bain parents')).toBe(true);
+    // « abri » ne doit pas être trouvé dans « Fabrik »
+    expect(classifyRoomName('Fabrikraum')).toBe('ask');
+    expect(classifyRoomName('Abri de jardin')).toBe('no');
+  });
+
+  it('sait quels locaux sont hors de l’enveloppe par nature', () => {
+    for (const name of ['Garage', 'Doppelgarage', 'Carport', 'Abri de jardin', 'Cave non chauffée', 'Kaltraum', 'Terrasse']) {
+      expect(isOutsideEnvelopeName(name), name).toBe(true);
+    }
+    for (const name of ['Chaufferie', 'Technik', 'Heizraum', 'Buanderie', 'Séjour', 'Cave', 'Fabrikraum']) {
+      expect(isOutsideEnvelopeName(name), name).toBe(false);
+    }
   });
 
   it('distingue un nom de pièce d’une cote', () => {

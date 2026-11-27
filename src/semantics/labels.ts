@@ -43,8 +43,11 @@ export function parseArea(text: string): number | null {
 
 // ───────────────────────────── Échelle ─────────────────────────────
 
-const SCALE_RE = /(?:^|[^\d])1\s*[:/]\s*(\d{1,4})(?!\d)/;
-const SCALE_WORD_RE = /(echelle|ech\.?|massstab|mst\.?|m\s*=?|scale)/;
+const SCALE_RE = /(?:^|[^\d])1\s*([:/])\s*(\d{1,4})(?!\d)/;
+// « M 1:200 », « M=1:50 » : la lettre M seule ne vaut que collée au rapport (sinon tout mot contenant un « m » passerait).
+const SCALE_WORD_RE = /(echelle|\bech\b\.?|massstab|\bmst\b\.?|\bm\.?\s*=?\s*1\s*[:/]|scale)/;
+/** Sans mot « échelle », un rapport nu n'est une échelle de plan que s'il est écrit avec « : » et vaut au moins 1:10. */
+const MIN_BARE_SCALE = 10;
 const COMMON_SCALES = new Set([1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 500, 1000, 2000, 2500, 5000]);
 
 /**
@@ -55,10 +58,11 @@ const COMMON_SCALES = new Set([1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 
 export function parseScaleText(text: string): number | null {
   const m = SCALE_RE.exec(text);
   if (!m) return null;
-  const denom = Number(m[1]);
+  const denom = Number(m[2]);
   if (!Number.isFinite(denom) || denom < 1) return null;
   const hasWord = SCALE_WORD_RE.test(fold(text));
-  if (!hasWord && !COMMON_SCALES.has(denom)) return null;
+  // « Page 1/2 », « Blatt 1/5 » : une fraction nue n'est pas une échelle.
+  if (!hasWord && (m[1] !== ':' || denom < MIN_BARE_SCALE || !COMMON_SCALES.has(denom))) return null;
   return denom;
 }
 
@@ -78,10 +82,10 @@ const ROOM_RULES: RoomRule[] = [
   { re: /garage|carport|car-port|parking|stellplatz|abri voiture/, guess: 'no' },
   { re: /chaufferie|heizraum|heizung|chaudiere|local tech|technique|technik|hausanschluss|haustechnik/, guess: 'no' },
   { re: /poubelle|mull|gaine|schacht|citerne|tank|pellet|combustible|brennstoff|ollager/, guess: 'no' },
-  { re: /terrasse|balcon|balkon|loggia|veranda|wintergarten|jardin d'hiver|abri|remise|schuppen/, guess: 'no' },
+  { re: /terrasse|balcon|balkon|loggia|veranda|wintergarten|jardin d'hiver|\babri\b|remise|schuppen/, guess: 'no' },
   { re: /buanderie|waschkuche|wasch|laundry|hobby|loisir|fitness|atelier|werkstatt|bricolage/, guess: 'ask' },
   {
-    re: /sejour|salon|living|wohn|stube|salle a manger|\bess|chambre|schlaf|zimmer|bureau|\bburo|cuisine|kuche|kitchen|sdb|salle de bain|salle d'eau|\bbad|douche|dusch|\bwc\b|toilet|dressing|ankleide|kinder|enfant|parents|eltern|gast|ami|mezzanine|studio|galerie/,
+    re: /sejour|salon|living|wohn|stube|salle a manger|\bess|chambre|schlaf|zimmer|bureau|\bburo|cuisine|kuche|kitchen|sdb|salle de bain|salle d'eau|\bbad|douche|dusch|\bwc\b|toilet|dressing|ankleide|kinder|enfant|parents|eltern|gast|\bamis?\b|mezzanine|studio|galerie/,
     guess: 'yes',
   },
   {
@@ -105,7 +109,7 @@ export function classifyRoomName(name: string): HeatedGuess {
  * très bien se trouver à l'intérieur de l'enveloppe isolée — c'est à l'expert de trancher.
  */
 const OUTSIDE_ENVELOPE_RE =
-  /non[- ]chauff|unbeheizt|nicht beheizt|kaltraum|garage|carport|car-port|parking|stellplatz|abri|remise|schuppen|terrasse|balcon|balkon|loggia/;
+  /non[- ]chauff|unbeheizt|nicht beheizt|kaltraum|garage|carport|car-port|parking|stellplatz|\babri\b|remise|schuppen|terrasse|balcon|balkon|loggia/;
 
 export function isOutsideEnvelopeName(name: string): boolean {
   return OUTSIDE_ENVELOPE_RE.test(fold(name));
@@ -114,10 +118,17 @@ export function isOutsideEnvelopeName(name: string): boolean {
 const ROOM_WORD_RE = new RegExp(ROOM_RULES.map((r) => r.re.source).join('|'));
 
 /** Vrai si le texte ressemble à un nom de pièce (et non à une cote, un titre de plan…). */
+/** Mots de liaison : un texte qui commence ou finit par l'un d'eux est un bout de phrase, pas un nom de pièce. */
+const LINK_WORD_RE = /^(?:and|or|the|between|with|et|ou|avec|entre|und|oder|mit|zwischen)$/;
+
 export function looksLikeRoomName(text: string): boolean {
   const f = fold(text);
   if (f.length < 2 || f.length > 40) return false;
   if (/^[\d\s.,x×/+\-±:='"]+$/.test(f)) return false;
+  // « AND WALL BETWEEN GARAGE AND » : une note de plan contient un mot de pièce sans en être une.
+  const words = f.split(/\s+/).filter(Boolean);
+  if (words.length > 5) return false;
+  if (LINK_WORD_RE.test(words[0]!) || LINK_WORD_RE.test(words[words.length - 1]!)) return false;
   return ROOM_WORD_RE.test(f);
 }
 
