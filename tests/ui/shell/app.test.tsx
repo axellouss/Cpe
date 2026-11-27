@@ -278,8 +278,17 @@ describe('plan', () => {
     expect(q('plan-step-outline').getAttribute('data-state')).toBe('toConfirm');
     await click('stub-done');
     expect(q('plan-step-outline').getAttribute('data-state')).toBe('done');
-    expect(q('stub-editor').getAttribute('data-tool')).toBe('boundary');
     expect(q('announcer').textContent).toContain('Contour chauffé');
+
+    // Hauteur d'étage : la seule valeur que le plan ne donne pas. Une pastille la choisit et fait avancer.
+    expect(q('plan-step-height').getAttribute('data-state')).toBe('todo');
+    expect(q('stub-editor').getAttribute('data-tool')).toBe('pan');
+    expect(q('plan-step-detail').textContent).toContain('2,80 m par défaut');
+    expect(all('height-chip').map((c) => c.textContent)).toEqual(['2,50 m', '2,60 m', '2,70 m', '2,80 m', '3,00 m']);
+    await click(all('height-chip')[3]!);
+    expect(currentStorey(m.store.getState())?.grossHeight).toEqual({ value: 2.8, from: 'user' });
+    expect(q('plan-step-height').getAttribute('data-state')).toBe('done');
+    expect(q('stub-editor').getAttribute('data-tool')).toBe('boundary');
 
     await click('plan-confirm-boundary');
     expect(q('stub-editor').getAttribute('data-tool')).toBe('opening');
@@ -548,9 +557,11 @@ describe('résultat', () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
 
     const height = all('finding').find((f) => f.getAttribute('data-code') === 'height.default')!;
-    expect(height.textContent).toContain('Corriger les hauteurs');
+    // La hauteur d'étage est une étape de la liste guidée : le bouton y mène, pastilles à l'appui.
+    expect(height.textContent).toContain('Choisir la hauteur d’étage');
     await click(height.querySelector<HTMLElement>('[data-testid="finding-jump"]')!);
-    expect(m.store.getState()).toMatchObject({ step: 'plan', planFocus: 'heights' });
+    expect(m.store.getState()).toMatchObject({ step: 'plan', planStep: 'height' });
+    expect(has('height-pick')).toBe(true);
 
     await click('step-result');
     const top = all('finding').find((f) => f.getAttribute('data-code') === 'top.default')!;

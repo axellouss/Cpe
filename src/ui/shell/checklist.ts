@@ -287,9 +287,10 @@ export function centredScrollLeft(item: { left: number; width: number }, view: {
 
 /**
  * Colonne du guide (grand écran) : position de défilement qui montre le détail de l'étape active jusqu'en bas,
- * sans jamais faire sortir l'étape active elle-même par le haut. Positions mesurées dans le contenu (px).
+ * sans jamais faire sortir l'étape active elle-même par le haut. Positions mesurées dans le contenu (px) ;
+ * `margin` = marge gardée au-dessus de l'étape et sous le détail (le bord haut de la colonne s'estompe sur 12 px).
  */
-export function revealScrollTop(current: number, viewHeight: number, itemTop: number, detailBottom: number, margin = 8): number {
+export function revealScrollTop(current: number, viewHeight: number, itemTop: number, detailBottom: number, margin = 14): number {
   let target = current;
   if (detailBottom + margin > target + viewHeight) target = detailBottom + margin - viewHeight;
   if (itemTop - margin < target) target = itemTop - margin;

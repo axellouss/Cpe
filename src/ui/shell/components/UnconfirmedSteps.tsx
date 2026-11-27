@@ -23,7 +23,7 @@ export function UnconfirmedSteps() {
   return (
     <section className="card unconfirmed" aria-labelledby="unconfirmed-title" data-testid="unconfirmed">
       <h2 id="unconfirmed-title" className="card__title unconfirmed__title">
-        <Icon name="alert" size={20} />
+        <Icon name="warning" size={20} />
         <span>{tr('shell.unconfirmed.title', { count })}</span>
       </h2>
       <p className="unconfirmed__text">{tr('shell.unconfirmed.text')}</p>

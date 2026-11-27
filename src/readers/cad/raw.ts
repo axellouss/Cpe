@@ -95,8 +95,13 @@ export interface RawDrawing {
     missingXrefs: string[];
     readerNotes: number;
     /**
-     * Objets d'un DWG dont le décodage a débordé de son flux d'octets (données abîmées) et que le décodeur a
-     * laissés de côté : le dessin rendu est alors INCOMPLET. 0 pour un fichier sain et pour un DXF.
+     * Objets d'un DWG que le décodeur n'a pas su lire et a laissés de côté (type d'objet qu'il ne connaît pas,
+     * ou données abîmées) : ils manquent dans le dessin. 0 pour un DXF.
+     */
+    skippedObjects: number;
+    /**
+     * Parmi eux, ceux dont le décodage a débordé de son flux d'octets : le fichier est ABÎMÉ (un fichier sain
+     * n'en a aucun) et le dessin rendu est incomplet. 0 pour un DXF.
      */
     damagedObjects: number;
   };

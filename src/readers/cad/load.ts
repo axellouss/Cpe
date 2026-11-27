@@ -29,6 +29,7 @@ import {
   LwPolyline,
   MLine,
   MText,
+  NotificationType,
   Polyline,
   Solid,
   Spline,
@@ -652,8 +653,11 @@ export async function readDrawing(
 ): Promise<RawDrawing> {
   const bytes = new Uint8Array(data);
   let readerNotes = 0;
-  const notify = (): void => {
+  let skippedObjects = 0;
+  const notify = (_sender: unknown, note?: { message?: string; notificationType?: number }): void => {
     readerNotes++;
+    // « Could not read … with handle … » : acad-ts a renoncé à un objet du DWG et continue sans lui.
+    if (note?.notificationType === NotificationType.Error && /^Could not read /.test(note.message ?? '')) skippedObjects++;
   };
   await pause();
   let doc: CadDocument;
@@ -761,6 +765,7 @@ export async function readDrawing(
       truncated: flat.truncated,
       missingXrefs: [...flat.missingXrefs],
       readerNotes,
+      skippedObjects,
       damagedObjects,
     },
   };

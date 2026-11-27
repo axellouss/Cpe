@@ -18,12 +18,14 @@ import { formatNumber } from '../../i18n';
 import { fold, guessStorey, parseClearHeight, roomsFromTexts } from '../../semantics/labels';
 import { msg } from './messages';
 import { detectOpenings } from './openings';
-import { pointInRing, pointRingDistance, polyArea, ringArea, simplifyRing } from './planar';
+import { pointInPoly, pointInRing, pointRingDistance, polyArea, ringArea, simplifyRing } from './planar';
 import type { Poly } from './planar';
 import { METRES_PER_POINT } from './raw';
 import type { RawPage, RawSeg, RawText } from './raw';
-import { STANDARD_SCALES, calibrateByDimensions, chooseDimensionScale, declaredScales, dimensionUnitHint } from './scale';
-import type { DimChoice } from './scale';
+import { TITLE_BLOCK_RE, boxContains, drawingComponents, drawingRegions, inTitleBlock, titleBlockBoxes } from './regions';
+import { freeRoomName, isTotalLabel, roomAreaOf, roomyPoint } from './rooms';
+import { STANDARD_SCALES, calibrateObservations, chooseDimensionScale, declaredScales, dimensionObservations, dimensionUnitHint, secondDimensionCluster } from './scale';
+import type { DeclaredScale, DimChoice, DimObservation, DimUnit } from './scale';
 import { buildFaces, calibrateByAreas, closedOutlines, faceAt, findWallClass, wallGaps } from './walls';
 import type { AreaCalibration, Faces, WallClass, WallGap } from './walls';
 
@@ -140,7 +142,6 @@ function centredTexts(texts: readonly RawText[]): PlanText[] {
 
 const SECTION_RE = /\b(coupe|schnitt|querschnitt|langsschnitt|section|facade|fassade|ansicht|elevation|pignon|detail|vue (?:nord|sud|est|ouest|de face|laterale|arriere))\b/;
 const PLAN_RE = /\b(plan|grundriss|niveau|ebene|geschoss)\b/;
-const TITLE_BLOCK_RE = /\b(projet|maitre d'ouvrage|bauherr|bauvorhaben|architecte|architekt|planinhalt|echelle|massstab|plan n|plan-nr|indice|index|gezeichnet|dessine|phase|datum)\b/;
 /** Étiquettes d'espaces EXTÉRIEURS : normales hors du contour, elles ne signalent pas une fuite. */
 const OUTDOOR_RE = /terrasse|balcon|balkon|loggia|jardin|garten|\bcour\b|\bhof\b|pergola|carport|car-port|abri|parking|stellplatz|entree|eingang|zufahrt|acces|rue|strasse|trottoir/;
 const LEVEL_RE = /^\s*([+\-±−])\s?(\d{1,2}[.,]\d{2})\s*m?\s*$/;
@@ -162,22 +163,55 @@ function validAreas(a: AreaCalibration | null): a is AreaCalibration {
   return !!a && a.inliers >= 3 && a.inliers >= 0.6 * a.n && Number.isFinite(a.den);
 }
 
-function decideScale(page: RawPage, walls: WallClass | null, lang: Lang, where: string): ScaleDecision {
-  const say = (key: string, params: Record<string, string | number> = {}): string => capitalise(msg(lang, key, { where, ...params }));
-  const declaredAll = declaredScales(page.texts);
-  const declared = [...new Set(declaredAll.map((d) => d.den))];
-  const hint = dimensionUnitHint(page.texts);
-  const cal = calibrateByDimensions(page);
+/**
+ * Indices d'échelle d'une PAGE ou d'une VUE. L'échelle se décide par vue : un plan au 1:100 dessiné à côté d'une
+ * coupe au 1:50 n'a ni les cotes ni la légende de sa voisine.
+ */
+interface ScaleEvidence {
+  /** Échelles annoncées utilisables (dénominateurs distincts, les plus crédibles d'abord). */
+  declared: number[];
+  /** D'où elles viennent : cartouche ou texte isolé de la page (`block`), ou texte écrit près de la vue (`caption`). */
+  source: 'block' | 'caption';
+  observations: readonly DimObservation[];
+  /** Unité des cotes entières, si le plan la dit ou si le reste de la page l'a établie. */
+  hint: DimUnit | null;
+  /** Étiquettes de pièces portant une surface écrite (centre du nom, uf). */
+  labels: { x: number; y: number; area: number }[];
+  walls: WallClass | null;
+}
+
+/** Consensus solide : au moins 4 cotes d'accord, et la majorité des cotes lues. */
+function isStrongDims(d: DimChoice | null): d is DimChoice {
+  return !!d && d.inliers >= 4 && d.inliers >= 0.6 * d.n;
+}
+
+/** Consensus faible : 2 ou 3 cotes d'accord, ou une courte majorité. */
+function isWeakDims(d: DimChoice | null): d is DimChoice {
+  return !!d && !isStrongDims(d) && d.inliers >= 2 && d.inliers >= 0.5 * d.n;
+}
+
+/** Étiquettes de pièces qui portent une surface, parmi les textes donnés (pour le calibrage par les surfaces). */
+function areaLabels(texts: readonly RawText[]): { x: number; y: number; area: number }[] {
+  return roomsFromTexts(centredTexts(texts.filter((t) => Math.abs(t.angle) < 1)))
+    .filter((r) => r.at && r.statedArea !== undefined)
+    .map((r) => ({ x: r.at!.x, y: r.at!.y, area: r.statedArea! }));
+}
+
+function decideScale(evidence: ScaleEvidence, lang: Lang, where: string): ScaleDecision {
+  const { declared, walls, labels, hint } = evidence;
+  const origin = {
+    source: msg(lang, `pdf.source.${evidence.source}`),
+    sourceSays: msg(lang, `pdf.source.${evidence.source}.says`),
+    sourceFrom: msg(lang, `pdf.source.${evidence.source}.from`),
+  };
+  const say = (key: string, params: Record<string, string | number> = {}): string => capitalise(msg(lang, key, { where, ...origin, ...params }));
+  const cal = calibrateObservations(evidence.observations);
   let dims = chooseDimensionScale(cal, declared, hint);
-  // Consensus solide : au moins 4 cotes d'accord, et la majorité des cotes lues. Faible : 2 ou 3 cotes.
-  const isStrong = (d: DimChoice | null): boolean => !!d && d.inliers >= 4 && d.inliers >= 0.6 * d.n;
-  const isWeak = (d: DimChoice | null): boolean => !!d && !isStrong(d) && d.inliers >= 2 && d.inliers >= 0.5 * d.n;
+  const isStrong = isStrongDims;
+  const isWeak = isWeakDims;
 
   // Surfaces écrites dans les pièces : calibrage sans unité, qui demande les faces des murs — donc une échelle
   // de départ pour les seuils (ouvertures, épaisseurs). On part du meilleur indice disponible, sinon on essaie.
-  const labels = roomsFromTexts(centredTexts(page.texts.filter((t) => Math.abs(t.angle) < 1)))
-    .filter((r) => r.at && r.statedArea !== undefined)
-    .map((r) => ({ x: r.at!.x, y: r.at!.y, area: r.statedArea! }));
   let areas: AreaCalibration | null = null;
   let faces: Faces | null = null;
   let facesDen = 0;
@@ -217,6 +251,7 @@ function decideScale(page: RawPage, walls: WallClass | null, lang: Lang, where: 
     chosen.sourced = { value: value * METRES_PER_POINT, from, note };
   };
   const rooms = areas?.inliers ?? 0;
+  const note = (key: string, params: Record<string, string | number>): string => msg(lang, key, { ...origin, ...params });
 
   if (strongDims) {
     const d = strongDims;
@@ -227,24 +262,27 @@ function decideScale(page: RawPage, walls: WallClass | null, lang: Lang, where: 
       const exact = Math.abs(d.den / match - 1) <= 0.002;
       const value = exact ? match : d.den;
       const key = !exact ? 'pdf.scale.near.dims' : areasAgree ? 'pdf.scale.agree.dimsAreas' : 'pdf.scale.agree.dims';
-      set(value, 'plan', msg(lang, key, { scale: scaleLabel(value), dims: d.inliers, rooms, declared: scaleLabel(match) }));
+      set(value, 'plan', note(key, { scale: scaleLabel(value), dims: d.inliers, rooms, declared: scaleLabel(match) }));
     } else if (declared.length > 0) {
       const value = snapToStandard(d.den, 0.002);
-      set(value, 'plan', msg(lang, 'pdf.scale.dims.contradict', { scale: scaleLabel(value), dims: d.inliers, declared: scaleLabel(declared[0]!) }));
+      set(value, 'plan', note('pdf.scale.dims.contradict', { scale: scaleLabel(value), dims: d.inliers, declared: scaleLabel(declared[0]!) }));
       warnings.push(say('pdf.warn.scale.contradict', { scale: scaleLabel(value), declared: scaleLabel(declared[0]!) }));
     } else {
       const value = snapToStandard(d.den, 0.002);
       const unit = msg(lang, `pdf.unit.${d.unit}`);
       if (d.ambiguous && !areasAgree) {
-        set(value, 'estimate', msg(lang, 'pdf.scale.dims.ambiguous', { scale: scaleLabel(value), dims: d.inliers, unit }));
+        set(value, 'estimate', note('pdf.scale.dims.ambiguous', { scale: scaleLabel(value), dims: d.inliers, unit }));
         warnings.push(say('pdf.warn.scale.estimate'));
       } else {
         const key = areasAgree ? 'pdf.scale.dimsAreas' : 'pdf.scale.dims';
-        set(value, 'plan', msg(lang, key, { scale: scaleLabel(value), dims: d.inliers, rooms, unit }));
+        set(value, 'plan', note(key, { scale: scaleLabel(value), dims: d.inliers, rooms, unit }));
       }
     }
-    if (validAreas(areas) && !areasAgree && chosen.den !== null) {
-      warnings.push(say('pdf.warn.scale.areasDisagree', { scale: scaleLabel(chosen.den), areas: scaleLabel(Math.round(areas.den)) }));
+    if (validAreas(areas) && !areasAgree && chosen.den !== null && chosen.sourced !== null) {
+      // Deux indices indépendants se contredisent : la valeur n'est plus « lue sur le plan », l'expert tranche.
+      const byAreas = scaleLabel(Math.round(areas.den));
+      warnings.push(say('pdf.warn.scale.areasDisagree', { scale: scaleLabel(chosen.den), areas: byAreas }));
+      chosen.sourced = { value: chosen.sourced.value, from: 'estimate', note: `${chosen.sourced.note ?? ''} ${note('pdf.scale.areasDisagree', { rooms, areas: byAreas })}`.trim() };
     }
   } else if (declared.length > 0) {
     const first = declared[0]!;
@@ -252,30 +290,30 @@ function decideScale(page: RawPage, walls: WallClass | null, lang: Lang, where: 
       const a = areas;
       const match = declared.find((t) => Math.abs(a.den / t - 1) <= 0.03);
       if (match !== undefined) {
-        set(match, 'plan', msg(lang, 'pdf.scale.agree.areas', { scale: scaleLabel(match), rooms }));
+        set(match, 'plan', note('pdf.scale.agree.areas', { scale: scaleLabel(match), rooms }));
       } else {
         const value = snapToStandard(Math.round(a.den * 10) / 10, 0.01);
-        set(value, 'estimate', msg(lang, 'pdf.scale.areas.contradict', { scale: scaleLabel(value), rooms, declared: scaleLabel(first) }));
+        set(value, 'estimate', note('pdf.scale.areas.contradict', { scale: scaleLabel(value), rooms, declared: scaleLabel(first) }));
         warnings.push(say('pdf.warn.scale.contradict.areas', { scale: scaleLabel(value), declared: scaleLabel(first) }));
       }
     } else {
       const d = weakDims;
       const match = d ? declared.find((t) => Math.abs(d.den / t - 1) <= 0.01) : undefined;
       if (d && match !== undefined) {
-        set(match, 'plan', msg(lang, 'pdf.scale.agree.dims', { scale: scaleLabel(match), dims: d.inliers }));
+        set(match, 'plan', note('pdf.scale.agree.dims', { scale: scaleLabel(match), dims: d.inliers }));
       } else {
         const key = declared.length > 1 ? 'pdf.scale.title.several' : 'pdf.scale.title';
-        set(first, 'estimate', msg(lang, key, { scale: scaleLabel(first), list: declared.map(scaleLabel).join(', ') }));
+        set(first, 'estimate', note(key, { scale: scaleLabel(first), list: declared.map(scaleLabel).join(', ') }));
         warnings.push(say('pdf.warn.scale.estimate'));
       }
     }
   } else if (validAreas(areas)) {
     const value = snapToStandard(Math.round(areas.den * 10) / 10, 0.01);
-    set(value, 'estimate', msg(lang, 'pdf.scale.areas', { scale: scaleLabel(value), rooms }));
+    set(value, 'estimate', note('pdf.scale.areas', { scale: scaleLabel(value), rooms }));
     warnings.push(say('pdf.warn.scale.estimate'));
   } else if (weakDims) {
     const value = snapToStandard(weakDims.den, 0.005);
-    set(value, 'estimate', msg(lang, 'pdf.scale.dims.weak', { scale: scaleLabel(value), dims: weakDims.inliers }));
+    set(value, 'estimate', note('pdf.scale.dims.weak', { scale: scaleLabel(value), dims: weakDims.inliers }));
     warnings.push(say('pdf.warn.scale.estimate'));
   }
 
@@ -297,6 +335,8 @@ interface View {
   areaM2: number;
   kind: 'plan' | 'section' | 'other';
   title: RawText | null;
+  /** Vrai si le titre est écrit sous ou sur la vue (et non repris du cartouche) : une échelle écrite à côté est la sienne. */
+  titleMatched: boolean;
   storey: { fr: string; de: string; rank: number } | null;
   /** Indices des textes et des traits rattachés à la vue. */
   texts: number[];
@@ -366,7 +406,7 @@ function assignToViews(page: RawPage, boxes: readonly BBox[], margins: readonly 
   return out;
 }
 
-function findViews(page: RawPage, walls: WallClass, gaps: readonly WallGap[], den: number): View[] {
+function findViews(page: RawPage, walls: WallClass, gaps: readonly WallGap[], den: number, blocks: readonly BBox[]): View[] {
   const mpp = den * METRES_PER_POINT;
   // Les ouvertures reconnues (vides jumeaux des deux faces d'un mur) sont refermées d'un trait avant la
   // fermeture : même une baie plus large que 2 × rayon ne laisse alors pas « fuir » le contour.
@@ -381,7 +421,9 @@ function findViews(page: RawPage, walls: WallClass, gaps: readonly WallGap[], de
     .filter((ring) => ring.length >= 3)
     .map((ring) => ({ ring, bbox: ringBBox(ring), areaM2: ringArea(ring) * mpp * mpp }))
     // Le cadre de la feuille, s'il est dessiné au trait de mur, n'est pas une vue.
-    .filter((c) => (c.bbox.maxX - c.bbox.minX) * (c.bbox.maxY - c.bbox.minY) < 0.8 * page.width * page.height);
+    .filter((c) => (c.bbox.maxX - c.bbox.minX) * (c.bbox.maxY - c.bbox.minY) < 0.8 * page.width * page.height)
+    // Le cartouche non plus, qu'on le reconnaisse à son vocabulaire ou à sa place dans l'angle du cadre.
+    .filter((c) => !blocks.some((b) => boxContains(b, (c.bbox.minX + c.bbox.maxX) / 2, (c.bbox.minY + c.bbox.maxY) / 2)));
   if (candidates.length === 0) return [];
 
   const margins = candidates.map((c) => {
@@ -398,7 +440,8 @@ function findViews(page: RawPage, walls: WallClass, gaps: readonly WallGap[], de
     page,
     candidates.map((c) => c.bbox),
     candidates.map((c) => c.ring),
-    mpp,
+    8 / mpp,
+    blocks,
   );
 
   const views: View[] = [];
@@ -433,7 +476,7 @@ function findViews(page: RawPage, walls: WallClass, gaps: readonly WallGap[], de
       if (k >= 0 && !textIdx.includes(k)) textIdx.push(k);
     }
     const unsupportedM = longestUnsupportedEdge(c.ring, closing, 0.05 / mpp, 0.5 / mpp) * mpp;
-    views.push({ ring: c.ring, bbox: c.bbox, areaM2: c.areaM2, kind, title, storey, texts: textIdx, segs: mine.segs, unsupportedM });
+    views.push({ ring: c.ring, bbox: c.bbox, areaM2: c.areaM2, kind, title, titleMatched: title !== null, storey, texts: textIdx, segs: mine.segs, unsupportedM });
   });
   // Un titre adopté par une vue n'est plus un texte des autres.
   for (const v of views) {
@@ -461,11 +504,16 @@ function findViews(page: RawPage, walls: WallClass, gaps: readonly WallGap[], de
  * page et on garde celle qui titre le plus de vues. Sans cela, le titre d'un plan placé au-dessus d'une coupe
  * est pris pour celui de la coupe, dont il est plus proche.
  */
-function matchTitles(page: RawPage, boxes: readonly BBox[], rings: readonly Vec2[][], metresPerPoint: number): Map<number, RawText> {
+/**
+ * `minReach` = distance minimale (uf) jusqu'où un titre est cherché sous ou sur sa vue : 8 m réels quand
+ * l'échelle est connue. Un texte du cartouche (`blocks`) n'est le titre d'aucune vue.
+ */
+function matchTitles(page: RawPage, boxes: readonly BBox[], rings: readonly Vec2[][], minReach: number, blocks: readonly BBox[]): Map<number, RawText> {
   const titles = page.texts.filter((t) => {
     if (Math.abs(t.angle) > 1 || t.s.length > 60) return false;
     const f = fold(t.s);
     if (!SECTION_RE.test(f) && !PLAN_RE.test(f) && !guessStorey(t.s)) return false;
+    if (inTitleBlock(t, blocks)) return false;
     // Un nom écrit DANS une vue est une étiquette (pièce, niveau d'une coupe), pas un titre.
     return !rings.some((ring) => pointInRing(t.cx, t.cy, ring));
   });
@@ -476,13 +524,13 @@ function matchTitles(page: RawPage, boxes: readonly BBox[], rings: readonly Vec2
     const pairs: { view: number; title: number; cost: number }[] = [];
     boxes.forEach((b, i) => {
       const w = b.maxX - b.minX;
-      const reach = Math.max(8 / metresPerPoint, b.maxY - b.minY);
+      const reach = Math.max(minReach, b.maxY - b.minY);
       titles.forEach((t, j) => {
         if (t.cx < b.minX - 0.1 * w || t.cx > b.maxX + 0.1 * w) return;
         const dy = below ? t.cy - b.maxY : b.minY - t.cy;
         if (dy < 0 || dy > reach) return;
         // À distance comparable, le texte le plus gros est le titre.
-        pairs.push({ view: i, title: j, cost: (dy + 1 / metresPerPoint) * (biggest / t.size) ** 2 });
+        pairs.push({ view: i, title: j, cost: (dy + minReach / 8) * (biggest / t.size) ** 2 });
       });
     });
     pairs.sort((x, y) => x.cost - y.cost);
@@ -501,6 +549,80 @@ function matchTitles(page: RawPage, boxes: readonly BBox[], rings: readonly Vec2
   const over = attempt(false);
   if (over.map.size > under.map.size || (over.map.size === under.map.size && over.cost < under.cost)) return over.map;
   return under.map;
+}
+
+// ───────────────────────────── Échelle d'une vue ─────────────────────────────
+
+/**
+ * Échelles écrites près des vues, par vue : dans le titre même (« Grundriss EG M 1:100 »), sous ou à côté du
+ * titre (« Rez-de-chaussée » puis « Échelle 1:100 »), ou, pour une vue sans titre, juste dessous avec son mot-clé.
+ * L'échelle du cartouche n'en fait pas partie : elle vaut pour la page, pas pour une vue.
+ */
+function captionsByView(page: RawPage, views: readonly View[], declaredAll: readonly DeclaredScale[], blocks: readonly BBox[]): number[][] {
+  const out = views.map(() => [] as number[]);
+  for (const d of declaredAll) {
+    const t = page.texts[d.index];
+    if (!t) continue;
+    let owner = -1;
+    views.forEach((v, i) => {
+      const title = v.titleMatched ? v.title : null;
+      if (owner >= 0 || !title) return;
+      const dy = Math.abs(t.cy - title.cy);
+      const overlap = Math.min(t.x1, title.x1) - Math.max(t.x0, title.x0);
+      const gap = Math.max(t.x0 - title.x1, title.x0 - t.x1);
+      if (t === title || (overlap > 0 && dy <= 4.5 * title.size) || (dy <= 0.8 * title.size && gap <= 6 * title.size)) owner = i;
+    });
+    if (owner < 0 && d.keyword && !inTitleBlock(t, blocks)) {
+      let bestDy = Infinity;
+      views.forEach((v, i) => {
+        const b = v.bbox;
+        const dy = t.cy - b.maxY;
+        if (t.cx < b.minX || t.cx > b.maxX || dy < 0 || dy > Math.max(30, 0.2 * (b.maxY - b.minY)) || dy >= bestDy) return;
+        bestDy = dy;
+        owner = i;
+      });
+    }
+    if (owner >= 0 && !out[owner]!.includes(d.den)) out[owner]!.push(d.den);
+  }
+  return out;
+}
+
+/** Ce qu'une vue dit de sa propre échelle, sans regarder le reste de la page. */
+interface ViewEvidence {
+  observations: DimObservation[];
+  captions: number[];
+  /** Consensus des cotes de la vue (au moins deux d'accord) ; null sinon. */
+  dims: DimChoice | null;
+}
+
+function viewEvidence(view: View, observations: readonly DimObservation[], captions: number[], declared: readonly number[], unit: DimUnit | null): ViewEvidence {
+  const mine = new Set(view.texts);
+  const own = observations.filter((o) => mine.has(o.token.index));
+  const dims = chooseDimensionScale(calibrateObservations(own), captions.length > 0 ? captions : declared, unit);
+  return { observations: own, captions, dims: isStrongDims(dims) || isWeakDims(dims) ? dims : null };
+}
+
+/** Étiquettes « nom + surface » écrites DANS le contour de la vue. */
+function viewAreaLabels(page: RawPage, view: View): { x: number; y: number; area: number }[] {
+  return areaLabels(view.texts.map((i) => page.texts[i]!)).filter((l) => pointInRing(l.x, l.y, view.ring));
+}
+
+/** Traits de murs de la vue seule (pour ne reconstruire que ses faces). */
+function wallsOfView(walls: WallClass, view: View): WallClass {
+  const b = view.bbox;
+  return { width: walls.width, segs: walls.segs.filter((s) => boxContains(b, (s.x0 + s.x1) / 2, (s.y0 + s.y1) / 2, 2)) };
+}
+
+function differs(a: number, b: number): boolean {
+  return Math.abs(a / b - 1) > 0.03;
+}
+
+/** Liste lisible d'échelles candidates (« 1:50, 1:100 »), ramenées aux échelles usuelles quand elles en sont à 1 %. */
+function scaleList(dens: readonly number[]): string {
+  const snapped = dens.filter((d) => Number.isFinite(d) && d > 0).map((d) => snapToStandard(d, 0.01));
+  const distinct: number[] = [];
+  for (const d of snapped.sort((a, b) => a - b)) if (!distinct.some((o) => Math.abs(o / d - 1) < 0.01)) distinct.push(d);
+  return distinct.map(scaleLabel).join(', ');
 }
 
 // ───────────────────────────── Coupes : niveaux et hauteurs ─────────────────────────────
@@ -739,8 +861,149 @@ interface PlanDetection {
   notes: string[];
 }
 
-/** Contour, pièces et ouvertures d'une vue en plan. */
-function detectPlan(page: RawPage, view: View, faces: Faces | null, gaps: readonly WallGap[], den: number, lang: Lang): PlanDetection {
+/** Une face plus petite n'est pas proposée comme pièce sans nom (gaine, niche). */
+const MIN_UNLABELLED_ROOM_M2 = 1;
+/** Au-delà de ce nombre de faces (hachures au trait de mur), les pièces sans nom ne sont pas cherchées. */
+const MAX_UNLABELLED_FACES = 4000;
+
+/**
+ * Pièces SANS nom reconnu d'une vue en plan — rendues « à classer » ('ask'), jamais passées sous silence :
+ *  - chaque face fermée du contour qui n'appartient à aucune pièce reconnue et qui est assez large pour en être
+ *    une (pas un corps de mur) : polygone et surface mesurée ; son nom est le texte écrit dedans, s'il y en a un
+ *    (« Kind 1 », « Kochen »), sinon il reste vide ;
+ *  - chaque surface écrite que le vocabulaire n'a rattachée à aucun nom (face absente ou partagée) : nom libre
+ *    voisin et surface écrite, sans polygone.
+ * Les faces ne sont proposées que si elles sont fiables (`trusted`) ou confirmées par leur propre surface écrite.
+ */
+function unlabelledRooms(args: {
+  texts: readonly RawText[];
+  /** Toutes les pièces reconnues parmi ces textes (dans la vue ou non). */
+  labelled: readonly DetectedRoom[];
+  faces: Faces | null;
+  /** Faces des pièces reconnues de la vue, et nombre de pièces reconnues qui s'y trouvent. */
+  taken: ReadonlyMap<Poly, number>;
+  /** Faces dont une pièce reconnue sans surface écrite est la seule occupante. */
+  takenWithoutArea: ReadonlySet<Poly>;
+  trusted: boolean;
+  outline: Vec2[] | undefined;
+  inView: (p: Vec2) => boolean;
+  view: View;
+  mpp: number;
+  blocks: readonly BBox[];
+}): DetectedRoom[] {
+  const { texts, labelled, faces, taken, trusted, outline, inView, view, mpp, blocks } = args;
+  const out: DetectedRoom[] = [];
+  const horizontal = texts.filter((t) => Math.abs(t.angle) < 1 && t !== view.title && !inTitleBlock(t, blocks));
+  const reachOf = (t: RawText): number => Math.max(30, 8 * t.size);
+  const isLabel = (t: RawText): boolean => labelled.some((r) => r.at !== undefined && Math.abs(r.at.x - t.cx) < 1e-6 && Math.abs(r.at.y - t.cy) < 1e-6);
+  const totals = horizontal.filter((t) => isTotalLabel(t.s));
+  // Surfaces écrites dans la vue que `roomsFromTexts` n'a données à aucune pièce reconnue.
+  const orphans = horizontal.filter((t) => {
+    const area = roomAreaOf(t.s);
+    if (area === null || !inView({ x: t.cx, y: t.cy })) return false;
+    if (totals.some((o) => o !== t && Math.hypot(o.cx - t.cx, o.cy - t.cy) <= reachOf(t))) return false;
+    return !labelled.some((r) => r.statedArea !== undefined && r.at !== undefined && Math.abs(r.statedArea - area) < 1e-6 && Math.hypot(r.at.x - t.cx, r.at.y - t.cy) <= reachOf(t));
+  });
+  const names = horizontal.filter((t) => roomAreaOf(t.s) === null && !isLabel(t) && freeRoomName(t.s) !== null);
+  const used = new Set<RawText>();
+  const nearestName = (x: number, y: number, pool: readonly RawText[], reach: number): RawText | null => {
+    let best: RawText | null = null;
+    let bestD = reach;
+    for (const t of pool) {
+      if (used.has(t)) continue;
+      const d = Math.hypot(t.cx - x, t.cy - y);
+      if (d <= bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    return best;
+  };
+
+  // ── Faces fermées sans pièce reconnue.
+  if (faces && faces.faces.length > 0 && faces.faces.length <= MAX_UNLABELLED_FACES) {
+    const near = 0.3 / mpp;
+    // Une pièce laisse passer un cercle plus large que le plus épais des murs ; un corps de mur, non.
+    const thickest = faces.gaps.reduce((m, g) => Math.max(m, g.thickness * mpp), 0);
+    const clear = Math.max(0.3, 0.55 * thickest) / mpp;
+    for (const f of faces.faces) {
+      if (taken.has(f)) continue;
+      const m = polyArea(f) * mpp * mpp;
+      if (m < MIN_UNLABELLED_ROOM_M2 || m > 0.8 * view.areaM2) continue;
+      const corner = f.outer[0]!;
+      if (!boxContains(view.bbox, corner.x, corner.y, near)) continue;
+      const areasIn = orphans.filter((t) => pointInPoly(t.cx, t.cy, f));
+      if (areasIn.length > 1) continue;
+      const areaText = areasIn[0];
+      const stated = areaText ? roomAreaOf(areaText.s) : null;
+      const confirmedHere = stated !== null && Math.abs(m / stated - 1) <= ROOM_AREA_TOLERANCE;
+      // Une surface écrite que la face ne recoupe pas : la face n'est pas fiable, la surface est reprise plus bas.
+      if (stated !== null && !confirmedHere) continue;
+      if (!confirmedHere && !(trusted && outline)) continue;
+      const p = roomyPoint(f, clear);
+      if (!p || !(outline ? pointInRing(p.x, p.y, view.ring) : boxContains(view.bbox, p.x, p.y))) continue;
+      const polygon = cleanPolygon(f.outer, 0.02);
+      if (polygon.length < 3 || isSelfIntersecting(polygon)) continue;
+      const namesIn = names.filter((t) => !used.has(t) && pointInPoly(t.cx, t.cy, f));
+      const own = areaText ? freeRoomName(areaText.s) : null;
+      let nameText: RawText | null = null;
+      if (own === null) {
+        if (areaText) nameText = nearestName(areaText.cx, areaText.cy, namesIn, Infinity);
+        // Sans surface pour guider : le plus gros texte de la face, puis le plus central.
+        else nameText = [...namesIn].sort((a, b) => b.size - a.size || Math.hypot(a.cx - p.x, a.cy - p.y) - Math.hypot(b.cx - p.x, b.cy - p.y))[0] ?? null;
+      }
+      const anchor = nameText ?? areaText;
+      const room: DetectedRoom = {
+        name: own ?? (nameText ? freeRoomName(nameText.s)! : ''),
+        at: anchor ? { x: anchor.cx, y: anchor.cy } : p,
+        heatedGuess: 'ask',
+        measuredArea: round(m, 2),
+        polygon,
+      };
+      if (stated !== null) room.statedArea = stated;
+      if (areaText) used.add(areaText);
+      if (nameText) used.add(nameText);
+      out.push(room);
+    }
+  }
+
+  // ── Surfaces écrites restées sans pièce (face absente, peu fiable ou partagée avec une pièce reconnue).
+  for (const t of orphans) {
+    if (used.has(t)) continue;
+    const area = roomAreaOf(t.s)!;
+    // Plus grande que l'emprise de la vue : un total, pas une pièce.
+    if (area > view.areaM2) continue;
+    if (faces) {
+      // Dans la face d'une pièce reconnue qui n'a pas de surface écrite : c'est très probablement la sienne.
+      const f = faceAt(faces.faces, t.cx, t.cy);
+      if (f && args.takenWithoutArea.has(f)) continue;
+    }
+    const own = freeRoomName(t.s);
+    const nameText = own === null ? nearestName(t.cx, t.cy, names, reachOf(t)) : null;
+    const anchor = nameText ?? t;
+    used.add(t);
+    if (nameText) used.add(nameText);
+    out.push({ name: own ?? (nameText ? freeRoomName(nameText.s)! : ''), at: { x: anchor.cx, y: anchor.cy }, heatedGuess: 'ask', statedArea: area });
+  }
+  return out;
+}
+
+/** « Kind 1 » 17,54 m², sans texte 4,20 m² : liste lisible des pièces sans nom reconnu. */
+function unlabelledList(rooms: readonly DetectedRoom[], lang: Lang): string {
+  return rooms
+    .map((r) => {
+      const area = r.measuredArea ?? r.statedArea;
+      if (!r.name) return msg(lang, 'pdf.room.item.noName', { noText: msg(lang, 'pdf.room.noText'), area: area !== undefined ? formatNumber(area, 2) : '–' });
+      return area !== undefined ? msg(lang, 'pdf.room.item', { name: r.name, area: formatNumber(area, 2) }) : msg(lang, 'pdf.room.item.noArea', { name: r.name });
+    })
+    .join(', ');
+}
+
+/**
+ * Contour, pièces et ouvertures d'une vue en plan. `ringTrusted` = faux quand le tracé de la vue a été calculé
+ * à une autre échelle que la sienne : il situe la vue, mais n'est pas proposé comme contour.
+ */
+function detectPlan(page: RawPage, view: View, faces: Faces | null, gaps: readonly WallGap[], den: number, lang: Lang, blocks: readonly BBox[], ringTrusted = true): PlanDetection {
   const mpp = den * METRES_PER_POINT;
   const notes: string[] = [];
   const texts = view.texts.map((i) => page.texts[i]!);
@@ -755,7 +1018,7 @@ function detectPlan(page: RawPage, view: View, faces: Faces | null, gaps: readon
   const escaped = labelled.filter(
     (r) => r.at && !within(r.at) && rectDistance(r.at.x, r.at.y, view.bbox) === 0 && !OUTDOOR_RE.test(fold(r.name)) && (r.statedArea !== undefined || r.heatedGuess !== 'no'),
   );
-  if (outline.length < 3 || outline.length > 400 || isSelfIntersecting(outline)) {
+  if (!ringTrusted || outline.length < 3 || outline.length > 400 || isSelfIntersecting(outline)) {
     outline = undefined;
     notes.push(msg(lang, 'pdf.note.outline.none'));
   } else if (escaped.length > 0) {
@@ -767,7 +1030,8 @@ function detectPlan(page: RawPage, view: View, faces: Faces | null, gaps: readon
   }
   // Pièces de la vue : celles du contour s'il est proposé ; sinon toutes celles de l'emprise de la vue (une
   // pièce « sortie » d'un contour qui fuit reste une pièce du plan).
-  const rooms = labelled.filter((r) => r.at && (outline ? within(r.at) : rectDistance(r.at.x, r.at.y, view.bbox) <= near));
+  const inView = (p: Vec2): boolean => (outline ? within(p) : rectDistance(p.x, p.y, view.bbox) <= near);
+  const rooms = labelled.filter((r) => r.at && inView(r.at));
   if (outline) {
     notes.push(msg(lang, 'pdf.note.outline', { area: formatNumber(view.areaM2, 2), gap: formatNumber(2 * CLOSING_RADIUS_M, 1) }));
     const unheated = rooms.filter((r) => r.heatedGuess === 'no').map((r) => r.name);
@@ -775,10 +1039,16 @@ function detectPlan(page: RawPage, view: View, faces: Faces | null, gaps: readon
   }
 
   // ── Pièces : polygone = plus petite face autour de l'étiquette, acceptée seulement si elle est crédible.
-  if (faces && faces.faces.length > 0 && rooms.length > 0) {
+  const taken = new Map<Poly, number>();
+  const takenWithoutArea = new Set<Poly>();
+  let trusted = false;
+  if (faces && faces.faces.length > 0) {
     const faceOf = rooms.map((r) => (r.at ? faceAt(faces.faces, r.at.x, r.at.y) : null));
-    const shared = new Map<Poly, number>();
-    for (const f of faceOf) if (f) shared.set(f, (shared.get(f) ?? 0) + 1);
+    for (const f of faceOf) if (f) taken.set(f, (taken.get(f) ?? 0) + 1);
+    rooms.forEach((r, i) => {
+      const f = faceOf[i];
+      if (f && taken.get(f) === 1 && r.statedArea === undefined) takenWithoutArea.add(f);
+    });
     const measured = faceOf.map((f) => (f ? polyArea(f) * mpp * mpp : null));
     // Fiabilité d'ensemble : part des surfaces écrites que le dessin confirme.
     let compared = 0;
@@ -802,7 +1072,7 @@ function detectPlan(page: RawPage, view: View, faces: Faces | null, gaps: readon
       if (within(p)) paved += polyArea(f);
     }
     const coverage = paved / Math.max(1e-9, ringArea(view.ring));
-    const trusted = compared >= 2 ? confirmed >= 0.8 * compared : outline !== undefined && coverage >= 0.97 && coverage <= 1.01;
+    trusted = compared >= 2 ? confirmed >= 0.8 * compared : outline !== undefined && coverage >= 0.97 && coverage <= 1.01;
     const unmeasured: string[] = [];
     let accepted = 0;
     rooms.forEach((r, i) => {
@@ -812,7 +1082,7 @@ function detectPlan(page: RawPage, view: View, faces: Faces | null, gaps: readon
         unmeasured.push(r.name);
         return;
       }
-      const alone = shared.get(f) === 1;
+      const alone = taken.get(f) === 1;
       const confirmedHere = r.statedArea !== undefined && Math.abs(m / r.statedArea - 1) <= ROOM_AREA_TOLERANCE;
       // Sans surface écrite pour recouper, on ne propose le polygone que si le reste de la vue est confirmé.
       const plausible = r.statedArea === undefined && trusted && alone && m >= 1 && m <= 0.8 * view.areaM2;
@@ -831,6 +1101,13 @@ function detectPlan(page: RawPage, view: View, faces: Faces | null, gaps: readon
     });
     if (accepted > 0) notes.push(msg(lang, 'pdf.note.rooms.measured', { n: accepted, gap: formatNumber(worst * 100, 1) }));
     if (unmeasured.length > 0) notes.push(msg(lang, 'pdf.note.rooms.unmeasured', { rooms: unmeasured.join(', ') }));
+  }
+
+  // ── Pièces sans nom reconnu : faces fermées restantes et surfaces écrites sans nom du vocabulaire.
+  const unlabelled = unlabelledRooms({ texts, labelled, faces, taken, takenWithoutArea, trusted, outline, inView, view, mpp, blocks });
+  if (unlabelled.length > 0) {
+    rooms.push(...unlabelled);
+    notes.push(msg(lang, 'pdf.note.rooms.unlabelled', { n: unlabelled.length, list: unlabelledList(unlabelled, lang) }));
   }
 
   // ── Ouvertures des murs extérieurs : seulement si le contour est proposé.

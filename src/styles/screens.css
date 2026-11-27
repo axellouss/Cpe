@@ -1549,13 +1549,23 @@
     overflow: hidden;
   }
 
+  /* Ce qui a défilé sous le bord haut s'estompe (sans effet au repos : les 12 premiers pixels sont la marge). */
   .guide__scroll {
     flex: 1 1 auto;
+    gap: 8px;
     min-height: 0;
-    padding: 12px;
+    padding: 12px 12px 10px;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
+  }
+
+  /* Du texte reste sous la barre : il s'estompe vers le bas, et le bouton « Lire la suite » y mène. */
+  .guide.has-more .guide__scroll {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 44px), transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 44px), transparent 100%);
   }
 
   .guide__bar {
@@ -1566,11 +1576,30 @@
     background: var(--surface);
   }
 
-  /* Du texte reste sous la barre : une ombre le dit, en plus du bouton « Lire la suite ». */
-  .guide__bar.has-more {
-    padding-top: 16px;
+  .guide.has-more .guide__bar {
+    padding-top: 18px;
     border-top-color: var(--border-strong);
-    box-shadow: 0 -10px 12px -10px rgba(20, 30, 35, 0.35);
+  }
+
+  /* Colonne étroite : un libellé long passe sur deux lignes au lieu de sortir du cadre. */
+  .guide__bar .btn {
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
+  }
+
+  .guide__actions {
+    gap: 6px;
+  }
+
+  .guide__actions .btn--small {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .guide__detail {
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 
   .plan__editor-wrap {
@@ -1601,9 +1630,9 @@
   }
 
   .checklist__head {
-    min-height: 44px;
-    padding-top: 3px;
-    padding-bottom: 3px;
+    min-height: 42px;
+    padding-top: 2px;
+    padding-bottom: 2px;
   }
 
   /* Étape faite : une seule ligne (coche, nom, « fait »), pour laisser la place à celles qui restent. */
@@ -1942,6 +1971,63 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   border-left: 4px solid var(--warn-line);
+}
+
+/* Étapes du plan jamais confirmées (résultat) : une ligne par étage, avec le bouton qui y ramène. */
+.unconfirmed {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  border-left: 4px solid var(--warn-line);
+}
+
+.unconfirmed__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+.unconfirmed__title svg {
+  flex: none;
+  color: var(--warn);
+}
+
+.unconfirmed__text {
+  color: var(--muted);
+}
+
+.unconfirmed__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.unconfirmed__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 9px 12px;
+  border-radius: var(--radius-s);
+  background: var(--bg);
+}
+
+.unconfirmed__where {
+  display: grid;
+  flex: 1 1 240px;
+  gap: 2px;
+  min-width: 0;
+}
+
+.unconfirmed__steps {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.unconfirmed__jump {
+  background: var(--surface);
 }
 
 .findings--clear {

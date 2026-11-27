@@ -169,8 +169,13 @@ describe('étages', () => {
 
     store.getState().toolDone('outline');
     expect(selectMarks(store.getState()).plan[storey.id]?.outline).toBe(true);
-    expect(store.getState().planStep).toBe('boundary');
+    expect(store.getState().planStep).toBe('height');
     expect(store.getState().celebrate?.key).toBe(`${storey.id}:outline`);
+
+    // Hauteur d'étage : la validation rend la valeur « confirmée par l'expert » dans le modèle.
+    store.getState().confirmPlanStep('height');
+    expect(currentStorey(store.getState())!.grossHeight).toEqual({ value: 2.8, from: 'user' });
+    expect(store.getState().planStep).toBe('boundary');
 
     store.getState().confirmPlanStep('boundary');
     expect(store.getState().planStep).toBe('opening');

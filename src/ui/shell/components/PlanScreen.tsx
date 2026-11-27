@@ -347,7 +347,8 @@ function Checklist({ project, storey, steps, sheet }: { project: Project; storey
 
   const measure = useCallback((): void => {
     const col = column.current;
-    setMore(col !== null && col.clientHeight > 0 && col.scrollHeight - col.scrollTop - col.clientHeight > 6);
+    // Moins d'une ligne cachée (une marge, un filet) ne vaut pas un signal.
+    setMore(col !== null && col.clientHeight > 0 && col.scrollHeight - col.scrollTop - col.clientHeight > 16);
   }, []);
   // Le contenu change à chaque étape : on remesure après chaque rendu (sans effet si rien n'a bougé).
   useLayoutEffect(measure);
@@ -364,7 +365,7 @@ function Checklist({ project, storey, steps, sheet }: { project: Project; storey
   }, [measure]);
 
   return (
-    <nav className="guide" aria-label={tr('shell.plan.guide.label')}>
+    <nav className={`guide ${more ? 'has-more' : ''}`} aria-label={tr('shell.plan.guide.label')}>
       <div className="guide__scroll" ref={column} data-testid="plan-guide-scroll">
         <header className="guide__head">
           <h2 className="guide__title">{tr('shell.plan.guide.title')}</h2>
@@ -410,7 +411,7 @@ function Checklist({ project, storey, steps, sheet }: { project: Project; storey
       </div>
 
       {/* Toujours visible : les commandes de l'étape active, puis la suite du parcours. */}
-      <div className={`guide__bar ${more ? 'has-more' : ''}`} data-testid="plan-guide-bar">
+      <div className="guide__bar" data-testid="plan-guide-bar">
         {more ? (
           <button
             type="button"

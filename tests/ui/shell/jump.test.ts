@@ -69,10 +69,13 @@ describe('du constat à l’endroit à corriger', () => {
   it('met en avant le bon champ du panneau pour les hauteurs et la surface nette', () => {
     const project = twoStoreys();
     const upper = project.model.storeys[1]!;
-    expect(jumpTargetFor(finding('height.default', { storeyId: upper.id }), project)).toMatchObject({ step: 'plan', storeyId: upper.id, focus: 'heights' });
-    expect(jumpTargetFor(finding('clearHeight.aboveGross', { storeyId: upper.id }), project)).toMatchObject({ focus: 'heights' });
+    // La hauteur d'étage brute est une étape de la liste guidée ; la hauteur libre, facultative, reste dans le panneau.
+    expect(jumpTargetFor(finding('height.default', { storeyId: upper.id }), project)).toEqual({ step: 'plan', storeyId: upper.id, planStep: 'height', focus: null });
+    expect(jumpTargetFor(finding('clearHeight.aboveGross', { storeyId: upper.id }), project)).toMatchObject({ planStep: 'height', focus: 'heights' });
+    expect(jumpTargetFor(finding('clearHeight.default', { storeyId: upper.id }), project)).toMatchObject({ planStep: 'height', focus: 'heights' });
     expect(jumpTargetFor(finding('an.estimated', { storeyId: upper.id }), project)).toMatchObject({ planStep: 'rooms', focus: 'netArea', storeyId: upper.id });
-    expect(jumpLabelKey(jumpTargetFor(finding('height.default'), project)!)).toBe('shell.jump.plan.heights');
+    expect(jumpLabelKey(jumpTargetFor(finding('height.default'), project)!)).toBe('shell.jump.plan.height');
+    expect(jumpLabelKey(jumpTargetFor(finding('clearHeight.default'), project)!)).toBe('shell.jump.plan.heights');
   });
 
   it('va à l’étage qui a des pièces à trancher', () => {

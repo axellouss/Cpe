@@ -23,6 +23,7 @@ import { AnimatedNumber, Badge, CopyButton, ProvenanceTag, useT } from './common
 import type { BadgeTone } from './common';
 import { Icon } from './icons';
 import type { IconName } from './icons';
+import { UnconfirmedSteps } from './UnconfirmedSteps';
 import './result.css';
 
 const SEVERITIES: readonly Severity[] = ['block', 'warn', 'info'];
@@ -549,6 +550,7 @@ export function ResultScreen() {
         <Downloads sheets={sheets} project={project} />
       </header>
 
+      <UnconfirmedSteps />
       <FindingsPanel findings={sheets.findings} project={project} />
       <KeyFigures sheets={sheets} />
 
