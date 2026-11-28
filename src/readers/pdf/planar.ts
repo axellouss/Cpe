@@ -12,8 +12,11 @@ import GeometryFactory from 'jsts/org/locationtech/jts/geom/GeometryFactory.js';
 import PrecisionModel from 'jsts/org/locationtech/jts/geom/PrecisionModel.js';
 import BufferOp from 'jsts/org/locationtech/jts/operation/buffer/BufferOp.js';
 import BufferParameters from 'jsts/org/locationtech/jts/operation/buffer/BufferParameters.js';
+import DistanceOp from 'jsts/org/locationtech/jts/operation/distance/DistanceOp.js';
+import OverlayOp from 'jsts/org/locationtech/jts/operation/overlay/OverlayOp.js';
 import Polygonizer from 'jsts/org/locationtech/jts/operation/polygonize/Polygonizer.js';
 import UnaryUnionOp from 'jsts/org/locationtech/jts/operation/union/UnaryUnionOp.js';
+import DouglasPeuckerSimplifier from 'jsts/org/locationtech/jts/simplify/DouglasPeuckerSimplifier.js';
 import type { Vec2 } from '../../core/types';
 
 export interface Seg {
@@ -269,4 +272,141 @@ export function polygonizeSegments(segs: readonly Seg[], grid: number): Poly[] {
   } catch {
     return [];
   }
+}
+
+// ───────────────────────────── Polygones avec trous (lecture des planches) ─────────────────────────────
+//
+// Opérations booléennes et tampons sur des `Poly` (anneau extérieur + trous), en précision fixe (millième de
+// point) : les remplissages et les hachures d'une planche se touchent à quelques millièmes près, et jsts en
+// flottants y voit parfois une topologie invalide. Chaque opération rattrape les exceptions de jsts : en cas
+// d'échec, elle renvoie un résultat vide (ou le premier opérande, pour une différence) plutôt que de casser la lecture.
+
+function polyToJ(p: Poly, f: typeof factory = fixedFactory): JGeom {
+  const shell = f.createLinearRing(ringCoords(p.outer));
+  const holes = p.holes.filter((h) => h.length >= 3).map((h) => f.createLinearRing(ringCoords(h)));
+  return f.createPolygon(shell, holes) as JGeom;
+}
+
+/** Union d'une collection de polygones (rend les polygones valides : `buffer(0)` des anneaux auto-sécants). */
+function jUnion(ps: readonly Poly[]): JGeom | null {
+  if (ps.length === 0) return null;
+  const parts: unknown[] = [];
+  for (const p of ps) {
+    if (p.outer.length < 3) continue;
+    try {
+      parts.push(jBuffer(polyToJ(p), 0, false));
+    } catch {
+      // anneau dégénéré : ignoré
+    }
+  }
+  if (parts.length === 0) return null;
+  return UnaryUnionOp.union(fixedFactory.createGeometryCollection(parts)) as JGeom;
+}
+
+/** Union de polygones (trous conservés). */
+export function unionPolys(ps: readonly Poly[]): Poly[] {
+  try {
+    return polysFromJ(jUnion(ps));
+  } catch {
+    return [];
+  }
+}
+
+/** Tampon de `d` (négatif : érosion) de l'union des polygones, angles vifs. */
+export function bufferPolys(ps: readonly Poly[], d: number): Poly[] {
+  try {
+    const u = jUnion(ps);
+    if (!u) return [];
+    return polysFromJ(jBuffer(u, d, false));
+  } catch {
+    return [];
+  }
+}
+
+/** Fermeture morphologique (tampon +r puis −r) : soude les pièces distantes de moins de 2r. */
+export function closePolys(ps: readonly Poly[], r: number): Poly[] {
+  try {
+    const u = jUnion(ps);
+    if (!u) return [];
+    return polysFromJ(jBuffer(jBuffer(u, r, false), -r, false));
+  } catch {
+    return [];
+  }
+}
+
+/** a − b. En cas d'échec de jsts, renvoie `a` inchangé. */
+export function differencePolys(a: readonly Poly[], b: readonly Poly[]): Poly[] {
+  try {
+    const ja = jUnion(a);
+    if (!ja) return [];
+    const jb = jUnion(b);
+    if (!jb) return polysFromJ(ja);
+    return polysFromJ(OverlayOp.difference(ja, jb) as JGeom);
+  } catch {
+    return a.map((p) => ({ outer: p.outer.slice(), holes: p.holes.map((h) => h.slice()) }));
+  }
+}
+
+/** a ∩ b. */
+export function intersectPolys(a: readonly Poly[], b: readonly Poly[]): Poly[] {
+  try {
+    const ja = jUnion(a);
+    const jb = jUnion(b);
+    if (!ja || !jb) return [];
+    return polysFromJ(OverlayOp.intersection(ja, jb) as JGeom);
+  } catch {
+    return [];
+  }
+}
+
+/** Vrai si les deux polygones sont à moins de `d` l'un de l'autre (0 = se touchent ou se recouvrent). */
+export function polysWithinDistance(a: Poly, b: Poly, d: number): boolean {
+  try {
+    return DistanceOp.isWithinDistance(polyToJ(a), polyToJ(b), d);
+  } catch {
+    return false;
+  }
+}
+
+/** Distance entre deux polygones (0 s'ils se touchent). Infinity en cas d'échec. */
+export function polysDistance(a: Poly, b: Poly): number {
+  try {
+    return Number(DistanceOp.distance(polyToJ(a), polyToJ(b)));
+  } catch {
+    return Infinity;
+  }
+}
+
+/** Simplification de Douglas-Peucker d'un polygone (trous compris) ; renvoie le polygone tel quel en cas d'échec. */
+export function simplifyPoly(p: Poly, tol: number): Poly {
+  try {
+    const out = polysFromJ(DouglasPeuckerSimplifier.simplify(polyToJ(p), tol) as JGeom);
+    out.sort((x, y) => polyArea(y) - polyArea(x));
+    return out[0] ?? p;
+  } catch {
+    return p;
+  }
+}
+
+/** Sous-tracés d'un remplissage → polygones (règle pair-impair : un anneau contenu dans un autre en est un trou). */
+export function ringsToPolys(rings: readonly (readonly [number, number][])[]): Poly[] {
+  const rs: Vec2[][] = [];
+  for (const r of rings) {
+    const pts = r.map(([x, y]) => ({ x, y }));
+    if (pts.length > 3) {
+      const a = pts[0]!;
+      const b = pts[pts.length - 1]!;
+      if (a.x === b.x && a.y === b.y) pts.pop();
+    }
+    if (pts.length >= 3 && ringArea(pts) > 0) rs.push(pts);
+  }
+  rs.sort((a, b) => ringArea(b) - ringArea(a));
+  const out: Poly[] = [];
+  for (const r of rs) {
+    const p0 = r[0]!;
+    const host = out.find((p) => pointInRing(p0.x, p0.y, p.outer) && !p.holes.some((h) => pointInRing(p0.x, p0.y, h)));
+    if (host) host.holes.push(r);
+    else out.push({ outer: r, holes: [] });
+  }
+  return out;
 }
