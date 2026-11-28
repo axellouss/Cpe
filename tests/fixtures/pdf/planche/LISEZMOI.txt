@@ -1,0 +1,50 @@
+Planches d'autorisation de bâtir SYNTHÉTIQUES (essais du futur lecteur de planches)
+=================================================================================
+
+Ces PDF imitent la STRUCTURE d'une planche d'architecte luxembourgeoise exportée d'Archicad : plusieurs vues sur
+une même page, titres de vues, murs hachurés, isolant, pièces en « zones », cotes, compositions de parois, coupes,
+façades, cartouche, nord. Toutes les données sont INVENTÉES (« Maison Exemple », « Lot 7 », « 12, rue des Essais »,
+« L-0000 Exempleville », « Atelier Modèle », « M. et Mme Test ») : ces fichiers peuvent être diffusés avec le dépôt.
+
+Régénérer (Python 3, reportlab 5 et Pillow ; aucune requête réseau) :
+    python3 tests/fixtures/pdf/planche/make_planches.py
+Le script est déterministe (reportlab « invariant », aléas semés, aucune date du jour) : deux exécutions donnent
+des fichiers identiques octet pour octet. Ne modifiez pas les PDF à la main : modifiez le script et régénérez.
+
+Vérité de référence : <nom>.truth.json, même repère que les autres plans d'essai (points PDF, origine en haut à
+gauche de la page, y vers le bas). Par page : dimensions, échelle, liste des vues {kind : plan | roof-plan |
+section | elevation | table | titleblock | photo | north | notes, title, level, name, bbox_pt, building_bbox_pt,
+title_bbox_pt} ; pour un plan : outline_pt et son aire, heated_outline_pt (enveloppe chauffée), pièces {name,
+area_label, area_true_m2, heated_true, label_pt, poly_pt}, baies {kind, side, a_pt, b_pt, width_m, height_m, sill_m,
+exterior, to_unheated, in_envelope, azimuth_deg}, arêtes mitoyennes, arêtes vers le non chauffé, chaînes de cotes ;
+niveaux, hauteurs d'étage, compositions {title, element, layers [{thickness_cm, text, material_key}]}, tableau des
+surfaces, cartouche, nord (north_azimuth_deg = azimut du haut de la feuille ; north_cw_from_up_deg = direction du
+nord vue sur la feuille), équipements écrits, nombre de micro-traits et de traits de hachure (counts).
+Le test tests/readers/pdf/planche-fixtures.test.ts vérifie la cohérence PDF ↔ vérité (pas l'analyse du lecteur).
+
+planche_A1_archicad.pdf   A1 paysage, 1/100, français. Maison jumelée (mitoyen à droite) 9,20 × 12,40 m, garage non
+                          chauffé dans l'emprise. Trois plans côte à côte dans le même cadre de situation découpé
+                          (parcelle, pelouse, trottoir, rue, limites en tireté rouge) : PLAN REZ-DE-CHAUSSÉE,
+                          PLAN 1ER ÉTAGE (« PLAN 1 » + « ER » en exposant + « ÉTAGE »), PLAN TOITURE ; titres 17 pt sous
+                          les vues. Murs coupés : contour 0,71 pt, hachure diagonale 0,28 pt sous découpe, isolant jaune
+                          pâle + hachure croisée qui passe entre garage et logement. Pièces remplies + nom gras +
+                          « S: … m² » gris ; escalier sans étiquette ; mobilier, carrelage. Baies : largeur / hauteur
+                          superposées, « ALL. 0,90 », demi-centimètres en exposant (« 78 » + « 5 »). Compositions de mur,
+                          de dalle (sur sol, d'étage, sur garage) et de toiture ; niveaux « +0,20=+312,45 » et « NF » ;
+                          encadrés violets d'éclairement ; PAC, Boiler, VMC. COUPE AA et COUPE BB (terrain en pointillé
+                          de ≈ 97 000 micro-traits sous découpe), FAÇADE AVANT / ARRIÈRE / LATÉRALE, CALCULS DES
+                          SURFACES, PHOTO AÉRIENNE (image grise), nord tourné (110° du haut de la feuille, vers la droite
+                          et un peu vers le bas), notes, cartouche.
+planche_A2_de_titres_dessus.pdf
+                          A2, 1:50, allemand. Maison isolée 7,00 × 6,40 m, sous-sol non chauffé, toit à deux pans.
+                          GRUNDRISS KELLERGESCHOSS / ERDGESCHOSS / OBERGESCHOSS, SCHNITT A-A, ANSICHT NORD, ANSICHT SÜD :
+                          titres AU-DESSUS des vues et centrés. Pièces SANS remplissage (« Wohnen » + « 21,95 m² »), murs
+                          en remplissage plein gris foncé, isolant en hachure simple sans fond, « First +7,85 »,
+                          « Traufe +5,60 », Wandaufbau / Dachaufbau / Bodenaufbau, nord vers le haut, pas de cadre de
+                          situation, Schriftfeld.
+planche_2pages.pdf        A3, 1/100, deux pages. Maison isolée en L (10,00 × 11,00 m, 86 m²). Page 1 : PLAN
+                          REZ-DE-CHAUSSÉE et PLAN ÉTAGE, nord à 30°. Page 2 : COUPE A-A, FAÇADE AVANT, FAÇADE ARRIÈRE,
+                          cartouche. Titres sous les vues.
+planche_sans_titres.pdf   A3, 1/100. Deux plans côte à côte (rez-de-chaussée, étage d'une maison 8,00 × 10,00 m)
+                          SANS aucun titre de vue : seulement les étiquettes de pièces, les cotes et un cartouche (cas de
+                          repli pour le découpage en vues).

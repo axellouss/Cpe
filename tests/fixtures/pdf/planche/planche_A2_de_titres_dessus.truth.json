@@ -1,0 +1,1547 @@
+{
+ "file": "planche_A2_de_titres_dessus.pdf",
+ "synthetic": true,
+ "generator": "tests/fixtures/pdf/planche/make_planches.py",
+ "style": "archicad-de",
+ "language": "de",
+ "scale_den": 50,
+ "north_azimuth_deg": 0.0,
+ "north_cw_from_up_deg": 0.0,
+ "facade_azimuth_deg": {
+  "N": 0.0,
+  "S": 180.0,
+  "W": 270.0,
+  "E": 90.0
+ },
+ "building": {
+  "name": "Haus Beispiel (Maison Exemple)",
+  "footprint_m": [
+   7.0,
+   6.4
+  ],
+  "footprint_area_m2": 44.8,
+  "attachment": "detached",
+  "storeys_heated": 2,
+  "basement": {
+   "level": -1,
+   "heated": false
+  },
+  "roof": "gable",
+  "heated_area_by_level_m2": {
+   "-1": 0,
+   "0": 34.6369,
+   "1": 34.1942
+  }
+ },
+ "pages": [
+  {
+   "number": 1,
+   "width_pt": 1683.78,
+   "height_pt": 1190.55,
+   "format": "A2",
+   "orientation": "landscape",
+   "scale_den": 50,
+   "views": [
+    {
+     "kind": "plan",
+     "level": -1,
+     "scale_den": 50,
+     "building_bbox_pt": [
+      110.0,
+      125.0,
+      506.85,
+      487.835
+     ],
+     "outline_pt": [
+      [
+       110.0,
+       125.0
+      ],
+      [
+       506.85,
+       125.0
+      ],
+      [
+       506.85,
+       487.835
+      ],
+      [
+       110.0,
+       487.835
+      ]
+     ],
+     "outline_area_m2": 44.8,
+     "heated_outline_pt": null,
+     "heated_outline_area_m2": 0.0,
+     "rooms": [
+      {
+       "name": "Keller",
+       "area_true_m2": 22.62,
+       "heated_true": false,
+       "kind": "room",
+       "poly_pt": [
+        [
+         127.008,
+         142.008
+        ],
+        [
+         348.11,
+         142.008
+        ],
+        [
+         348.11,
+         470.827
+        ],
+        [
+         127.008,
+         470.827
+        ]
+       ],
+       "area_label": "22,62 m²",
+       "label_pt": [
+        237.56,
+        297.0
+       ]
+      },
+      {
+       "name": "Technik",
+       "area_true_m2": 6.201,
+       "heated_true": false,
+       "kind": "room",
+       "poly_pt": [
+        [
+         354.63,
+         142.008
+        ],
+        [
+         489.843,
+         142.008
+        ],
+        [
+         489.843,
+         289.409
+        ],
+        [
+         354.63,
+         289.409
+        ]
+       ],
+       "area_label": "6,20 m²",
+       "label_pt": [
+        421.81,
+        209.12
+       ]
+      },
+      {
+       "name": "Vorraum",
+       "area_true_m2": 3.81,
+       "heated_true": false,
+       "kind": "room",
+       "poly_pt": [
+        [
+         354.63,
+         295.929
+        ],
+        [
+         424.646,
+         295.929
+        ],
+        [
+         424.646,
+         470.827
+        ],
+        [
+         354.63,
+         470.827
+        ]
+       ],
+       "area_label": "3,81 m²",
+       "label_pt": [
+        389.5,
+        353.69
+       ]
+      },
+      {
+       "name": "Treppe",
+       "area_true_m2": 3.193,
+       "heated_true": false,
+       "kind": "stair",
+       "poly_pt": [
+        [
+         431.165,
+         295.929
+        ],
+        [
+         489.843,
+         295.929
+        ],
+        [
+         489.843,
+         470.827
+        ],
+        [
+         431.165,
+         470.827
+        ]
+       ],
+       "area_label": null,
+       "label_pt": null
+      }
+     ],
+     "openings": [
+      {
+       "kind": "window",
+       "side": "rear",
+       "a_pt": [
+        166.693,
+        125.0
+       ],
+       "b_pt": [
+        212.047,
+        125.0
+       ],
+       "width_m": 0.8,
+       "height_m": 0.5,
+       "sill_m": 1.6,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": false,
+       "name": "KF1",
+       "azimuth_deg": 0.0
+      },
+      {
+       "kind": "window",
+       "side": "front",
+       "a_pt": [
+        382.126,
+        487.835
+       ],
+       "b_pt": [
+        416.142,
+        487.835
+       ],
+       "width_m": 0.6,
+       "height_m": 0.5,
+       "sill_m": 1.6,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": false,
+       "name": "KF2",
+       "azimuth_deg": 180.0
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        351.37,
+        351.772
+       ],
+       "b_pt": [
+        351.37,
+        401.945
+       ],
+       "width_m": 0.885,
+       "height_m": 2.01,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        370.787,
+        292.669
+       ],
+       "b_pt": [
+        413.874,
+        292.669
+       ],
+       "width_m": 0.76,
+       "height_m": 2.01,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      }
+     ],
+     "party_edges_pt": [],
+     "party_wall_length_m": 0.0,
+     "unheated_edges_pt": [],
+     "wall_to_unheated_length_m": 0,
+     "dims": [
+      {
+       "text": "1,00",
+       "sup": "",
+       "chain": "rear-openings"
+      },
+      {
+       "width_text": "80",
+       "height_text": "50",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "5,20",
+       "sup": "",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "7,00",
+       "sup": "",
+       "chain": "rear-overall"
+      },
+      {
+       "text": "6,40",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "text": "6,40",
+       "sup": "",
+       "chain": "left-overall"
+      }
+     ],
+     "title": "GRUNDRISS KELLERGESCHOSS",
+     "title_parts": [
+      "GRUNDRISS KELLERGESCHOSS"
+     ],
+     "title_bbox_pt": [
+      174.29,
+      28,
+      442.56,
+      48.74
+     ],
+     "title_position": "above-centered",
+     "bbox_pt": [
+      40,
+      55,
+      520,
+      495
+     ]
+    },
+    {
+     "kind": "plan",
+     "level": 0,
+     "scale_den": 50,
+     "building_bbox_pt": [
+      580.0,
+      125.0,
+      976.85,
+      487.835
+     ],
+     "outline_pt": [
+      [
+       580.0,
+       125.0
+      ],
+      [
+       976.85,
+       125.0
+      ],
+      [
+       976.85,
+       487.835
+      ],
+      [
+       580.0,
+       487.835
+      ]
+     ],
+     "outline_area_m2": 44.8,
+     "heated_outline_pt": [
+      [
+       580.0,
+       125.0
+      ],
+      [
+       976.85,
+       125.0
+      ],
+      [
+       976.85,
+       487.835
+      ],
+      [
+       580.0,
+       487.835
+      ]
+     ],
+     "heated_outline_area_m2": 44.8,
+     "rooms": [
+      {
+       "name": "Wohnen",
+       "area_true_m2": 21.945,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         599.843,
+         144.843
+        ],
+        [
+         818.11,
+         144.843
+        ],
+        [
+         818.11,
+         467.992
+        ],
+        [
+         599.843,
+         467.992
+        ]
+       ],
+       "area_label": "21,95 m²",
+       "label_pt": [
+        710.39,
+        353.69
+       ]
+      },
+      {
+       "name": "Küche",
+       "area_true_m2": 5.9542,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         824.63,
+         144.843
+        ],
+        [
+         957.008,
+         144.843
+        ],
+        [
+         957.008,
+         289.409
+        ],
+        [
+         824.63,
+         289.409
+        ]
+       ],
+       "area_label": "5,95 m²",
+       "label_pt": [
+        890.68,
+        217.63
+       ]
+      },
+      {
+       "name": "Diele",
+       "area_true_m2": 3.7482,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         824.63,
+         295.929
+        ],
+        [
+         894.646,
+         295.929
+        ],
+        [
+         894.646,
+         467.992
+        ],
+        [
+         824.63,
+         467.992
+        ]
+       ],
+       "area_label": "3,75 m²",
+       "label_pt": [
+        859.5,
+        333.85
+       ]
+      },
+      {
+       "name": "Treppe",
+       "area_true_m2": 2.9895,
+       "heated_true": true,
+       "kind": "stair",
+       "poly_pt": [
+        [
+         901.165,
+         295.929
+        ],
+        [
+         957.008,
+         295.929
+        ],
+        [
+         957.008,
+         467.992
+        ],
+        [
+         901.165,
+         467.992
+        ]
+       ],
+       "area_label": null,
+       "label_pt": null
+      }
+     ],
+     "openings": [
+      {
+       "kind": "window",
+       "side": "front",
+       "a_pt": [
+        625.354,
+        487.835
+       ],
+       "b_pt": [
+        767.087,
+        487.835
+       ],
+       "width_m": 2.5,
+       "height_m": 2.2,
+       "sill_m": 0.0,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F1",
+       "azimuth_deg": 180.0
+      },
+      {
+       "kind": "door",
+       "side": "front",
+       "a_pt": [
+        831.15,
+        487.835
+       ],
+       "b_pt": [
+        888.409,
+        487.835
+       ],
+       "width_m": 1.01,
+       "height_m": 2.135,
+       "sill_m": 0.0,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "Haustür",
+       "azimuth_deg": 180.0
+      },
+      {
+       "kind": "window",
+       "side": "rear",
+       "a_pt": [
+        648.031,
+        125.0
+       ],
+       "b_pt": [
+        733.071,
+        125.0
+       ],
+       "width_m": 1.5,
+       "height_m": 1.385,
+       "sill_m": 0.76,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F2",
+       "azimuth_deg": 0.0
+      },
+      {
+       "kind": "window",
+       "side": "rear",
+       "a_pt": [
+        857.795,
+        125.0
+       ],
+       "b_pt": [
+        925.827,
+        125.0
+       ],
+       "width_m": 1.2,
+       "height_m": 1.135,
+       "sill_m": 1.01,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F3",
+       "azimuth_deg": 0.0
+      },
+      {
+       "kind": "window",
+       "side": "left",
+       "a_pt": [
+        580.0,
+        238.386
+       ],
+       "b_pt": [
+        580.0,
+        309.819
+       ],
+       "width_m": 1.26,
+       "height_m": 2.2,
+       "sill_m": 0.0,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F4",
+       "azimuth_deg": 270.0
+      },
+      {
+       "kind": "window",
+       "side": "right",
+       "a_pt": [
+        976.85,
+        351.772
+       ],
+       "b_pt": [
+        976.85,
+        401.945
+       ],
+       "width_m": 0.885,
+       "height_m": 1.135,
+       "sill_m": 1.01,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F5",
+       "azimuth_deg": 90.0
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        821.37,
+        351.772
+       ],
+       "b_pt": [
+        821.37,
+        401.945
+       ],
+       "width_m": 0.885,
+       "height_m": 2.01,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        840.787,
+        292.669
+       ],
+       "b_pt": [
+        883.874,
+        292.669
+       ],
+       "width_m": 0.76,
+       "height_m": 2.01,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      }
+     ],
+     "party_edges_pt": [],
+     "party_wall_length_m": 0.0,
+     "unheated_edges_pt": [],
+     "wall_to_unheated_length_m": 0,
+     "dims": [
+      {
+       "text": "1,20",
+       "sup": "",
+       "chain": "rear-openings"
+      },
+      {
+       "width_text": "1,50",
+       "height_text": "1,385",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "2,20",
+       "sup": "",
+       "chain": "rear-openings"
+      },
+      {
+       "width_text": "1,20",
+       "height_text": "1,135",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "90",
+       "sup": "",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "7,00",
+       "sup": "",
+       "chain": "rear-overall"
+      },
+      {
+       "text": "2,00",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "width_text": "1,26",
+       "height_text": "2,20",
+       "chain": "left-openings"
+      },
+      {
+       "text": "3,14",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "text": "6,40",
+       "sup": "",
+       "chain": "left-overall"
+      }
+     ],
+     "title": "GRUNDRISS ERDGESCHOSS",
+     "title_parts": [
+      "GRUNDRISS ERDGESCHOSS"
+     ],
+     "title_bbox_pt": [
+      658.94,
+      28,
+      897.91,
+      48.74
+     ],
+     "title_position": "above-centered",
+     "bbox_pt": [
+      510,
+      55,
+      990,
+      495
+     ]
+    },
+    {
+     "kind": "plan",
+     "level": 1,
+     "scale_den": 50,
+     "building_bbox_pt": [
+      1050.0,
+      125.0,
+      1446.85,
+      487.835
+     ],
+     "outline_pt": [
+      [
+       1050.0,
+       125.0
+      ],
+      [
+       1446.85,
+       125.0
+      ],
+      [
+       1446.85,
+       487.835
+      ],
+      [
+       1050.0,
+       487.835
+      ]
+     ],
+     "outline_area_m2": 44.8,
+     "heated_outline_pt": [
+      [
+       1050.0,
+       125.0
+      ],
+      [
+       1446.85,
+       125.0
+      ],
+      [
+       1446.85,
+       487.835
+      ],
+      [
+       1050.0,
+       487.835
+      ]
+     ],
+     "heated_outline_area_m2": 44.8,
+     "rooms": [
+      {
+       "name": "Schlafen",
+       "area_true_m2": 13.6675,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         1069.843,
+         144.843
+        ],
+        [
+         1288.11,
+         144.843
+        ],
+        [
+         1288.11,
+         346.102
+        ],
+        [
+         1069.843,
+         346.102
+        ]
+       ],
+       "area_label": "13,67 m²",
+       "label_pt": [
+        1163.39,
+        251.64
+       ]
+      },
+      {
+       "name": "Kind",
+       "area_true_m2": 7.8348,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         1069.843,
+         352.622
+        ],
+        [
+         1288.11,
+         352.622
+        ],
+        [
+         1288.11,
+         467.992
+        ],
+        [
+         1069.843,
+         467.992
+        ]
+       ],
+       "area_label": "7,83 m²",
+       "label_pt": [
+        1163.39,
+        407.55
+       ]
+      },
+      {
+       "name": "Bad",
+       "area_true_m2": 5.9542,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         1294.63,
+         144.843
+        ],
+        [
+         1427.008,
+         144.843
+        ],
+        [
+         1427.008,
+         289.409
+        ],
+        [
+         1294.63,
+         289.409
+        ]
+       ],
+       "area_label": "5,95 m²",
+       "label_pt": [
+        1360.68,
+        217.63
+       ]
+      },
+      {
+       "name": "Flur",
+       "area_true_m2": 3.7482,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         1294.63,
+         295.929
+        ],
+        [
+         1364.646,
+         295.929
+        ],
+        [
+         1364.646,
+         467.992
+        ],
+        [
+         1294.63,
+         467.992
+        ]
+       ],
+       "area_label": "3,75 m²",
+       "label_pt": [
+        1329.5,
+        333.85
+       ]
+      },
+      {
+       "name": "Treppe",
+       "area_true_m2": 2.9895,
+       "heated_true": true,
+       "kind": "stair",
+       "poly_pt": [
+        [
+         1371.165,
+         295.929
+        ],
+        [
+         1427.008,
+         295.929
+        ],
+        [
+         1427.008,
+         467.992
+        ],
+        [
+         1371.165,
+         467.992
+        ]
+       ],
+       "area_label": null,
+       "label_pt": null
+      }
+     ],
+     "openings": [
+      {
+       "kind": "window",
+       "side": "front",
+       "a_pt": [
+        1123.701,
+        487.835
+       ],
+       "b_pt": [
+        1208.74,
+        487.835
+       ],
+       "width_m": 1.5,
+       "height_m": 1.385,
+       "sill_m": 0.76,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F6",
+       "azimuth_deg": 180.0
+      },
+      {
+       "kind": "window",
+       "side": "rear",
+       "a_pt": [
+        1123.701,
+        125.0
+       ],
+       "b_pt": [
+        1208.74,
+        125.0
+       ],
+       "width_m": 1.5,
+       "height_m": 1.385,
+       "sill_m": 0.76,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F7",
+       "azimuth_deg": 0.0
+      },
+      {
+       "kind": "window",
+       "side": "rear",
+       "a_pt": [
+        1333.465,
+        125.0
+       ],
+       "b_pt": [
+        1383.638,
+        125.0
+       ],
+       "width_m": 0.885,
+       "height_m": 1.135,
+       "sill_m": 1.01,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F8",
+       "azimuth_deg": 0.0
+      },
+      {
+       "kind": "window",
+       "side": "left",
+       "a_pt": [
+        1050.0,
+        210.039
+       ],
+       "b_pt": [
+        1050.0,
+        267.299
+       ],
+       "width_m": 1.01,
+       "height_m": 1.385,
+       "sill_m": 0.76,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F9",
+       "azimuth_deg": 270.0
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        1291.37,
+        297.913
+       ],
+       "b_pt": [
+        1291.37,
+        343.268
+       ],
+       "width_m": 0.8,
+       "height_m": 2.01,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        1291.37,
+        363.11
+       ],
+       "b_pt": [
+        1291.37,
+        408.465
+       ],
+       "width_m": 0.8,
+       "height_m": 2.01,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        1310.787,
+        292.669
+       ],
+       "b_pt": [
+        1353.874,
+        292.669
+       ],
+       "width_m": 0.76,
+       "height_m": 2.01,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      }
+     ],
+     "party_edges_pt": [],
+     "party_wall_length_m": 0.0,
+     "unheated_edges_pt": [],
+     "wall_to_unheated_length_m": 0,
+     "dims": [
+      {
+       "text": "1,30",
+       "sup": "",
+       "chain": "rear-openings"
+      },
+      {
+       "width_text": "1,50",
+       "height_text": "1,385",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "2,20",
+       "sup": "",
+       "chain": "rear-openings"
+      },
+      {
+       "width_text": "885",
+       "height_text": "1,135",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "1,11",
+       "sup": "5",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "7,00",
+       "sup": "",
+       "chain": "rear-overall"
+      },
+      {
+       "text": "1,50",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "width_text": "1,01",
+       "height_text": "1,385",
+       "chain": "left-openings"
+      },
+      {
+       "text": "3,89",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "text": "6,40",
+       "sup": "",
+       "chain": "left-overall"
+      }
+     ],
+     "title": "GRUNDRISS OBERGESCHOSS",
+     "title_parts": [
+      "GRUNDRISS OBERGESCHOSS"
+     ],
+     "title_bbox_pt": [
+      1122.79,
+      28,
+      1374.05,
+      48.74
+     ],
+     "title_position": "above-centered",
+     "bbox_pt": [
+      980,
+      55,
+      1460,
+      495
+     ]
+    },
+    {
+     "kind": "section",
+     "title": "SCHNITT A-A",
+     "name": "A-A",
+     "cut": {
+      "axis": "x",
+      "at_m": 2.0
+     },
+     "title_bbox_pt": [
+      333.05,
+      515,
+      439.78,
+      535.74
+     ],
+     "title_position": "above-centered",
+     "scale_den": 50,
+     "stipple_traits": 134936,
+     "bbox_pt": [
+      115,
+      540,
+      660,
+      1170
+     ],
+     "building_bbox_pt": [
+      205.0,
+      547.835,
+      567.835,
+      1162.953
+     ],
+     "roof": {
+      "type": "gable",
+      "ridge_m": 7.85,
+      "eaves_m": 5.6,
+      "pitch_deg": 35.1
+     }
+    },
+    {
+     "kind": "elevation",
+     "title": "ANSICHT NORD",
+     "name": "N",
+     "azimuth_deg": 0.0,
+     "title_bbox_pt": [
+      853.73,
+      515,
+      983.12,
+      535.74
+     ],
+     "title_position": "above-centered",
+     "scale_den": 50,
+     "openings": [
+      {
+       "kind": "window",
+       "name": "F3",
+       "rect_pt": [
+        771.02,
+        874.1,
+        839.05,
+        938.45
+       ],
+       "width_m": 1.2,
+       "height_m": 1.135
+      },
+      {
+       "kind": "window",
+       "name": "F2",
+       "rect_pt": [
+        963.78,
+        874.1,
+        1048.82,
+        952.62
+       ],
+       "width_m": 1.5,
+       "height_m": 1.385
+      },
+      {
+       "kind": "window",
+       "name": "F7",
+       "rect_pt": [
+        958.11,
+        718.2,
+        1043.15,
+        796.72
+       ],
+       "width_m": 1.5,
+       "height_m": 1.385
+      },
+      {
+       "kind": "window",
+       "name": "F8",
+       "rect_pt": [
+        783.21,
+        718.2,
+        833.39,
+        782.54
+       ],
+       "width_m": 0.885,
+       "height_m": 1.135
+      }
+     ],
+     "bbox_pt": [
+      690,
+      540,
+      1150,
+      1017.047
+     ],
+     "building_bbox_pt": [
+      702.992,
+      550.669,
+      1133.858,
+      1007.047
+     ]
+    },
+    {
+     "kind": "elevation",
+     "title": "ANSICHT SÜD",
+     "name": "S",
+     "azimuth_deg": 180.0,
+     "title_bbox_pt": [
+      1340.81,
+      515,
+      1456.04,
+      535.74
+     ],
+     "title_position": "above-centered",
+     "scale_den": 50,
+     "openings": [
+      {
+       "kind": "window",
+       "name": "F1",
+       "rect_pt": [
+        1245.35,
+        870.98,
+        1387.09,
+        995.71
+       ],
+       "width_m": 2.5,
+       "height_m": 2.2
+      },
+      {
+       "kind": "door",
+       "name": "Haustür",
+       "rect_pt": [
+        1451.15,
+        874.67,
+        1508.41,
+        995.71
+       ],
+       "width_m": 1.01,
+       "height_m": 2.135
+      },
+      {
+       "kind": "window",
+       "name": "F6",
+       "rect_pt": [
+        1273.7,
+        718.2,
+        1358.74,
+        796.72
+       ],
+       "width_m": 1.5,
+       "height_m": 1.385
+      }
+     ],
+     "bbox_pt": [
+      1170,
+      540,
+      1630,
+      1017.047
+     ],
+     "building_bbox_pt": [
+      1182.992,
+      550.669,
+      1613.858,
+      1007.047
+     ]
+    },
+    {
+     "kind": "titleblock",
+     "title": null,
+     "bbox_pt": [
+      1490,
+      40,
+      1650,
+      380
+     ]
+    },
+    {
+     "kind": "north",
+     "title": "N",
+     "bbox_pt": [
+      1546.0,
+      396,
+      1594.0,
+      454.0
+     ]
+    }
+   ],
+   "levels": [
+    {
+     "label": "OKFF KG -2,40",
+     "value_m": -2.4,
+     "what": "Fertigfußboden Kellergeschoss"
+    },
+    {
+     "label": "±0,00",
+     "value_m": 0.0,
+     "altitude_m": 254.3,
+     "what": "Fertigfußboden Erdgeschoss"
+    },
+    {
+     "label": "+2,75",
+     "value_m": 2.75,
+     "what": "Fertigfußboden Obergeschoss"
+    },
+    {
+     "label": "Traufe +5,60",
+     "value_m": 5.6,
+     "what": "Traufe"
+    },
+    {
+     "label": "First +7,85",
+     "value_m": 7.85,
+     "what": "First"
+    }
+   ],
+   "storeys": [
+    {
+     "level": -1,
+     "floor_m": -2.4,
+     "storey_height_m": 2.4,
+     "heated": false
+    },
+    {
+     "level": 0,
+     "floor_m": 0.0,
+     "storey_height_m": 2.75,
+     "heated": true
+    },
+    {
+     "level": 1,
+     "floor_m": 2.75,
+     "storey_height_m": null,
+     "heated": true,
+     "under_roof": true
+    }
+   ],
+   "compositions": [
+    {
+     "key": "wand",
+     "title": "Wandaufbau:",
+     "element": "wall",
+     "view": "SCHNITT A-A",
+     "bbox_pt": [
+      239.02,
+      709.41,
+      300.69,
+      748.11
+     ],
+     "target_pt": [
+      210.102,
+      706.575
+     ],
+     "layers": [
+      {
+       "thickness_cm": 1.5,
+       "text": "Innenputz",
+       "material_key": "plaster"
+      },
+      {
+       "thickness_cm": 17.5,
+       "text": "Kalksandstein",
+       "material_key": "sand_lime_brick"
+      },
+      {
+       "thickness_cm": 16.0,
+       "text": "WDVS EPS 032",
+       "material_key": "eps"
+      },
+      {
+       "thickness_cm": 1.5,
+       "text": "Außenputz",
+       "material_key": "render_exterior"
+      }
+     ]
+    },
+    {
+     "key": "dach",
+     "title": "Dachaufbau:",
+     "element": "roof",
+     "view": "SCHNITT A-A",
+     "bbox_pt": [
+      440.28,
+      692.4,
+      526.41,
+      746.6
+     ],
+     "target_pt": [
+      545.157,
+      672.559
+     ],
+     "layers": [
+      {
+       "thickness_cm": null,
+       "text": "Dachziegel",
+       "material_key": "roof_tiles"
+      },
+      {
+       "thickness_cm": 3.0,
+       "text": "Lattung",
+       "material_key": "battens"
+      },
+      {
+       "thickness_cm": 8.0,
+       "text": "Holzfaserdämmplatte",
+       "material_key": "wood_fibre"
+      },
+      {
+       "thickness_cm": 20.0,
+       "text": "Mineralwolle zw. Sparren",
+       "material_key": "mineral_wool"
+      },
+      {
+       "thickness_cm": null,
+       "text": "Dampfbremse",
+       "material_key": "vapour_barrier"
+      },
+      {
+       "thickness_cm": 1.25,
+       "text": "Gipskarton",
+       "material_key": "plasterboard"
+      }
+     ]
+    },
+    {
+     "key": "boden",
+     "title": "Bodenaufbau:",
+     "element": "floor-over-unheated",
+     "view": "SCHNITT A-A",
+     "bbox_pt": [
+      239.02,
+      882.32,
+      324.46,
+      936.52
+     ],
+     "target_pt": [
+      369.409,
+      1002.512
+     ],
+     "layers": [
+      {
+       "thickness_cm": 1.5,
+       "text": "Bodenbelag",
+       "material_key": "floor_finish"
+      },
+      {
+       "thickness_cm": 6.5,
+       "text": "Estrich",
+       "material_key": "screed"
+      },
+      {
+       "thickness_cm": 3.0,
+       "text": "Trittschalldämmung",
+       "material_key": "impact_sound_insulation"
+      },
+      {
+       "thickness_cm": 6.0,
+       "text": "Wärmedämmung EPS",
+       "material_key": "eps"
+      },
+      {
+       "thickness_cm": 20.0,
+       "text": "Stahlbeton",
+       "material_key": "concrete"
+      },
+      {
+       "thickness_cm": 10.0,
+       "text": "Mineralwolle Kellerdecke",
+       "material_key": "mineral_wool"
+      }
+     ]
+    }
+   ],
+   "titleblock": {
+    "object": "Neubau eines Einfamilienhauses",
+    "phase": "Baugenehmigung",
+    "project_name": "Maison Exemple",
+    "lot": "Lot 7",
+    "street": "12, rue des Essais",
+    "postcode_locality": "L-0000 Exempleville",
+    "commune": "Exempleville",
+    "date": "15.01.2026",
+    "format": "A2",
+    "scale": "1:50",
+    "index": "A",
+    "project_number": "EX-007-DE",
+    "owner": [
+     "M. et Mme Test",
+     "3, allée du Modèle",
+     "L-0001 Fictiveville"
+    ],
+    "administration": [
+     "Administration communale",
+     "d'Exempleville",
+     "1, place de la Mairie",
+     "L-0000 Exempleville"
+    ],
+    "architect": [
+     "Atelier Modèle",
+     "5, avenue des Plans",
+     "L-0002 Démoville"
+    ],
+    "bbox_pt": [
+     1490,
+     40,
+     1650,
+     380
+    ]
+   },
+   "equipment": [],
+   "counts": {
+    "hatch_lines": 1593,
+    "stipple_traits": 134936,
+    "tile_lines": 0,
+    "clip_paths": 31
+   }
+  }
+ ]
+}

@@ -535,21 +535,6 @@ def level_mark_plan(sh, x, y, label, size=5.5):
     sh.text(label, x + 4.5, y + size * 0.35, size)
 
 
-def level_mark_elev(sh, x, y, label, size=5.5, nf=True, side='r', col=BLACK):
-    """Cote de niveau en coupe / façade : trait, triangle, « NF » au-dessus, valeur dessous ou à côté."""
-    L = 46
-    if side == 'r':
-        x0, x1 = x, x + L
-    else:
-        x0, x1 = x - L, x
-    sh.line(x0, y, x1, y, 0.25, col)
-    tx = x0 + 6 if side == 'r' else x0
-    sh.poly([(tx, y), (tx + 4, y - 4), (tx + 8, y)], fill=col)
-    if nf:
-        sh.text('NF', tx + 10, y - 1.5, size, col=col)
-    sh.text(label, tx + 10 if nf else tx + 10, y + size + 1.2, size, col=col)
-
-
 def north_arrow(sh, cx, cy, r, cw_from_up, label='NORD', size=7):
     """Flèche du nord : texte au-dessus, cercle, trait traversant, flèche tournée de cw_from_up degrés."""
     a = math.radians(cw_from_up)
@@ -1190,7 +1175,7 @@ def elev_window(sh, E, u0, u1, z0, z1, kind='window'):
     return [round(v, 2) for v in r]
 
 
-def level_mark_elev2(sh, x, y, label, nf=True, side='r', size=5.2):
+def level_mark_elev2(sh, x, y, label, nf=True, side='r', size=5.2, nf_text='NF'):
     """Cote de niveau en coupe / façade : trait, triangle, « NF » au-dessus du trait, valeur dessous."""
     L = 62
     x0, x1 = (x, x + L) if side == 'r' else (x - L, x)
@@ -1198,7 +1183,7 @@ def level_mark_elev2(sh, x, y, label, nf=True, side='r', size=5.2):
     tx = x0 + 2
     sh.poly([(tx, y), (tx + 3.5, y - 4), (tx + 7, y)], fill=BLACK)
     if nf:
-        sh.text('NF', tx + 9, y - 1.3, size)
+        sh.text(nf_text, tx + 9, y - 1.3, size)
     sh.text(label, tx, y + size + 1.0, size)
 
 
@@ -1601,8 +1586,612 @@ def building_summary_a1(rdc, et):
     }
 
 
+# ═════════════════════════════ Variantes : plan générique ═════════════════════════════
+
+def auto_chain(level, side, L):
+    """Chaîne de cotes d'un côté : intervalles pleins et baies (largeur au-dessus, hauteur dessous)."""
+    key = 0 if side in ('rear', 'front') else 1
+    ops = sorted([o for o in level.openings if o['side'] == side], key=lambda o: o['rect'][key])
+    pos, labels, cur = [0.0], [], 0.0
+    for o in ops:
+        a, b = o['rect'][key], o['rect'][key + 2]
+        if a > cur + 1e-6:
+            labels.append(dim_parts(a - cur))
+            pos.append(a)
+        labels.append((dim_parts(o['width']), dim_parts(o['height'])))
+        pos.append(b)
+        cur = b
+    if L > cur + 1e-6:
+        labels.append(dim_parts(L - cur))
+        pos.append(L)
+    return pos, labels
+
+
+def draw_plan_generic(sh, V, level, W, D, style='archicad', fill=True, area_fmt=None, name_font=BOLD,
+                      label_size=6.2, area_size=5.4, area_col=GREY_TXT, chains=(('rear', 0.9), ('left', 0.9)),
+                      fac_az=None, tiles_rect=None):
+    """Plan d'un niveau (sans cadre de situation) ; renvoie la vérité de la vue."""
+    core, insul = cut_walls(level)
+    if fill:
+        for rm in level.rooms:
+            if rm['kind'] in ('room', 'stair', 'garage'):
+                sh.poly(V.poly(rm['poly']), fill=ROOM_FILL)
+    if tiles_rect:
+        tiles(sh, V, rect_poly(tiles_rect))
+    draw_wall_set(sh, V, core, insul, style=style)
+    for op in level.openings:
+        draw_opening_symbols(sh, V, op)
+    for st in getattr(level, 'stairs', []):
+        draw_stair(sh, V, *st)
+    rooms_truth = []
+    for rm in level.rooms:
+        t = {'name': rm['name'], 'area_true_m2': rm['area'], 'heated_true': rm['heated'], 'kind': rm['kind'],
+             'poly_pt': [list(p) for p in V.poly(rm['poly'])], 'area_label': None, 'label_pt': None}
+        if rm['show']:
+            x, y = V.p(*rm['label'])
+            box = sh.text(rm['name'], x, y, label_size, name_font, anchor='c')
+            at = area_fmt(rm) if area_fmt else f"S: {fr(rm['area'])} m²"
+            sh.text(at, x, y + area_size * 1.45, area_size, FONT, area_col, anchor='c')
+            t['area_label'] = at
+            t['label_pt'] = [round((box[0] + box[2]) / 2, 2), round(y - label_size / 2, 2)]
+        rooms_truth.append(t)
+    dims = []
+    for side, off in chains:
+        L = W if side in ('rear', 'front') else D
+        pos, labels = auto_chain(level, side, L)
+        if side in ('rear', 'front'):
+            y1 = V.p(0, -off if side == 'rear' else D + off)[1]
+            y2 = V.p(0, -(off + 0.6) if side == 'rear' else D + off + 0.6)[1]
+            out = chain_h(sh, y1, [V.p(x, 0)[0] for x in pos], labels)
+            out2 = chain_h(sh, y2, [V.p(0, 0)[0], V.p(W, 0)[0]], dims_of([W]))
+        else:
+            x1 = V.p(-off if side == 'left' else W + off, 0)[0]
+            x2 = V.p(-(off + 0.6) if side == 'left' else W + off + 0.6, 0)[0]
+            out = chain_v(sh, x1, [V.p(0, y)[1] for y in pos], labels)
+            out2 = chain_v(sh, x2, [V.p(0, 0)[1], V.p(0, D)[1]], dims_of([D]))
+        dims += [dict(d, chain=f'{side}-openings') for d in out] + [dict(d, chain=f'{side}-overall') for d in out2]
+    xs = [p[0] for p in level.outline]
+    ys = [p[1] for p in level.outline]
+    truth = {
+        'kind': 'plan', 'level': level.rank, 'scale_den': round(PT_PER_M / V.k),
+        'building_bbox_pt': list(V.r((min(xs), min(ys), max(xs), max(ys)))),
+        'outline_pt': [list(p) for p in V.poly(level.outline)],
+        'outline_area_m2': round(poly_area(level.outline), 4),
+        'heated_outline_pt': [list(p) for p in V.poly(level.heated_outline)] if level.heated_outline else None,
+        'heated_outline_area_m2': round(poly_area(level.heated_outline), 4) if level.heated_outline else 0.0,
+        'rooms': rooms_truth,
+        'openings': [opening_truth(V, op, fac_az) for op in level.openings if op['symbol'] != 'passage'],
+        'party_edges_pt': [],
+        'party_wall_length_m': 0.0,
+        'unheated_edges_pt': [[list(V.p(*a)), list(V.p(*b))] for a, b in level.unheated_edges],
+        'wall_to_unheated_length_m': round(sum(math.dist(a, b) for a, b in level.unheated_edges), 3),
+        'dims': dims,
+    }
+    return truth
+
+
+# ═════════════════════════════ Variante A2, 1:50, allemand, titres au-dessus ═════════════════════════════
+
+Z0_DE = 254.30
+COMPO_DE = {
+    'wand': ('Wandaufbau:', 'wall', ['1,5cm Innenputz', '17,5cm Kalksandstein', '16cm WDVS EPS 032', '1,5cm Außenputz']),
+    'dach': ('Dachaufbau:', 'roof', ['Dachziegel', '3cm Lattung', '8cm Holzfaserdämmplatte', '20cm Mineralwolle zw. Sparren',
+                                     'Dampfbremse', '1,25cm Gipskarton']),
+    'boden': ('Bodenaufbau:', 'floor-over-unheated', ['1,5cm Bodenbelag', '6,5cm Estrich', '3cm Trittschalldämmung',
+                                                       '6cm Wärmedämmung EPS', '20cm Stahlbeton', '10cm Mineralwolle Kellerdecke']),
+}
+
+
+def haus_beispiel():
+    """Maison isolée 7,00 × 6,40 m, sous-sol non chauffé, deux niveaux chauffés, toit à deux pans (faîtage est-ouest)."""
+    W, D = 7.00, 6.40
+    outline = rect_poly((0, 0, W, D))
+    kg = Level('Kellergeschoss', -1)
+    kg.core = [(0, 0, 0.30, 6.40), (6.70, 0, 7.00, 6.40), (0.30, 0, 6.70, 0.30), (0.30, 6.10, 6.70, 6.40),
+               (4.20, 0.30, 4.315, 6.10), (4.315, 2.90, 6.70, 3.015), (5.55, 3.015, 5.665, 6.10)]
+    kg.insul = []
+    o = kg.opening
+    o('window', (1.00, 0, 1.80, 0.30), 'rear', 0.80, 0.50, 1.60, exterior=True, in_envelope=False, name='KF1')
+    o('window', (4.80, 6.10, 5.40, 6.40), 'front', 0.60, 0.50, 1.60, exterior=True, in_envelope=False, name='KF2')
+    o('door', (4.20, 4.00, 4.315, 4.885), 'interior', 0.885, 2.01, exterior=False, in_envelope=False, hinge='a', swing=-1)
+    o('door', (4.60, 2.90, 5.36, 3.015), 'interior', 0.76, 2.01, exterior=False, in_envelope=False, hinge='a', swing=-1)
+    o('door', (5.55, 3.40, 5.665, 5.60), 'interior', 2.20, 2.01, exterior=False, in_envelope=False, symbol='passage')
+    r = kg.room
+    r('Keller', rect_poly((0.30, 0.30, 4.20, 6.10)), (2.25, 3.10), heated=False)
+    r('Technik', rect_poly((4.315, 0.30, 6.70, 2.90)), (5.50, 1.55), heated=False)
+    r('Vorraum', rect_poly((4.315, 3.015, 5.55, 6.10)), (4.93, 4.10), heated=False)
+    r('Treppe', rect_poly((5.665, 3.015, 6.70, 6.10)), (6.18, 4.50), heated=False, show=False, kind='stair')
+    kg.stairs = [(5.665, 3.015, 6.70, 6.10, False)]
+    kg.outline = outline
+    kg.heated_outline = None
+    kg.unheated_edges = []
+
+    def upper(name, rank):
+        lv = Level(name, rank)
+        lv.core = [(0.175, 0.175, 0.35, 6.225), (6.65, 0.175, 6.825, 6.225), (0.35, 0.175, 6.65, 0.35),
+                   (0.35, 6.05, 6.65, 6.225), (4.20, 0.35, 4.315, 6.05), (4.315, 2.90, 6.65, 3.015),
+                   (5.55, 3.015, 5.665, 6.05)]
+        lv.insul = [(0, 0, 0.175, 6.40), (6.825, 0, 7.00, 6.40), (0.175, 0, 6.825, 0.175), (0.175, 6.225, 6.825, 6.40)]
+        lv.outline = outline
+        lv.heated_outline = outline
+        lv.unheated_edges = []
+        lv.stairs = [(5.665, 3.015, 6.65, 6.05, rank == 1)]
+        return lv
+
+    eg = upper('Erdgeschoss', 0)
+    o = eg.opening
+    o('window', (0.80, 6.05, 3.30, 6.40), 'front', 2.50, 2.20, 0.00, name='F1')
+    o('door', (4.43, 6.05, 5.44, 6.40), 'front', 1.01, 2.135, 0.00, hinge='a', swing=-1, name='Haustür')
+    o('window', (1.20, 0, 2.70, 0.35), 'rear', 1.50, 1.385, 0.76, name='F2')
+    o('window', (4.90, 0, 6.10, 0.35), 'rear', 1.20, 1.135, 1.01, name='F3')
+    o('window', (0, 2.00, 0.35, 3.26), 'left', 1.26, 2.20, 0.00, name='F4')
+    o('window', (6.65, 4.00, 7.00, 4.885), 'right', 0.885, 1.135, 1.01, name='F5')
+    o('door', (4.20, 4.00, 4.315, 4.885), 'interior', 0.885, 2.01, exterior=False, in_envelope=False, hinge='a', swing=-1)
+    o('door', (4.60, 2.90, 5.36, 3.015), 'interior', 0.76, 2.01, exterior=False, in_envelope=False, hinge='b', swing=-1)
+    o('door', (5.55, 3.40, 5.665, 5.60), 'interior', 2.20, 2.01, exterior=False, in_envelope=False, symbol='passage')
+    r = eg.room
+    r('Wohnen', rect_poly((0.35, 0.35, 4.20, 6.05)), (2.30, 4.10))
+    r('Küche', rect_poly((4.315, 0.35, 6.65, 2.90)), (5.48, 1.70))
+    r('Diele', rect_poly((4.315, 3.015, 5.55, 6.05)), (4.93, 3.75))
+    r('Treppe', rect_poly((5.665, 3.015, 6.65, 6.05)), (6.15, 4.50), show=False, kind='stair')
+
+    og = upper('Obergeschoss', 1)
+    og.core += [(0.35, 3.90, 4.20, 4.015)]
+    o = og.opening
+    o('window', (1.30, 6.05, 2.80, 6.40), 'front', 1.50, 1.385, 0.76, name='F6')
+    o('window', (1.30, 0, 2.80, 0.35), 'rear', 1.50, 1.385, 0.76, name='F7')
+    o('window', (5.00, 0, 5.885, 0.35), 'rear', 0.885, 1.135, 1.01, name='F8')
+    o('window', (0, 1.50, 0.35, 2.51), 'left', 1.01, 1.385, 0.76, name='F9')
+    o('door', (4.20, 3.05, 4.315, 3.85), 'interior', 0.80, 2.01, exterior=False, in_envelope=False, hinge='b', swing=-1)
+    o('door', (4.20, 4.20, 4.315, 5.00), 'interior', 0.80, 2.01, exterior=False, in_envelope=False, hinge='a', swing=-1)
+    o('door', (4.60, 2.90, 5.36, 3.015), 'interior', 0.76, 2.01, exterior=False, in_envelope=False, hinge='b', swing=-1)
+    o('door', (5.55, 3.40, 5.665, 5.60), 'interior', 2.20, 2.01, exterior=False, in_envelope=False, symbol='passage')
+    r = og.room
+    r('Schlafen', rect_poly((0.35, 0.35, 4.20, 3.90)), (2.00, 2.30))
+    r('Kind', rect_poly((0.35, 4.015, 4.20, 6.05)), (2.00, 5.05))
+    r('Bad', rect_poly((4.315, 0.35, 6.65, 2.90)), (5.48, 1.70))
+    r('Flur', rect_poly((4.315, 3.015, 5.55, 6.05)), (4.93, 3.75))
+    r('Treppe', rect_poly((5.665, 3.015, 6.65, 6.05)), (6.15, 4.50), show=False, kind='stair')
+    return kg, eg, og
+
+
+def make_a2_de():
+    name = 'planche_A2_de_titres_dessus'
+    path = os.path.join(HERE, name + '.pdf')
+    sh = Sheet(path, A2, 'Haus Beispiel – Lot 7 – Baugenehmigung (synthetisch)', "Planche d'essai synthétique : données inventées")
+    W, H = A2
+    sh.rect(18, 18, W - 18, H - 18, stroke=BLACK, w=0.6)
+    kg, eg, og = haus_beispiel()
+    fac = facade_azimuths(0.0)
+    de_area = lambda rm: f"{fr(rm['area'])} m²"  # noqa: E731
+    views = []
+    for lv, x0, title in ((kg, 110, 'GRUNDRISS KELLERGESCHOSS'), (eg, 580, 'GRUNDRISS ERDGESCHOSS'),
+                          (og, 1050, 'GRUNDRISS OBERGESCHOSS')):
+        V = View(x0, 125, 50)
+        t = draw_plan_generic(sh, V, lv, 7.00, 6.40, style='de', fill=False, area_fmt=de_area, area_col=BLACK,
+                              label_size=7.5, area_size=6.5, chains=(('rear', 0.5), ('left', 0.5)), fac_az=fac)
+        sh.line(*V.p(2.0, -0.3), *V.p(2.0, 0.0), 0.5, dash=[5, 2, 1, 2])
+        sh.line(*V.p(2.0, 6.40), *V.p(2.0, 6.62), 0.5, dash=[5, 2, 1, 2])
+        sh.text('A', *V.p(2.12, 6.66), 7, BOLD)
+        if lv.rank >= 0:
+            lbl = 'OKFF ' + ('EG ±0,00' if lv.rank == 0 else 'OG +2,75')
+        else:
+            lbl = 'OKFF KG -2,40'
+        level_mark_plan(sh, *V.p(0.75, 0.75), lbl, size=6)
+        cx = V.p(3.50, 0)[0]
+        tb = title_under(sh, [(title, 'n')], cx, 45, anchor='c')
+        t.update({'title': title, 'title_parts': [title], 'title_bbox_pt': tb, 'title_position': 'above-centered',
+                  'bbox_pt': [x0 - 70, 55, x0 + 410, 495]})
+        views.append(t)
+
+    # ── Schnitt A-A (x = 2,00 m ; u = y) ──
+    E = ElevView(205, 545 + 7.95 * PT_PER_M / 50, 50)
+    core = [(0, -2.45, 0.30, -0.37), (6.10, -2.45, 6.40, -0.37), (0, -2.70, 6.40, -2.45), (0.30, -0.37, 6.10, -0.17),
+            (0.175, -0.37, 0.35, 5.30), (6.05, -0.37, 6.225, 5.30), (0.35, 2.38, 6.05, 2.58), (3.90, 2.58, 4.015, 6.85)]
+    insul = [(0, -0.37, 0.175, 5.30), (6.225, -0.37, 6.40, 5.30), (0.30, -0.47, 6.10, -0.37), (0.35, -0.17, 6.05, -0.11),
+             (0.35, -0.11, 6.05, -0.08)]
+    win = [(6.05, 0.00, 6.40, 2.20), (0, 0.76, 0.35, 2.145), (6.05, 3.51, 6.40, 4.895), (0, 3.51, 0.35, 4.895)]
+    n_st = draw_section(sh, E, core, insul, win, u_range=(-1.5, 7.9), hole=(-0.10, -2.95, 6.50, -0.20),
+                        slabs=[(0.35, 6.05, -0.08, 0.0), (0.35, 6.05, 2.58, 2.75), (0.30, 6.10, -2.45, -2.40)],
+                        plaster=[(0.35, 6.05, 2.365)], length=6.40, caps=False, style='de', ground=-0.20, depth=-3.05,
+                        gravel=(-2.95, -2.75), lean=(-2.75, -2.70), seed=21)
+    s = 2.25 / 3.20
+    t_roof = 0.43
+    for side in (0, 1):
+        def mu(u):
+            return u if side == 0 else 6.40 - u
+        outer = [(mu(-0.50), 5.60 - 0.50 * s), (mu(3.20), 7.85)]
+        inner = [(mu(3.20), 7.85 - t_roof), (mu(-0.50), 5.60 - 0.50 * s - t_roof)]
+        poly = [E.p(*q) for q in outer + inner]
+        sh.hatch([poly], [135 if side == 0 else 45], 2.2, w=0.28)
+        sh.poly(poly, stroke=BLACK, w=0.71)
+        a, b = E.p(mu(-0.55), 5.60 - 0.55 * s + 0.05), E.p(mu(3.20), 7.90)
+        sh.line(*a, *b, 1.2)
+    for z, lab, nf in ((7.85, 'First +7,85', False), (5.60, 'Traufe +5,60', False), (2.75, '+2,75', True),
+                       (0.0, '±0,00', True)):
+        level_mark_elev2(sh, *E.p(-0.25, z), lab, nf, 'l', size=6, nf_text='OKFF')
+    level_mark_elev2(sh, *E.p(0.45, -2.40), '-2,40', True, 'r', size=6, nf_text='OKFF KG')
+    compos = []
+    for key, u, z, tgt in (('wand', 0.60, 5.05, (0.09, 5.10)), ('dach', 4.15, 5.35, (6.00, 5.70)),
+                           ('boden', 0.60, 2.00, (2.90, -0.12))):
+        ttl, el, lines = COMPO_DE[key]
+        b = annotation_block(sh, ttl, lines, *E.p(u, z), target=E.p(*tgt), size=6.2)
+        compos.append({'key': key, 'title': ttl, 'element': el, 'view': 'SCHNITT A-A', 'bbox_pt': [round(v, 2) for v in b],
+                       'target_pt': list(E.p(*tgt)), 'layers': layers_of(lines)})
+    tb = title_under(sh, [('SCHNITT A-A', 'n')], E.p(3.20, 0)[0], 532, anchor='c')
+    views.append({'kind': 'section', 'title': 'SCHNITT A-A', 'name': 'A-A', 'cut': {'axis': 'x', 'at_m': 2.00},
+                  'title_bbox_pt': tb, 'title_position': 'above-centered', 'scale_den': 50, 'stipple_traits': n_st,
+                  'bbox_pt': [115, 540, 660, 1170], 'building_bbox_pt': list(E.r(0, -2.95, 6.40, 7.90)),
+                  'roof': {'type': 'gable', 'ridge_m': 7.85, 'eaves_m': 5.60, 'pitch_deg': round(math.degrees(math.atan(s)), 1)}})
+
+    # ── Ansichten Nord / Süd ──
+    def ansicht(ox, title, ops, nm, az):
+        A = ElevView(ox, 545 + 7.95 * PT_PER_M / 50, 50)
+        sh.rect(*A.r(0, -0.20, 7.00, 5.60), fill=FACADE, stroke=BLACK, w=0.7)
+        roof = A.r(-0.30, 5.60 - 0.50 * s, 7.30, 7.85)
+        sh.rect(*roof, fill=ROOF, stroke=BLACK, w=0.7)
+        sh.lines([(A.p(-0.30, z), A.p(7.30, z)) for z in (5.75, 6.10, 6.45, 6.80, 7.15, 7.50)], 0.2)
+        sh.line(*A.p(0, 0.0), *A.p(7.00, 0.0), 0.3)
+        wins = []
+        for (u0, u1, za, zb, kind, label) in ops:
+            r_ = elev_window(sh, A, u0, u1, za, zb, kind)
+            wins.append({'kind': 'door' if kind == 'door' else 'window', 'name': label, 'rect_pt': r_,
+                         'width_m': round(u1 - u0, 3), 'height_m': round(zb - za, 3)})
+        sh.line(*A.p(-1.0, -0.20), *A.p(8.0, -0.20), 0.9)
+        tbx = title_under(sh, [(title, 'n')], A.p(3.50, 0)[0], 532, anchor='c')
+        views.append({'kind': 'elevation', 'title': title, 'name': nm, 'azimuth_deg': az, 'title_bbox_pt': tbx,
+                      'title_position': 'above-centered', 'scale_den': 50, 'openings': wins,
+                      'bbox_pt': [ox - 30, 540, ox + 430, A.p(0, -0.20)[1] + 10],
+                      'building_bbox_pt': list(A.r(-0.30, -0.20, 7.30, 7.85))})
+
+    ansicht(720, 'ANSICHT NORD', [(7.00 - 6.10, 7.00 - 4.90, 1.01, 2.145, 'window', 'F3'),
+                                  (7.00 - 2.70, 7.00 - 1.20, 0.76, 2.145, 'window', 'F2'),
+                                  (7.00 - 2.80, 7.00 - 1.30, 3.51, 4.895, 'window', 'F7'),
+                                  (7.00 - 5.885, 7.00 - 5.00, 3.76, 4.895, 'window', 'F8')], 'N', 0.0)
+    ansicht(1200, 'ANSICHT SÜD', [(0.80, 3.30, 0.00, 2.20, 'window', 'F1'), (4.43, 5.44, 0.00, 2.135, 'door', 'Haustür'),
+                                  (1.30, 2.80, 3.51, 4.895, 'window', 'F6')], 'S', 180.0)
+
+    # ── Schriftfeld, Nordpfeil ──
+    x0, y0, x1, y1 = 1490, 40, 1650, 380
+    sh.rect(x0, y0, x1, y1, stroke=BLACK, w=0.6)
+    tb_lines = [('Bauvorhaben:', 'l'), ('Neubau eines', 'b'), ('Einfamilienhauses', 'b'), ('Maison Exemple – Lot 7', 'n'),
+                ('12, rue des Essais', 'n'), ('L-0000 Exempleville', 'n'), ('', 'n'), ('Bauherr:', 'l'), ('M. et Mme Test', 'b'),
+                ('3, allée du Modèle', 'n'), ('L-0001 Fictiveville', 'n'), ('', 'n'), ('Gemeinde:', 'l'),
+                ('Administration communale', 'b'), ("d'Exempleville", 'b'), ('1, place de la Mairie', 'n'),
+                ('L-0000 Exempleville', 'n'), ('', 'n'), ('Architekt:', 'l'), ('Atelier Modèle', 'b'),
+                ('5, avenue des Plans', 'n'), ('L-0002 Démoville', 'n'), ('', 'n'), ('Phase: Baugenehmigung', 'n'),
+                ('Maßstab: 1:50', 'n'), ('Format: A2', 'n'), ('Datum: 15.01.2026', 'n'), ('Index: A', 'n'),
+                ('Plan-Nr.: EX-007-DE', 'n')]
+    yy = y0 + 14
+    for t, k in tb_lines:
+        if t:
+            sh.text(t, x0 + 8, yy, 5 if k == 'l' else 6.2, BOLD if k == 'b' else FONT, GREY_TXT if k == 'l' else BLACK)
+        yy += 10.5 if k != 'l' else 8
+    views.append({'kind': 'titleblock', 'title': None, 'bbox_pt': [x0, y0, x1, y1]})
+    nb = north_arrow(sh, 1570, 430, 20, 0.0, label='N', size=8)
+    views.append({'kind': 'north', 'title': 'N', 'bbox_pt': [round(v, 2) for v in nb]})
+    sh.save()
+
+    def heated(lv):
+        return round(sum(r['area'] for r in lv.rooms if r['heated']), 4)
+
+    truth = {
+        'file': name + '.pdf', 'synthetic': True, 'generator': 'tests/fixtures/pdf/planche/make_planches.py',
+        'style': 'archicad-de', 'language': 'de', 'scale_den': 50,
+        'north_azimuth_deg': 0.0, 'north_cw_from_up_deg': 0.0,
+        'facade_azimuth_deg': {'N': 0.0, 'S': 180.0, 'W': 270.0, 'E': 90.0},
+        'building': {'name': 'Haus Beispiel (Maison Exemple)', 'footprint_m': [7.00, 6.40], 'footprint_area_m2': 44.80,
+                     'attachment': 'detached', 'storeys_heated': 2, 'basement': {'level': -1, 'heated': False},
+                     'roof': 'gable', 'heated_area_by_level_m2': {'-1': heated(kg), '0': heated(eg), '1': heated(og)}},
+        'pages': [{
+            'number': 1, 'width_pt': W, 'height_pt': H, 'format': 'A2', 'orientation': 'landscape', 'scale_den': 50,
+            'views': views,
+            'levels': [
+                {'label': 'OKFF KG -2,40', 'value_m': -2.40, 'what': 'Fertigfußboden Kellergeschoss'},
+                {'label': '±0,00', 'value_m': 0.0, 'altitude_m': Z0_DE, 'what': 'Fertigfußboden Erdgeschoss'},
+                {'label': '+2,75', 'value_m': 2.75, 'what': 'Fertigfußboden Obergeschoss'},
+                {'label': 'Traufe +5,60', 'value_m': 5.60, 'what': 'Traufe'},
+                {'label': 'First +7,85', 'value_m': 7.85, 'what': 'First'},
+            ],
+            'storeys': [{'level': -1, 'floor_m': -2.40, 'storey_height_m': 2.40, 'heated': False},
+                        {'level': 0, 'floor_m': 0.0, 'storey_height_m': 2.75, 'heated': True},
+                        {'level': 1, 'floor_m': 2.75, 'storey_height_m': None, 'heated': True, 'under_roof': True}],
+            'compositions': compos,
+            'titleblock': {'object': 'Neubau eines Einfamilienhauses', 'phase': 'Baugenehmigung', 'project_name': 'Maison Exemple',
+                           'lot': 'Lot 7', 'street': '12, rue des Essais', 'postcode_locality': 'L-0000 Exempleville',
+                           'commune': 'Exempleville', 'date': '15.01.2026', 'format': 'A2', 'scale': '1:50', 'index': 'A',
+                           'project_number': 'EX-007-DE', 'owner': ['M. et Mme Test', '3, allée du Modèle', 'L-0001 Fictiveville'],
+                           'administration': ['Administration communale', "d'Exempleville", '1, place de la Mairie', 'L-0000 Exempleville'],
+                           'architect': ['Atelier Modèle', '5, avenue des Plans', 'L-0002 Démoville'], 'bbox_pt': [x0, y0, x1, y1]},
+            'equipment': [],
+            'counts': sh.page_counts[0],
+        }],
+    }
+    write_truth(os.path.join(HERE, name + '.truth.json'), truth)
+    return path
+
+
+# ═════════════════════════════ Variantes A3 au 1/100 : maison en L (deux pages) et plans sans titres ═════════════════════════════
+
+def maison_en_l():
+    """Maison isolée en L : corps 10,00 × 7,00 m et aile 4,00 × 4,00 m ; deux niveaux chauffés, toit plat."""
+    outline = [(0, 0), (10, 0), (10, 7), (4, 7), (4, 11), (0, 11)]
+    ext_core = [(0.20, 0.20, 0.44, 10.80), (0.44, 0.20, 9.80, 0.44), (9.56, 0.44, 9.80, 6.80), (3.56, 6.56, 9.56, 6.80),
+                (3.56, 6.80, 3.80, 10.80), (0.44, 10.56, 3.56, 10.80)]
+    ext_ins = [(0, 0, 0.20, 11.0), (0.20, 0, 10.0, 0.20), (9.80, 0.20, 10.0, 7.0), (3.80, 6.80, 9.80, 7.0),
+               (3.80, 7.0, 4.0, 11.0), (0.20, 10.80, 3.80, 11.0)]
+    rdc = Level('Rez-de-chaussée', 0)
+    rdc.core = ext_core + [(6.00, 0.44, 6.12, 6.56), (6.12, 3.80, 9.56, 3.92), (0.44, 6.56, 3.56, 6.68),
+                           (0.44, 8.80, 3.56, 8.92), (1.60, 8.92, 1.72, 10.56)]
+    rdc.insul = list(ext_ins)
+    o = rdc.opening
+    o('window', (1.00, 0, 4.00, 0.44), 'rear', 3.00, 2.15, 0.00, name='F1')
+    o('window', (7.00, 0, 8.60, 0.44), 'rear', 1.60, 1.25, 0.90, name='F2')
+    o('window', (9.56, 1.50, 10.0, 2.70), 'right', 1.20, 1.25, 0.90, name='F3')
+    o('window', (9.56, 4.80, 10.0, 5.80), 'right', 1.00, 1.25, 0.90, name='F4')
+    o('window', (4.40, 6.56, 5.60, 7.0), 'front', 1.20, 2.15, 0.00, name='F5')
+    o('window', (0, 2.00, 0.44, 3.20), 'left', 1.20, 1.25, 0.90, name='F6')
+    o('window', (0, 9.40, 0.44, 10.00), 'left', 0.60, 0.60, 1.60, name='F7')
+    o('window', (2.20, 10.56, 3.00, 11.0), 'front', 0.80, 1.00, 1.10, name='F8')
+    o('door', (3.56, 7.40, 4.0, 8.40), 'right', 1.00, 2.20, 0.00, hinge='a', swing=-1, name="Porte d'entrée")
+    o('door', (6.00, 4.80, 6.12, 5.80), 'interior', 1.00, 2.10, exterior=False, in_envelope=False, symbol='passage')
+    o('door', (6.80, 3.80, 7.60, 3.92), 'interior', 0.80, 2.10, exterior=False, in_envelope=False, hinge='a', swing=1)
+    o('door', (1.20, 6.56, 2.60, 6.68), 'interior', 1.40, 2.10, exterior=False, in_envelope=False, symbol='passage')
+    o('door', (0.60, 8.80, 1.40, 8.92), 'interior', 0.70, 2.10, exterior=False, in_envelope=False, hinge='a', swing=1)
+    r = rdc.room
+    r('Séjour', rect_poly((0.44, 0.44, 6.00, 6.56)), (3.00, 4.20))
+    r('Cuisine', rect_poly((6.12, 0.44, 9.56, 3.80)), (7.84, 2.40))
+    r('Bureau', rect_poly((6.12, 3.92, 9.56, 6.56)), (7.84, 5.30))
+    r('Entrée', rect_poly((0.44, 6.68, 3.56, 8.80)), (2.00, 7.90))
+    r('WC', rect_poly((0.44, 8.92, 1.60, 10.56)), (1.02, 10.05))
+    r('Escalier', rect_poly((1.72, 8.92, 3.56, 10.56)), (2.64, 9.70), show=False, kind='stair')
+    rdc.stairs = [(1.72, 8.92, 3.56, 10.56, False)]
+    rdc.outline = outline
+    rdc.heated_outline = outline
+    rdc.unheated_edges = []
+
+    et = Level('Étage', 1)
+    et.core = ext_core + [(0.44, 4.00, 9.56, 4.12), (4.80, 0.44, 4.92, 4.00), (6.00, 4.12, 6.12, 6.56),
+                          (0.44, 6.56, 3.56, 6.68), (0.44, 8.80, 3.56, 8.92), (1.60, 8.92, 1.72, 10.56)]
+    et.insul = list(ext_ins)
+    o = et.opening
+    o('window', (1.40, 0, 3.40, 0.44), 'rear', 2.00, 1.25, 0.90, name='F9')
+    o('window', (6.20, 0, 8.40, 0.44), 'rear', 2.20, 1.25, 0.90, name='F10')
+    o('window', (9.56, 1.60, 10.0, 2.60), 'right', 1.00, 1.25, 0.90, name='F11')
+    o('window', (9.56, 4.80, 10.0, 5.80), 'right', 1.00, 1.00, 1.20, name='F12')
+    o('window', (4.40, 6.56, 5.60, 7.0), 'front', 1.20, 1.25, 0.90, name='F13')
+    o('window', (3.56, 7.40, 4.0, 8.40), 'right', 1.00, 1.25, 0.90, name='F14')
+    o('window', (0, 7.40, 0.44, 8.60), 'left', 1.20, 1.25, 0.90, name='F15')
+    o('window', (0.80, 10.56, 1.40, 11.0), 'front', 0.60, 0.60, 1.60, name='F16')
+    o('door', (2.00, 4.00, 2.80, 4.12), 'interior', 0.80, 2.10, exterior=False, in_envelope=False, hinge='a', swing=-1)
+    o('door', (5.10, 4.00, 5.90, 4.12), 'interior', 0.80, 2.10, exterior=False, in_envelope=False, hinge='b', swing=-1)
+    o('door', (6.00, 4.80, 6.12, 5.60), 'interior', 0.80, 2.10, exterior=False, in_envelope=False, hinge='a', swing=1)
+    o('door', (1.20, 6.56, 2.00, 6.68), 'interior', 0.80, 2.10, exterior=False, in_envelope=False, hinge='a', swing=1)
+    o('door', (0.60, 8.80, 1.40, 8.92), 'interior', 0.70, 2.10, exterior=False, in_envelope=False, hinge='a', swing=1)
+    o('door', (2.00, 8.80, 3.40, 8.92), 'interior', 1.40, 2.10, exterior=False, in_envelope=False, symbol='passage')
+    r = et.room
+    r('Chambre 1', rect_poly((0.44, 0.44, 4.80, 4.00)), (2.62, 2.30))
+    r('Chambre 2', rect_poly((4.92, 0.44, 9.56, 4.00)), (7.24, 2.30))
+    r('Palier', rect_poly((0.44, 4.12, 6.00, 6.56)), (3.60, 5.40))
+    r('Salle de bains', rect_poly((6.12, 4.12, 9.56, 6.56)), (7.84, 5.20))
+    r('Chambre 3', rect_poly((0.44, 6.68, 3.56, 8.80)), (2.00, 7.70))
+    r('Débarras', rect_poly((0.44, 8.92, 1.60, 10.56)), (1.02, 10.05))
+    r('Escalier', rect_poly((1.72, 8.92, 3.56, 10.56)), (2.64, 9.70), show=False, kind='stair')
+    et.stairs = [(1.72, 8.92, 3.56, 10.56, True)]
+    et.outline = outline
+    et.heated_outline = outline
+    et.unheated_edges = []
+    return rdc, et
+
+
+def maison_rect():
+    """Maison isolée 8,00 × 10,00 m pour la planche sans titres."""
+    W, D = 8.00, 10.00
+    outline = rect_poly((0, 0, W, D))
+    ext_core = [(0.20, 0.20, 0.44, 9.80), (7.56, 0.20, 7.80, 9.80), (0.44, 0.20, 7.56, 0.44), (0.44, 9.56, 7.56, 9.80)]
+    ext_ins = [(0, 0, 0.20, 10.0), (7.80, 0, 8.0, 10.0), (0.20, 0, 7.80, 0.20), (0.20, 9.80, 7.80, 10.0)]
+    rdc = Level('Rez-de-chaussée', 0)
+    rdc.core = ext_core + [(0.44, 5.20, 7.56, 5.32), (4.60, 5.32, 4.72, 9.56), (2.60, 5.32, 2.72, 9.56),
+                           (0.44, 7.60, 2.60, 7.72)]
+    rdc.insul = list(ext_ins)
+    o = rdc.opening
+    o('window', (0.90, 0, 4.10, 0.44), 'rear', 3.20, 2.15, 0.00, name='F1')
+    o('window', (5.20, 0, 6.60, 0.44), 'rear', 1.40, 1.25, 0.90, name='F2')
+    o('window', (0, 2.00, 0.44, 3.40), 'left', 1.40, 1.25, 0.90, name='F3')
+    o('window', (0, 8.20, 0.44, 8.80), 'left', 0.60, 0.60, 1.60, name='F4')
+    o('door', (3.00, 9.56, 4.00, 10.0), 'front', 1.00, 2.20, 0.00, hinge='a', swing=-1, name="Porte d'entrée")
+    o('window', (5.40, 9.56, 6.80, 10.0), 'front', 1.40, 1.25, 0.90, name='F5')
+    o('door', (3.00, 5.20, 4.20, 5.32), 'interior', 1.20, 2.10, exterior=False, in_envelope=False, symbol='passage')
+    o('door', (4.60, 6.00, 4.72, 6.80), 'interior', 0.80, 2.10, exterior=False, in_envelope=False, hinge='a', swing=1)
+    o('door', (2.60, 8.20, 2.72, 8.90), 'interior', 0.70, 2.10, exterior=False, in_envelope=False, hinge='a', swing=-1)
+    r = rdc.room
+    r('Séjour / Cuisine', rect_poly((0.44, 0.44, 7.56, 5.20)), (3.00, 3.80))
+    r('Escalier', rect_poly((0.44, 5.32, 2.60, 7.60)), (1.52, 6.40), show=False, kind='stair')
+    r('WC', rect_poly((0.44, 7.72, 2.60, 9.56)), (1.30, 8.90))
+    r('Entrée', rect_poly((2.72, 5.32, 4.60, 9.56)), (3.66, 7.20))
+    r('Cellier', rect_poly((4.72, 5.32, 7.56, 9.56)), (6.14, 7.60))
+    rdc.stairs = [(0.44, 5.32, 2.60, 7.60, False)]
+    rdc.outline = outline
+    rdc.heated_outline = outline
+    rdc.unheated_edges = []
+
+    et = Level('Étage', 1)
+    et.core = ext_core + [(0.44, 4.20, 7.56, 4.32), (3.80, 0.44, 3.92, 4.20), (2.60, 4.32, 2.72, 9.56),
+                          (0.44, 7.60, 2.60, 7.72), (4.60, 4.32, 4.72, 9.56), (4.72, 6.60, 7.56, 6.72)]
+    et.insul = list(ext_ins)
+    o = et.opening
+    o('window', (1.00, 0, 3.00, 0.44), 'rear', 2.00, 1.25, 0.90, name='F6')
+    o('window', (4.80, 0, 6.80, 0.44), 'rear', 2.00, 1.25, 0.90, name='F7')
+    o('window', (0, 8.20, 0.44, 9.00), 'left', 0.80, 1.00, 1.20, name='F8')
+    o('window', (5.40, 9.56, 6.80, 10.0), 'front', 1.40, 1.25, 0.90, name='F9')
+    o('window', (7.56, 5.00, 8.0, 6.00), 'right', 1.00, 1.25, 0.90, name='F10')
+    o('door', (2.90, 4.20, 3.70, 4.32), 'interior', 0.80, 2.10, exterior=False, in_envelope=False, hinge='b', swing=-1)
+    o('door', (4.00, 4.20, 4.55, 4.32), 'interior', 0.55, 2.10, exterior=False, in_envelope=False, hinge='a', swing=-1)
+    o('door', (4.60, 5.00, 4.72, 5.80), 'interior', 0.80, 2.10, exterior=False, in_envelope=False, hinge='a', swing=1)
+    o('door', (4.60, 7.40, 4.72, 8.20), 'interior', 0.80, 2.10, exterior=False, in_envelope=False, hinge='a', swing=1)
+    o('door', (2.60, 8.20, 2.72, 8.90), 'interior', 0.70, 2.10, exterior=False, in_envelope=False, hinge='a', swing=-1)
+    r = et.room
+    r('Chambre 1', rect_poly((0.44, 0.44, 3.80, 4.20)), (2.12, 2.40))
+    r('Chambre 2', rect_poly((3.92, 0.44, 7.56, 4.20)), (5.74, 2.40))
+    r('Escalier', rect_poly((0.44, 4.32, 2.60, 7.60)), (1.52, 6.00), show=False, kind='stair')
+    r('Salle de bains', rect_poly((0.44, 7.72, 2.60, 9.56)), (1.52, 8.70))
+    r('Palier', rect_poly((2.72, 4.32, 4.60, 9.56)), (3.66, 7.00))
+    r('Chambre 3', rect_poly((4.72, 4.32, 7.56, 6.60)), (6.14, 5.50))
+    r('Chambre 4', rect_poly((4.72, 6.72, 7.56, 9.56)), (6.14, 8.20))
+    et.stairs = [(0.44, 4.32, 2.60, 7.60, True)]
+    et.outline = outline
+    et.heated_outline = outline
+    et.unheated_edges = []
+    return rdc, et
+
+
+def heated_by_level(levels):
+    return {str(lv.rank): round(sum(r['area'] for r in lv.rooms if r['heated']), 4) for lv in levels}
+
+
+def make_2pages():
+    name = 'planche_2pages'
+    path = os.path.join(HERE, name + '.pdf')
+    sh = Sheet(path, A3, 'Maison Exemple – Lot 7 – Autorisation de bâtir, 2 pages (planche synthétique)',
+               "Planche d'essai synthétique : données inventées")
+    W, H = A3
+    north_cw = 30.0
+    up_az = (360 - north_cw) % 360
+    fac = facade_azimuths(up_az)
+    rdc, et = maison_en_l()
+    # ── Page 1 : deux plans ──
+    sh.rect(18, 18, W - 18, H - 18, stroke=BLACK, w=0.6)
+    views1 = []
+    for lv, x0, parts, title in ((rdc, 150, [('PLAN REZ-DE-CHAUSSÉE', 'n')], 'PLAN REZ-DE-CHAUSSÉE'),
+                                 (et, 650, [('PLAN ÉTAGE', 'n')], 'PLAN ÉTAGE')):
+        V = View(x0, 150, 100)
+        t = draw_plan_generic(sh, V, lv, 10.0, 11.0, chains=(('rear', 1.0), ('left', 1.0)), fac_az=fac)
+        lbl = level_text(0.20 if lv.rank == 0 else 3.10, Z0_A1)
+        level_mark_plan(sh, *V.p(1.0, 5.6 if lv.rank == 0 else 5.0), lbl)
+        sh.line(*V.p(2.0, -2.4), *V.p(2.0, -0.2), 0.4, dash=[4, 1.5, 1, 1.5])
+        sh.line(*V.p(2.0, 11.2), *V.p(2.0, 12.0), 0.4, dash=[4, 1.5, 1, 1.5])
+        section_marker(sh, *V.p(2.0, 12.3), 'A', (-1, 0))
+        tb = title_under(sh, parts, x0 - 60, 560)
+        t.update({'title': title, 'title_parts': [p for p, _ in parts], 'title_bbox_pt': tb, 'title_position': 'below-left',
+                  'bbox_pt': [x0 - 70, 70, x0 + 300, 530]})
+        views1.append(t)
+    nb = north_arrow(sh, 1110, 90, 20, north_cw)
+    views1.append({'kind': 'north', 'title': 'NORD', 'bbox_pt': [round(v, 2) for v in nb]})
+    counts1 = dict(sh.counts)
+    sh.new_page()
+
+    # ── Page 2 : coupe, deux façades, cartouche ──
+    sh.rect(18, 18, W - 18, H - 18, stroke=BLACK, w=0.6)
+    views2 = []
+    E = ElevView(60, 300, 100, u0=-3.0)
+    core = [(0, -0.24, 11.0, 0.01), (0.20, 0.01, 0.44, 6.40), (10.56, 0.01, 10.80, 6.40), (0.44, 2.79, 10.56, 2.99),
+            (0.44, 5.69, 10.56, 5.91), (6.56, 0.01, 6.68, 2.79), (8.80, 0.01, 8.92, 2.79), (4.00, 2.99, 4.12, 5.69),
+            (6.56, 2.99, 6.68, 5.69), (8.80, 2.99, 8.92, 5.69)]
+    insul = [(0, -0.24, 0.20, 6.40), (10.80, -0.24, 11.0, 6.40), (0.44, 0.01, 10.56, 0.11), (0, -0.32, 11.0, -0.24),
+             (0.44, 5.91, 10.56, 6.11)]
+    win = [(0, 0.20, 0.44, 2.35), (0, 4.00, 0.44, 5.25)]
+    n_st = draw_section(sh, E, core, insul, win, u_range=(-3.0, 14.0), hole=(-0.20, -0.62, 11.20, -0.05),
+                        slabs=[(0.44, 10.56, 0.11, 0.20), (0.44, 10.56, 2.99, 3.10)], plaster=[(0.44, 10.56, 2.78), (0.44, 10.56, 5.68)],
+                        length=11.0, membrane=(0.44, 6.11, 10.56, 6.13), depth=-1.6, seed=31)
+    for z, nf in ((0.20, True), (3.10, True), (6.40, False)):
+        level_mark_elev2(sh, *E.p(-0.25, z), level_text(z, Z0_A1), nf, 'l')
+    compos = []
+    for key, u, z, tgt in (('dalle_sol', 1.00, 2.45, (5.80, 0.15)), ('toiture', 1.00, 5.40, (4.60, 6.00))):
+        ttl, el, lines = COMPO_A1[key]
+        b = annotation_block(sh, ttl, lines, *E.p(u, z), target=E.p(*tgt), size=4.6)
+        compos.append({'key': key, 'title': ttl, 'element': el, 'view': 'COUPE A-A', 'bbox_pt': [round(v, 2) for v in b],
+                       'target_pt': list(E.p(*tgt)), 'layers': layers_of(lines)})
+    tb = title_under(sh, [('COUPE A-A', 'n')], 60, 375, size=14)
+    views2.append({'kind': 'section', 'title': 'COUPE A-A', 'name': 'A-A', 'cut': {'axis': 'x', 'at_m': 2.0}, 'scale_den': 100,
+                   'title_bbox_pt': tb, 'title_position': 'below-left', 'bbox_pt': [40, 100, 545, 350],
+                   'building_bbox_pt': list(E.r(0, -0.62, 11.0, 6.45)), 'stipple_traits': n_st})
+
+    fa = ElevView(660, 300, 100)
+    front_open = [(4.40, 5.60, 0.20, 2.35, 'window', 'F5'), (2.20, 3.00, 1.30, 2.30, 'window', 'F8'),
+                  (4.40, 5.60, 4.00, 5.25, 'window', 'F13'), (0.80, 1.40, 4.70, 5.30, 'window', 'F16')]
+
+    def wing_line():
+        sh.line(*fa.p(4.0, -0.05), *fa.p(4.0, 6.40), 0.5)
+
+    wins, tbf = facade_a1(sh, fa, 10.0, front_open, 'FAÇADE AVANT', 640, 375, 'r', extras=wing_line)
+    views2.append({'kind': 'elevation', 'title': 'FAÇADE AVANT', 'name': 'front', 'azimuth_deg': fac['front'], 'scale_den': 100,
+                   'title_bbox_pt': tbf, 'title_position': 'below-left', 'openings': wins, 'bbox_pt': [620, 100, 1120, 330],
+                   'building_bbox_pt': list(fa.r(0, -0.05, 10.0, 6.45))})
+    fr2 = ElevView(660, 640, 100)
+    rear_open = [(10 - 4.00, 10 - 1.00, 0.20, 2.35, 'window', 'F1'), (10 - 8.60, 10 - 7.00, 1.10, 2.35, 'window', 'F2'),
+                 (10 - 3.40, 10 - 1.40, 4.00, 5.25, 'window', 'F9'), (10 - 8.40, 10 - 6.20, 4.00, 5.25, 'window', 'F10')]
+    wins, tbr = facade_a1(sh, fr2, 10.0, rear_open, 'FAÇADE ARRIÈRE', 640, 715, 'r')
+    views2.append({'kind': 'elevation', 'title': 'FAÇADE ARRIÈRE', 'name': 'rear', 'azimuth_deg': fac['rear'], 'scale_den': 100,
+                   'title_bbox_pt': tbr, 'title_position': 'below-left', 'openings': wins, 'bbox_pt': [620, 440, 1120, 670],
+                   'building_bbox_pt': list(fr2.r(0, -0.05, 10.0, 6.45))})
+    blocks = cartouche_fr(sh, 40, 450, 540, 800, 'A3', '1/100', 'Plans rez-de-chaussée et étage / Coupe A-A / Façades',
+                          big=False)
+    views2.append({'kind': 'titleblock', 'title': None, 'bbox_pt': [40, 450, 540, 800]})
+    sh.save()
+
+    truth = {
+        'file': name + '.pdf', 'synthetic': True, 'generator': 'tests/fixtures/pdf/planche/make_planches.py',
+        'style': 'archicad', 'language': 'fr', 'scale_den': 100,
+        'north_azimuth_deg': up_az, 'north_cw_from_up_deg': north_cw,
+        'facade_azimuth_deg': {'front': fac['front'], 'rear': fac['rear'], 'left': fac['left'], 'right': fac['right']},
+        'building': {'name': 'Maison Exemple (en L)', 'footprint_m': [10.0, 11.0], 'footprint_area_m2': 86.0,
+                     'shape': 'L', 'attachment': 'detached', 'storeys_heated': 2, 'basement': False, 'roof': 'flat',
+                     'heated_area_by_level_m2': heated_by_level([rdc, et])},
+        'pages': [
+            {'number': 1, 'width_pt': W, 'height_pt': H, 'format': 'A3', 'orientation': 'landscape', 'scale_den': 100,
+             'views': views1, 'counts': counts1},
+            {'number': 2, 'width_pt': W, 'height_pt': H, 'format': 'A3', 'orientation': 'landscape', 'scale_den': 100,
+             'views': views2, 'compositions': compos,
+             'levels': [{'label': level_text(z, Z0_A1), 'value_m': z} for z in (0.20, 3.10, 6.40)],
+             'storeys': [{'level': 0, 'floor_m': 0.20, 'storey_height_m': 2.90, 'clear_height_m': 2.58},
+                         {'level': 1, 'floor_m': 3.10, 'storey_height_m': 3.03, 'clear_height_m': 2.58}],
+             'titleblock': titleblock_truth(blocks, 'A3', '1/100', [40, 450, 540, 800]),
+             'counts': sh.page_counts[1]},
+        ],
+    }
+    write_truth(os.path.join(HERE, name + '.truth.json'), truth)
+    return path
+
+
+def make_sans_titres():
+    name = 'planche_sans_titres'
+    path = os.path.join(HERE, name + '.pdf')
+    sh = Sheet(path, A3, 'Maison Exemple – Lot 7 – plans sans titres (planche synthétique)',
+               "Planche d'essai synthétique : données inventées")
+    W, H = A3
+    sh.rect(18, 18, W - 18, H - 18, stroke=BLACK, w=0.6)
+    rdc, et = maison_rect()
+    fac = facade_azimuths(0.0)
+    views = []
+    for lv, x0 in ((rdc, 130), (et, 500)):
+        V = View(x0, 170, 100)
+        t = draw_plan_generic(sh, V, lv, 8.0, 10.0, chains=(('rear', 1.0), ('left', 1.0)), fac_az=fac,
+                              tiles_rect=(0.44, 7.72, 2.60, 9.56) if lv.rank == 1 else None)
+        t.update({'title': None, 'title_parts': [], 'title_position': None, 'bbox_pt': [x0 - 70, 90, x0 + 250, 470]})
+        views.append(t)
+    blocks = cartouche_fr(sh, 800, 470, 1170, 800, 'A3', '1/100', 'Plans', big=False)
+    views.append({'kind': 'titleblock', 'title': None, 'bbox_pt': [800, 470, 1170, 800]})
+    nb = north_arrow(sh, 1080, 110, 20, 0.0)
+    views.append({'kind': 'north', 'title': 'NORD', 'bbox_pt': [round(v, 2) for v in nb]})
+    sh.save()
+    truth = {
+        'file': name + '.pdf', 'synthetic': True, 'generator': 'tests/fixtures/pdf/planche/make_planches.py',
+        'style': 'archicad', 'language': 'fr', 'scale_den': 100,
+        'north_azimuth_deg': 0.0, 'north_cw_from_up_deg': 0.0,
+        'building': {'name': 'Maison Exemple (rectangulaire)', 'footprint_m': [8.0, 10.0], 'footprint_area_m2': 80.0,
+                     'attachment': 'detached', 'storeys_heated': 2, 'basement': False,
+                     'heated_area_by_level_m2': heated_by_level([rdc, et])},
+        'note': 'Aucun titre de vue : le découpage doit se faire sans titres (cas de repli). Le cartouche dit seulement « Plans ».',
+        'pages': [{'number': 1, 'width_pt': W, 'height_pt': H, 'format': 'A3', 'orientation': 'landscape', 'scale_den': 100,
+                   'views': views, 'titleblock': titleblock_truth(blocks, 'A3', '1/100', [800, 470, 1170, 800]),
+                   'counts': sh.page_counts[0]}],
+    }
+    write_truth(os.path.join(HERE, name + '.truth.json'), truth)
+    return path
+
+
 def main():
-    paths = [make_a1()]
+    paths = [make_a1(), make_a2_de(), make_2pages(), make_sans_titres()]
     for p in paths:
         print(os.path.basename(p), os.path.getsize(p))
 
