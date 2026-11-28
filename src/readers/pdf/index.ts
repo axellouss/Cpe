@@ -22,6 +22,7 @@
  *  - messages.ts      textes FR / DE.
  */
 import type { Lang, PlanDocument } from '../../core/types';
+import type { ReadProgress } from '../index';
 import { analysePdf } from './analyse';
 import type { PageReport } from './analyse';
 import { extractPage } from './extract';
@@ -47,6 +48,8 @@ export interface ReadPdfOptions {
   lang?: Lang;
   /** Produire l'image de fond quand l'environnement le permet (oui par défaut). */
   images?: boolean;
+  /** Suivi de la lecture, étape par étape (open, views, rooms, envelope, layers, check). */
+  onProgress?: (progress: ReadProgress) => void;
 }
 
 /** Détails de lecture utiles aux tests et au diagnostic (hors contrat PlanDocument). */
@@ -85,6 +88,14 @@ export async function createPdfEngine(): Promise<PdfEngine> {
 export async function readPdfDetailed(data: ArrayBuffer, fileName: string, options: ReadPdfOptions = {}): Promise<{ doc: PlanDocument; details: PdfReadDetails }> {
   const lang: Lang = options.lang ?? 'fr';
   const t0 = now();
+  const emit = (p: ReadProgress): void => {
+    try {
+      options.onProgress?.(p);
+    } catch {
+      // Le suivi ne doit jamais interrompre la lecture.
+    }
+  };
+  emit({ stage: 'open', status: 'running' });
   const engine = await createPdfEngine();
   let opened;
   try {
@@ -118,8 +129,10 @@ export async function readPdfDetailed(data: ArrayBuffer, fileName: string, optio
       await pause();
     }
     const t1 = now();
+    emit({ stage: 'open', status: 'done', counts: { pages: count, texts: raw.reduce((n, p) => n + p.texts.length, 0) } });
+    await pause();
 
-    const analysis = analysePdf(raw, fileName, { lang });
+    const analysis = analysePdf(raw, fileName, { lang, onProgress: emit });
     const doc = analysis.doc;
     if (pageCount > count) doc.warnings.push(msg(lang, 'pdf.warn.pages', { total: pageCount, kept: count }));
     const t2 = now();

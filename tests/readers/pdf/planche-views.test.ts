@@ -208,9 +208,13 @@ describe('planche sans titres de vues : repli', () => {
       expect(v.title).toBeNull();
       expect(v.storeyRank).toBeNull();
       expect(v.confidence).toBeLessThan(0.65);
-      expect(v.sheetId).toBeNull();
+      // La vue ne commande pas la page, mais la lecture complète la rattache après coup à la feuille du chemin
+      // existant qui couvre la même étendue (une feuille par vue) : sa géométrie et ses preuves s'y retrouvent.
+      expect(v.sources).toContain('sheet-overlap');
+      expect(doc.sheets.map((s) => s.id)).toContain(v.sheetId);
       expect(v.doubts.length).toBeGreaterThan(0);
     }
+    expect(new Set(plans.map((v) => v.sheetId)).size).toBe(2);
   });
 
   it('chemin existant : deux plans séparés par la page entière, chacun avec ses pièces', async () => {

@@ -70,25 +70,40 @@ export interface ReadProgress {
 
 export async function readPlanFile(file: FileLike, options: ReadPlanOptions = {}): Promise<PlanDocument> {
   const lang: Lang = options.lang ?? 'fr';
+  const report = (p: ReadProgress): void => {
+    try {
+      options.onProgress?.(p);
+    } catch {
+      // Le suivi ne doit jamais interrompre la lecture.
+    }
+  };
   const data = await file.arrayBuffer();
   const kind = sniffKind(file.name, new Uint8Array(data, 0, Math.min(32, data.byteLength)));
+  // Lecteurs sans étapes détaillées : seule l'ouverture est suivie (le PDF suit lui-même toutes ses étapes).
+  const opened = (doc: PlanDocument): PlanDocument => {
+    report({ stage: 'open', status: 'done', counts: { sheets: doc.sheets.length } });
+    return doc;
+  };
   switch (kind) {
     case 'ifc': {
+      report({ stage: 'open', status: 'running' });
       const { readIfc } = await import('./ifc');
-      return readIfc(data, file.name, { lang });
+      return opened(await readIfc(data, file.name, { lang }));
     }
     case 'dwg':
     case 'dxf': {
+      report({ stage: 'open', status: 'running' });
       const { readCad } = await import('./cad');
-      return readCad(data, file.name, kind, { lang });
+      return opened(await readCad(data, file.name, kind, { lang }));
     }
     case 'pdf': {
       const { readPdf } = await import('./pdf');
-      return readPdf(data, file.name, { lang });
+      return readPdf(data, file.name, { lang, onProgress: report });
     }
     case 'image': {
+      report({ stage: 'open', status: 'running' });
       const { readImage } = await import('./image');
-      return readImage(data, file.name, { lang });
+      return opened(await readImage(data, file.name, { lang }));
     }
     default:
       throw new UnsupportedFormatError(kind, file.name);

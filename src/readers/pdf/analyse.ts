@@ -19,6 +19,8 @@
  */
 import { cleanPolygon, isSelfIntersecting, normDeg, round } from '../../core/geometry';
 import { emptyReading } from '../../core/reading';
+import type { ReadProgress } from '../index';
+import { integrateReading, type IntegrateResult } from './integrate';
 import type { ReadView } from '../../core/reading';
 import type { BBox, DetectedOpening, DetectedRoom, Lang, PlanDocument, PlanSheet, PlanText, Sourced, Vec2 } from '../../core/types';
 import { formatNumber } from '../../i18n';
@@ -60,6 +62,10 @@ const ROOM_AREA_TOLERANCE = 0.03;
 export interface AnalyseOptions {
   /** Langue des avertissements et remarques (français par défaut, comme le veut le contrat). */
   lang?: Lang;
+  /** Suivi de la lecture (étapes views, rooms, envelope, layers, check). */
+  onProgress?: (progress: ReadProgress) => void;
+  /** Faux : pas de lecture complète (textes, géométrie, recoupements) — chemin habituel seul (diagnostic). */
+  integrate?: boolean;
 }
 
 /** Où se trouve une feuille dans le PDF : sert à produire son image de fond. */
@@ -103,6 +109,8 @@ export interface PdfAnalysis {
   /** Une entrée par feuille de `doc.sheets`, dans le même ordre. */
   placements: SheetPlacement[];
   pages: PageReport[];
+  /** Lecture complète : géométrie par feuille, textes, durées (diagnostic, tests). */
+  integration: IntegrateResult | null;
 }
 
 // ───────────────────────────── Outils ─────────────────────────────
@@ -2031,5 +2039,22 @@ export function analysePdf(pages: readonly RawPage[], fileName: string, options:
     // `north` = direction du nord, en degrés horaires depuis le haut ; le haut de la feuille pointe donc vers −north.
     doc.northAngle = { value: round(normDeg(-north), 1), from: 'estimate', note: msg(lang, 'pdf.north.note') };
   }
-  return { doc, placements: drafts.map((d) => d.placement), pages: reports };
+  // Lecture complète : textes, géométrie des plans, bâtiment, hauteurs, recoupements (integrate.ts).
+  let integration: IntegrateResult | null = null;
+  if (options.integrate !== false) {
+    try {
+      integration = integrateReading(pages, doc, {
+        lang,
+        declaredDen: (n) => {
+          const r = reports.find((x) => x.page === n);
+          return r?.declared[0] ?? r?.scaleDen ?? null;
+        },
+        ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+      });
+      doc.warnings = [...new Set([...doc.warnings.filter((w) => !integration!.obsolete(w)), ...integration.warnings])];
+    } catch (error) {
+      reading.log.push(`lecture complète en échec : ${String(error)}`);
+    }
+  }
+  return { doc, placements: drafts.map((d) => d.placement), pages: reports, integration };
 }
