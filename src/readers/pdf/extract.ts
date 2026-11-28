@@ -10,15 +10,21 @@
  *  - `item.transform` d'un texte reste dans le repère NATIF de la page : le sens de lecture se transforme
  *    avec la matrice de la vue (qui contient la rotation).
  *
- * En plus des traits, l'extraction suit les zones de découpe (clip / eoClip, pile save / restore, cadre des Form
- * XObjects), les couleurs de trait et de remplissage, l'opacité et les paramètres d'un ExtGState (LW, D, ca), et
- * rend les remplissages (anneaux, couleur, aire). Elle ALLÈGE la page (voir hatch.ts) : les trames de micro-traits
- * et les hachures sont retirées de `segs` et résumées en zones ; le plafond de traits s'applique ensuite seulement.
- * Les bords de remplissage restent dans `segs` (fill: true) comme avant.
+ * En plus des traits, l'extraction suit les zones de découpe (clip / eoClip, pile save / restore ; le cadre BBox
+ * d'un Form XObject n'est PAS compté comme découpe, voir paintFormXObjectBegin), les couleurs de trait et de
+ * remplissage, l'opacité de remplissage et les paramètres d'un ExtGState (LW, D, ca), et rend les remplissages
+ * (anneaux, couleur, aire). Elle ALLÈGE la page (voir hatch.ts) : les trames de micro-traits et les hachures sont
+ * retirées de `segs` et résumées en zones ; le plafond de traits s'applique ensuite seulement. Les bords de
+ * remplissage restent dans `segs` (fill: true) comme avant.
+ *
+ * Mémoire : un tracé qu'aucune règle d'allègement ne peut retirer (remplissage, tracé hors petite découpe qui n'est
+ * pas une hachure d'un seul tracé) est « sûr ». Dès que les traits sûrs atteignent le plafond, la suite serait
+ * coupée de toute façon : on ne garde plus ses traits (on compte seulement les bilans des découpes, pour que les
+ * décisions de trame restent les mêmes), comme l'ancienne lecture s'arrêtait au plafond.
  *
  * C'est le seul fichier qui manipule les listes d'opérateurs non typées de pdf.js.
  */
-import { emptyBox, groupHatches, growBox, isMicroExtent, stippleZones } from './hatch';
+import { boxArea, emptyBox, groupHatches, growBox, HATCH_MAX_CLIP_SHARE, isMicroExtent, pathHatchOf, PATH_HATCH_MIN_SEGS, stippleZones } from './hatch';
 import type { ClipStrokeStat, Ring } from './hatch';
 import type { OpCodes, PDFPageProxy } from './pdfjs';
 import type { ClipZone, FillArea, ImageArea, RawBox, RawPage, RawSeg, RawText } from './raw';
@@ -335,6 +341,8 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
   const imageAreas: ImageArea[] = [];
   let truncated = false;
   let rawStrokeSegs = 0;
+  /** Traits gardés qu'aucune règle d'allègement ne peut retirer (voir l'en-tête). */
+  let sureSegs = 0;
 
   interface GraphicState {
     ctm: Matrix;
@@ -374,6 +382,21 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
     let s = stats[clip];
     if (!s) stats[clip] = s = { all: 0, micro: 0, box: emptyBox(), color: 0 };
     return s;
+  };
+
+  /**
+   * Les traits du tracé qui vient d'être lu (segs[from..]) sont-ils sûrs de rester ? Bords de remplissage : oui.
+   * Sinon non sous une petite découpe (hachure possible), ni si le tracé a des micro-sous-tracés en attente, ni
+   * s'il passe le repli « hachure d'un seul tracé » (mêmes critères que groupHatches).
+   */
+  const isSure = (fill: boolean, clip: number, hasMicro: boolean, from: number): boolean => {
+    if (fill || !lighten) return true;
+    if (clip !== 0 && boxArea(clips[clip]!.bbox) <= HATCH_MAX_CLIP_SHARE * pageArea) return false;
+    if (hasMicro) return false;
+    if (segs.length - from < PATH_HATCH_MIN_SEGS) return true;
+    const straight: RawSeg[] = [];
+    for (let k = from; k < segs.length; k++) if (!segs[k]!.curve) straight.push(segs[k]!);
+    return straight.length < PATH_HATCH_MIN_SEGS || pathHatchOf(straight, pageArea) === null;
   };
 
   const save = (): void => {
@@ -467,10 +490,13 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
       if (typeof paintOp !== 'number' || !(data instanceof Float32Array)) continue;
       const stroke = strokeOps.has(paintOp);
       const fill = fillOps.has(paintOp);
-      let paint = (stroke || fill) && hidden === 0; // sinon : tracé de découpe seul, ou calque masqué
-      if (paint && segs.length >= collectLimit) {
+      const paint = (stroke || fill) && hidden === 0; // sinon : tracé de découpe seul, ou calque masqué
+      // Collecte saturée : ce tracé serait au-delà du plafond ; il compte encore dans les bilans (trames) et ses
+      // remplissages restent lus, mais ses traits ne sont plus gardés.
+      let keep = paint;
+      if (paint && (sureSegs >= maxSegments || segs.length >= collectLimit)) {
         truncated = true;
-        paint = false;
+        keep = false;
       }
       if (!paint && !clipNow) continue;
       const M = mul(V, gs.ctm);
@@ -489,32 +515,40 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
       let ring: Ring | null = null;
       let ringClosed = false;
       let sub: RawSeg[] = [];
+      let subN = 0;
+      const firstSeg = segs.length;
+      let hadMicro = false;
       let sx0 = Infinity;
       let sy0 = Infinity;
       let sx1 = -Infinity;
       let sy1 = -Infinity;
       const emit = (s: RawSeg): void => {
-        segs.push(s);
+        if (keep) segs.push(s);
         if (stroke) {
           rawStrokeSegs++;
           statOf(clip).all++;
         }
       };
       const flush = (): void => {
-        if (sub.length === 0) return;
+        if (subN === 0) return;
         if (isMicroExtent(sx1 - sx0, sy1 - sy0)) {
+          hadMicro = true;
           const st = statOf(clip);
-          for (const s of sub) {
-            rawStrokeSegs++;
-            st.all++;
-            if (st.micro === 0) st.color = color;
-            st.micro++;
-            growBox(st.box, s.x0, s.y0);
-            growBox(st.box, s.x1, s.y1);
-            if (!micro.add(s, segs.length)) lostMicro.set(clip, (lostMicro.get(clip) ?? 0) + 1);
-          }
-        } else for (const s of sub) emit(s);
+          rawStrokeSegs += subN;
+          st.all += subN;
+          if (st.micro === 0) st.color = color;
+          st.micro += subN;
+          // L'emprise d'un sous-tracé est celle de ses extrémités.
+          growBox(st.box, sx0, sy0);
+          growBox(st.box, sx1, sy1);
+          for (const s of sub) if (!micro.add(s, segs.length)) lostMicro.set(clip, (lostMicro.get(clip) ?? 0) + 1);
+        } else if (keep) for (const s of sub) emit(s);
+        else {
+          rawStrokeSegs += subN;
+          statOf(clip).all += subN;
+        }
         sub = [];
+        subN = 0;
         sx0 = sy0 = Infinity;
         sx1 = sy1 = -Infinity;
       };
@@ -522,12 +556,16 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
         if (!paint) return;
         if (p[0] === q[0] && p[1] === q[1]) return;
         if (!Number.isFinite(p[0] + p[1] + q[0] + q[1])) return;
-        const s: RawSeg = { x0: p[0], y0: p[1], x1: q[0], y1: q[1], w, curve, stroke, fill, dash, pid: id, clip, color };
         if (!judge) {
-          emit(s);
+          if (keep) emit({ x0: p[0], y0: p[1], x1: q[0], y1: q[1], w, curve, stroke, fill, dash, pid: id, clip, color });
+          else if (stroke) {
+            rawStrokeSegs++;
+            statOf(clip).all++;
+          }
           return;
         }
-        sub.push(s);
+        subN++;
+        if (keep) sub.push({ x0: p[0], y0: p[1], x1: q[0], y1: q[1], w, curve, stroke, fill, dash, pid: id, clip, color });
         if (p[0] < sx0) sx0 = p[0];
         if (p[0] > sx1) sx1 = p[0];
         if (p[1] < sy0) sy0 = p[1];
@@ -613,6 +651,7 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
       // Un remplissage, ou un tracé « fermer puis tracer », referme implicitement le contour.
       if ((closeOps.has(paintOp) || (fill && !stroke)) && cur && start) push(cur, start, false);
       if (judge) flush();
+      if (keep && segs.length > firstSeg && isSure(fill, clip, hadMicro, firstSeg)) sureSegs += segs.length - firstSeg;
       if (wantRings) {
         const clean = cleanRings(rings);
         if (paint && fill && clean.length > 0 && fills.length < MAX_PAGE_FILLS) {

@@ -30,11 +30,18 @@ export const PATH_HATCH_MIN_SEGS = 12;
 /** … dont au plus cette part est jointe bout à bout (une polyligne n'est pas une hachure)… */
 export const PATH_HATCH_MAX_JOINED = 0.2;
 /**
- * … et de pas serré (pt, ≈ 0,9 mm sur le papier). Sans découpe pour borner la zone, des marches d'escalier ou un
- * quadrillage dessinés d'un seul tracé ressemblent à une hachure ; une marche (≥ 0,18 m) dépasse ce pas jusqu'au
- * 1/200, une hachure de mur ou d'isolant reste en dessous.
+ * … de pas serré (pt, ≈ 0,9 mm sur le papier) : une hachure de mur ou d'isolant se dessine sous ce pas, alors
+ * qu'une marche d'escalier (≥ 0,18 m) ou un quadrillage le dépassent jusqu'au 1/200…
  */
 export const PATH_HATCH_MAX_SPACING = 2.5;
+/**
+ * … et, dans chaque direction, au moins autant de droites CONSÉCUTIVES formant une bande continue. Sans découpe
+ * pour borner la zone, c'est ce qui sépare une hachure des traits de vitrage de toutes les fenêtres d'un niveau
+ * émis en un seul tracé : deux à quatre traits serrés par baie, puis un grand saut jusqu'à la façade suivante.
+ */
+export const PATH_HATCH_MIN_LINES = 6;
+/** Hachure croisée : rapport maximal entre les pas des deux directions (carreaux jusqu'au 1 × 2). */
+export const HATCH_CROSS_MAX_RATIO = 2.2;
 
 /** Largeur d'une classe de direction (degrés). */
 const ANGLE_BIN = 5;
@@ -48,6 +55,10 @@ const SPACING_TOL = 0.2;
 const MAX_STEP_MULTIPLE = 6;
 /** Part des écarts qui doivent être des multiples du pas. */
 const REGULAR_SHARE = 0.8;
+/** Bande continue (hachure sans découpe) : part des écarts égaux au pas, les autres valant au plus deux pas. */
+const BAND_SHARE = 0.9;
+/** Bande continue : part des droites voisines dont les étendues se recouvrent. */
+const BAND_OVERLAP_SHARE = 0.9;
 
 export interface LineLike {
   x0: number;
@@ -59,7 +70,10 @@ export interface LineLike {
 export interface HatchPattern {
   /** Directions retenues (degrés, 0..175 par pas de 5) : une = hachure simple, deux = croisée. */
   angles: number[];
-  /** Pas moyen entre droites voisines (pt). */
+  /**
+   * Pas (pt) : moyenne, sur les directions, du pas de chaque direction (quartile bas des écarts entre droites
+   * voisines sous découpe, médiane pour une bande sans découpe ; robuste aux droites manquantes).
+   */
   spacing: number;
 }
 
@@ -98,6 +112,33 @@ export function directionBin(s: LineLike): number {
  * seule droite. Renvoie null sinon.
  */
 export function hatchOf(segs: readonly LineLike[]): HatchPattern | null {
+  const fam = hatchFamilies(segs);
+  if (!fam) return null;
+  const spacings: number[] = [];
+  for (const [deg, members] of fam) {
+    const step = regularStep(members, deg);
+    if (step === null) return null;
+    spacings.push(step);
+  }
+  return patternOf(fam, spacings);
+}
+
+/**
+ * Hachure d'après ses familles et leurs pas : angles croissants ; une hachure croisée garde des pas voisins
+ * (rapport ≤ HATCH_CROSS_MAX_RATIO) — une grille de tableau (lignes serrées, colonnes larges) n'en est pas une.
+ */
+function patternOf(fam: readonly (readonly [number, readonly LineLike[]])[], spacings: readonly number[]): HatchPattern | null {
+  if (spacings.length === 2) {
+    const a = spacings[0]!;
+    const b = spacings[1]!;
+    if (Math.max(a, b) > HATCH_CROSS_MAX_RATIO * Math.min(a, b)) return null;
+  }
+  const angles = fam.map((f) => f[0]).sort((p, q) => p - q);
+  return { angles, spacing: spacings.reduce((p, q) => p + q, 0) / spacings.length };
+}
+
+/** Familles de directions d'une hachure (une ou deux, ≥ 3 traits chacune, ≥ 90 % des traits), ou null. */
+function hatchFamilies(segs: readonly LineLike[]): [number, LineLike[]][] | null {
   if (segs.length < HATCH_MIN_SEGS) return null;
   const bins = new Map<number, number[]>();
   segs.forEach((s, i) => {
@@ -110,13 +151,7 @@ export function hatchOf(segs: readonly LineLike[]): HatchPattern | null {
   const keep = top.slice(0, 2).filter((t) => t[1].length >= 3);
   const covered = keep.reduce((n, t) => n + t[1].length, 0);
   if (covered < DIRECTION_SHARE * segs.length) return null;
-  const spacings: number[] = [];
-  for (const [deg, idx] of keep) {
-    const step = regularStep(idx.map((i) => segs[i]!), deg);
-    if (step === null) return null;
-    spacings.push(step);
-  }
-  return { angles: keep.map((t) => t[0]), spacing: spacings.reduce((p, q) => p + q, 0) / spacings.length };
+  return keep.map(([deg, idx]) => [deg, idx.map((i) => segs[i]!)]);
 }
 
 /** Pas régulier d'une famille de traits de direction `deg`, ou null si les droites ne sont pas régulièrement espacées. */
@@ -138,6 +173,91 @@ export function regularStep(segs: readonly LineLike[], deg: number): number | nu
     return Math.abs(r - Math.round(r)) < SPACING_TOL && Math.round(r) <= MAX_STEP_MULTIPLE;
   }).length;
   return regular >= REGULAR_SHARE * gaps.length ? step : null;
+}
+
+/** Droite d'une famille : décalage perpendiculaire et étendue le long de la direction (union de ses traits). */
+interface BandLine {
+  off: number;
+  lo: number;
+  hi: number;
+}
+
+/**
+ * Pas d'une BANDE CONTINUE de droites parallèles de direction `deg`, ou null : au moins PATH_HATCH_MIN_LINES
+ * droites distinctes ; écarts entre droites voisines presque tous (≥ 90 %) égaux au pas (médiane), les autres
+ * valant deux pas (une droite manquante) — aucun grand saut ; et droites voisines qui se recouvrent le long de
+ * leur direction (≥ 90 %) : elles remplissent une même zone. Des groupes de traits serrés séparés par de grands
+ * vides (vitrages de plusieurs fenêtres, rangées de symboles) ne forment pas une bande.
+ */
+export function bandStep(segs: readonly LineLike[], deg: number): number | null {
+  const a = (deg * Math.PI) / 180;
+  const ux = Math.cos(a);
+  const uy = Math.sin(a);
+  const byOff = new Map<number, BandLine>();
+  for (const s of segs) {
+    const off = Math.round((s.x0 * -uy + s.y0 * ux) * 20) / 20;
+    const t0 = s.x0 * ux + s.y0 * uy;
+    const t1 = s.x1 * ux + s.y1 * uy;
+    const l = byOff.get(off);
+    if (!l) byOff.set(off, { off, lo: Math.min(t0, t1), hi: Math.max(t0, t1) });
+    else {
+      l.lo = Math.min(l.lo, t0, t1);
+      l.hi = Math.max(l.hi, t0, t1);
+    }
+  }
+  // Décalages à 0,04 pt près : une même droite.
+  const lines: BandLine[] = [];
+  for (const l of [...byOff.values()].sort((p, q) => p.off - q.off)) {
+    const last = lines[lines.length - 1];
+    if (last && l.off - last.off <= 0.04) {
+      last.lo = Math.min(last.lo, l.lo);
+      last.hi = Math.max(last.hi, l.hi);
+    } else lines.push({ ...l });
+  }
+  if (lines.length < PATH_HATCH_MIN_LINES) return null;
+  const gaps: number[] = [];
+  for (let k = 1; k < lines.length; k++) gaps.push(lines[k]!.off - lines[k - 1]!.off);
+  const step = [...gaps].sort((p, q) => p - q)[Math.floor(gaps.length / 2)]!;
+  if (!(step > MIN_SPACING)) return null;
+  let unit = 0;
+  for (const g of gaps) {
+    const r = g / step;
+    if (Math.abs(r - 1) < SPACING_TOL) unit++;
+    else if (!(Math.abs(r - 2) < SPACING_TOL)) return null;
+  }
+  if (unit < BAND_SHARE * gaps.length) return null;
+  let overlap = 0;
+  for (let k = 1; k < lines.length; k++) {
+    const p = lines[k - 1]!;
+    const q = lines[k]!;
+    if (Math.min(p.hi, q.hi) > Math.max(p.lo, q.lo)) overlap++;
+  }
+  return overlap >= BAND_OVERLAP_SHARE * (lines.length - 1) ? step : null;
+}
+
+/**
+ * Hachure d'UN SEUL tracé, sans découpe pour la borner ? Au moins PATH_HATCH_MIN_SEGS traits droits disjoints,
+ * une ou deux directions (comme `hatchOf`), chacune en bande continue (`bandStep`) de pas ≤ PATH_HATCH_MAX_SPACING,
+ * et une emprise ≤ 5 % de la page. Renvoie la hachure et son emprise, ou null.
+ */
+export function pathHatchOf(segs: readonly LineLike[], pageArea: number): { pattern: HatchPattern; bbox: RawBox } | null {
+  if (segs.length < PATH_HATCH_MIN_SEGS || !isDisjointRun(segs)) return null;
+  const fam = hatchFamilies(segs);
+  if (!fam) return null;
+  const spacings: number[] = [];
+  for (const [deg, members] of fam) {
+    const step = bandStep(members, deg);
+    if (step === null || step > PATH_HATCH_MAX_SPACING) return null;
+    spacings.push(step);
+  }
+  const pattern = patternOf(fam, spacings);
+  if (!pattern) return null;
+  const bbox = emptyBox();
+  for (const s of segs) {
+    growBox(bbox, s.x0, s.y0);
+    growBox(bbox, s.x1, s.y1);
+  }
+  return boxArea(bbox) > HATCH_MAX_CLIP_SHARE * pageArea ? null : { pattern, bbox };
 }
 
 /** Traits d'un même tracé presque tous disjoints (chacun commence ailleurs qu'à la fin du précédent). */
@@ -211,9 +331,8 @@ export interface HatchGrouping {
  * Regroupe les hachures d'une liste de traits :
  *  1. sous une même découpe (pas la page, ≤ 5 % de la page) : au moins HATCH_MIN_SEGS traits tracés (non remplis),
  *     d'encre homogène, qui passent `hatchOf` → zone de contour = la découpe ;
- *  2. repli sans découpe : un même tracé d'au moins PATH_HATCH_MIN_SEGS traits droits disjoints, qui passe
- *     `hatchOf` avec un pas ≤ PATH_HATCH_MAX_SPACING et dont l'emprise couvre ≤ 5 % de la page → zone de contour
- *     = la boîte des traits.
+ *  2. repli sans découpe : un même tracé qui passe `pathHatchOf` (traits droits disjoints en bandes continues de
+ *     pas serré, emprise ≤ 5 % de la page) → zone de contour = la boîte des traits.
  * Les bords de remplissage (`fill`) ne sont jamais regroupés.
  */
 export function groupHatches(segs: readonly RawSeg[], clips: readonly ClipZone[], clipRings: readonly (Ring[] | undefined)[], pageArea: number): HatchGrouping {
@@ -250,15 +369,9 @@ export function groupHatches(segs: readonly RawSeg[], clips: readonly ClipZone[]
   for (const idx of byPid.values()) {
     if (idx.length < PATH_HATCH_MIN_SEGS) continue;
     const mine = idx.map((i) => segs[i]!);
-    if (!isDisjointRun(mine)) continue;
-    const h = hatchOf(mine);
-    if (!h || h.spacing > PATH_HATCH_MAX_SPACING) continue;
-    const b = emptyBox();
-    for (const s of mine) {
-      growBox(b, s.x0, s.y0);
-      growBox(b, s.x1, s.y1);
-    }
-    if (boxArea(b) > HATCH_MAX_CLIP_SHARE * pageArea) continue;
+    const found = pathHatchOf(mine, pageArea);
+    if (!found) continue;
+    const { pattern: h, bbox: b } = found;
     zones.push({ clip: mine[0]!.clip ?? 0, bbox: b, rings: [ringOfBox(b)], angles: h.angles, spacing: h.spacing, color: mine[0]!.color ?? 0, width: mine[0]!.w, count: idx.length, source: 'path' });
     for (const i of idx) drop[i] = 1;
     count += idx.length;
