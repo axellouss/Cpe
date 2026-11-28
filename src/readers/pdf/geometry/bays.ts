@@ -304,6 +304,7 @@ export function planBays(
       const op: DetectedOpening = { kind: 'unknown', a, b, width: round(width, 3), exterior: true, confidence: wConf };
       if (pair) {
         op.height = pair.height;
+        op.heightPlan = pair.height;
         op.heightFrom = 'plan-dim';
         if (pair.sill !== null) op.sill = pair.sill;
       }
@@ -429,6 +430,7 @@ export function climateDoors(
     };
     if (pair) {
       op.height = pair.height;
+      op.heightPlan = pair.height;
       op.heightFrom = 'plan-dim';
       sources.push('opening-pair');
     }

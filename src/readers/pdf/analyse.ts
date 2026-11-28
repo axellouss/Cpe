@@ -163,8 +163,11 @@ const SECTION_RE = /\b(coupe|schnitt|querschnitt|langsschnitt|section|facade|fas
 const PLAN_RE = /\b(plan|grundriss|niveau|ebene|geschoss)\b/;
 /** Plan de situation ou d'implantation : il montre la parcelle et les voisins, pas un étage (« Plan de situation 1:500 »). */
 const SITE_RE = /\b(plan de situation|situation|plan d'implantation|implantation|plan de masse|lageplan|ubersichtsplan|katasterplan|plan cadastral|site plan)\b/;
-/** Étiquettes d'espaces EXTÉRIEURS : normales hors du contour, elles ne signalent pas une fuite. */
-const OUTDOOR_RE = /terrasse|balcon|balkon|loggia|jardin|garten|\bcour\b|\bhof\b|pergola|carport|car-port|abri|parking|stellplatz|entree|eingang|zufahrt|acces|rue|strasse|trottoir/;
+/**
+ * Étiquettes normales HORS du contour : espaces extérieurs (liste commune, building.ts), plus les abords d'une
+ * entrée et les abris ; elles ne signalent pas une fuite.
+ */
+const OUTDOOR_RE = { test: (folded: string): boolean => SITE_OUTDOOR_RE.test(folded) || /abri|entree|eingang/.test(folded) };
 const LEVEL_RE = /^\s*([+\-±−])\s?(\d{1,2}[.,]\d{2})\s*m?\s*$/;
 
 // ───────────────────────────── Échelle ─────────────────────────────
@@ -1285,6 +1288,15 @@ function floorViews(split: SheetSplit): ReadView[] {
 }
 
 /**
+ * Plans d'étage LUS quand le découpage commande la page : tous les plans reconnus, même moins sûrs (plan sans titre à
+ * côté de plans titrés, titre et contenu en désaccord). Aucun n'est perdu : chacun devient une feuille, et son doute
+ * (« plan sans titre : quel niveau ? ») la suit.
+ */
+function readFloorViews(split: SheetSplit): ReadView[] {
+  return split.views.filter((v) => v.kind === 'floor-plan');
+}
+
+/**
  * Le découpage commande-t-il la page ? Il faut au moins deux plans d'étage reconnus avec assez de confiance — ou un
  * seul, dont l'emprise du bâtiment a été lue (plan dessiné dans un cadre de situation : le chemin de la page entière
  * y prend les limites de parcelle pour des murs) ; un plan seul sur sa page, sans cela, garde le chemin habituel, qui
@@ -1348,7 +1360,7 @@ function viewSheetName(view: ReadView, page: number, n: number, single: boolean,
   return single ? msg(lang, 'pdf.sheet.page', { page }) : msg(lang, 'pdf.sheet.pagePlan', { page, n });
 }
 
-/** Une étiquette « intitulé : valeur » (« Surface vitrée : 13,54 m² », « Composition mur : ») n'est pas une pièce. */
+/** Une étiquette « intitulé : valeur » (« Surface vitrée : 9,82 m² », « Composition mur : ») n'est pas une pièce. */
 function isCaptionLabel(page: RawPage, room: DetectedRoom): boolean {
   const at = room.at;
   if (!at) return false;
@@ -1404,7 +1416,7 @@ function analyseByViews(page: RawPage, split: SheetSplit, multiPage: boolean, la
   const pageWhere = multiPage ? msg(lang, 'pdf.page', { page: page.number }) : '';
   const visible = visiblePage(page);
   const declared = [...new Set(declaredScales(page.texts).map((d) => d.den))];
-  const floors = floorViews(split);
+  const floors = readFloorViews(split);
   const single = floors.length === 1;
   const report = result.report;
   report.declared = declared;
@@ -1453,6 +1465,8 @@ function analyseByViews(page: RawPage, split: SheetSplit, multiPage: boolean, la
     sheet.bbox = { ...view.box };
     const notes = sheet.detected.notes.filter((n) => !view.title || n !== msg(lang, 'pdf.note.title', { title: view.title }));
     if (view.title) notes.push(msg(lang, 'pdf.note.view', { title: view.title }));
+    // Vue moins sûre (plan sans titre, titre et contenu en désaccord) : lue quand même, son doute suit la feuille.
+    if (view.confidence < MIN_VIEW_CONFIDENCE) for (const d of view.doubts) if (!notes.includes(d)) notes.push(d);
     let fp = split.footprints.get(view.id);
     if (!fp && sheet.detected.outline && sheet.detected.outline.length >= 3) {
       // Repli : pas de zones de pièces (pièces sans remplissage) mais un contour fermé sur les murs — sa boîte est

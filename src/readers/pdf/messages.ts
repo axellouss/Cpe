@@ -279,5 +279,6 @@ registerMessages(PDF_MESSAGES);
 
 /** Texte du lecteur dans la langue demandée. */
 export function msg(lang: Lang, key: string, params?: Record<string, string | number>): string {
-  return t(lang, key, params);
+  // Langue hors du dictionnaire (« en » venu de l'interface…) : repli sur le français, jamais d'erreur.
+  return t(lang === 'de' ? 'de' : 'fr', key, params);
 }

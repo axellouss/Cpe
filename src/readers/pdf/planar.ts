@@ -228,6 +228,51 @@ export function simplifyRing(ring: readonly Vec2[], tol: number): Vec2[] {
 // ───────────────────────────── Opérations ─────────────────────────────
 
 /**
+ * Traits horizontaux ou verticaux portés par la même droite (à 1e-3 pt près) et qui se recouvrent ou se touchent :
+ * fondus en un seul. Le tampon de l'ensemble ne change pas (même réunion de points), mais il se calcule sur bien
+ * moins de traits (un mur hachuré exporté en milliers de petits morceaux). Les traits obliques restent tels quels.
+ */
+export function mergeAxisSegments(segs: readonly Seg[]): Seg[] {
+  const out: Seg[] = [];
+  const rows = new Map<string, [number, number][]>();
+  for (const s of segs) {
+    const h = Math.abs(s.ay - s.by) < 1e-6;
+    const v = Math.abs(s.ax - s.bx) < 1e-6;
+    if (h === v) {
+      out.push(s);
+      continue;
+    }
+    const at = h ? s.ay : s.ax;
+    const key = `${h ? 'h' : 'v'}${Math.round(at * 1000)}`;
+    const lo = h ? Math.min(s.ax, s.bx) : Math.min(s.ay, s.by);
+    const hi = h ? Math.max(s.ax, s.bx) : Math.max(s.ay, s.by);
+    const row = rows.get(key);
+    if (row) row.push([lo, hi]);
+    else rows.set(key, [[lo, hi]]);
+  }
+  for (const [key, row] of rows) {
+    const h = key[0] === 'h';
+    const at = Number(key.slice(1)) / 1000;
+    row.sort((p, q) => p[0] - q[0]);
+    let [lo, hi] = row[0]!;
+    const push = (a: number, b: number): void => {
+      out.push(h ? { ax: a, ay: at, bx: b, by: at } : { ax: at, ay: a, bx: at, by: b });
+    };
+    for (let i = 1; i < row.length; i++) {
+      const [a, b] = row[i]!;
+      if (a <= hi + 1e-6) hi = Math.max(hi, b);
+      else {
+        push(lo, hi);
+        lo = a;
+        hi = b;
+      }
+    }
+    push(lo, hi);
+  }
+  return out;
+}
+
+/**
  * « Fermeture » robuste : on épaissit les traits de r (bouts carrés, angles vifs), on garde le bord EXTÉRIEUR
  * de chaque tache, puis on rétrécit de r. Les ouvertures plus étroites que 2r se referment et les extrémités mal
  * accrochées ne gênent pas ; en contrepartie les renfoncements plus étroits que 2r sont comblés.
@@ -236,7 +281,7 @@ export function simplifyRing(ring: readonly Vec2[], tol: number): Vec2[] {
 export function closeOutline(segs: readonly Seg[], r: number, minArea: number): Vec2[][] {
   if (segs.length === 0 || !(r > 0)) return [];
   try {
-    const dilated = jBuffer(toJLines(segs, fixedFactory), r, true);
+    const dilated = jBuffer(toJLines(mergeAxisSegments(segs), fixedFactory), r, true);
     const rings: Vec2[][] = [];
     for (const blob of polysFromJ(dilated)) {
       const eroded = jBuffer(toJPolygon(blob.outer, fixedFactory), -r, false);
@@ -350,8 +395,30 @@ export function differencePolys(a: readonly Poly[], b: readonly Poly[]): Poly[] 
 /** a ∩ b. */
 export function intersectPolys(a: readonly Poly[], b: readonly Poly[]): Poly[] {
   try {
-    const ja = jUnion(a);
-    const jb = jUnion(b);
+    // Seuls comptent les polygones qui touchent la boîte de l'autre groupe : résultat identique, unions bien
+    // plus petites (un pont de porte face aux dizaines de bandes d'isolant d'un niveau).
+    const boxOf = (ps: readonly Poly[]): [number, number, number, number] => {
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (const p of ps) for (const q of p.outer) {
+        if (q.x < x0) x0 = q.x;
+        if (q.y < y0) y0 = q.y;
+        if (q.x > x1) x1 = q.x;
+        if (q.y > y1) y1 = q.y;
+      }
+      return [x0, y0, x1, y1];
+    };
+    const near = (ps: readonly Poly[], o: [number, number, number, number]): Poly[] =>
+      ps.filter((p) => {
+        const [x0, y0, x1, y1] = boxOf([p]);
+        return x0 <= o[2] && x1 >= o[0] && y0 <= o[3] && y1 >= o[1];
+      });
+    const a2 = near(a, boxOf(b));
+    const b2 = near(b, boxOf(a2));
+    const ja = jUnion(a2);
+    const jb = jUnion(b2);
     if (!ja || !jb) return [];
     return polysFromJ(OverlayOp.intersection(ja, jb) as JGeom);
   } catch {

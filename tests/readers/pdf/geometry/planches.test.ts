@@ -374,6 +374,40 @@ describe('planche A1 : garage dans l’emprise, mitoyen, toiture, façades', () 
     expect(dist(mid(doors[0]!), tmid(t)) * g.mpp!).toBeLessThan(0.5);
   });
 
+  it('local nommé non chauffé au milieu du logement (« Buanderie » renommée « Cave ») : sortie cohérente', async () => {
+    const f = await load('A1');
+    const { view } = f.plans.find((p) => p.view.storeyRank === 0)!;
+    const page = f.pages[view.page - 1]!;
+    const renamed: RawPage = { ...page, texts: page.texts.map((t) => (/^Buanderie$/.test(t.s) ? { ...t, s: 'Cave' } : t)) };
+    const g = analyseFloorPlan(renamed, view, { declaredMpp: METRES_PER_POINT * 100, openingPairs: f.pairs, lang: 'fr' });
+    const d = g.detection;
+    const k = g.mpp!;
+    const area = (r: readonly Vec2[] | undefined): number => (r ? ringArea(r) * k * k : 0);
+    // Chauffé + non chauffé = emprise (à 1 % près) : jamais un local compté deux fois.
+    const unheated = (d.unheatedZones ?? []).reduce((s, z) => s + (z.area ?? 0), 0);
+    expect(Math.abs(area(d.heatedOutline) + unheated - area(d.outline)) / area(d.outline)).toBeLessThanOrEqual(0.01);
+    // La cave reste chauffée, avec la question ; aucune note ne la dit séparée par l'isolant.
+    expect((d.unheatedZones ?? []).some((z) => z.names.includes('Cave'))).toBe(false);
+    expect(d.rooms.find((r) => r.name === 'Cave')!.heatedGuess).toBe('ask');
+    expect(g.doubts.some((q) => /Cave/.test(q))).toBe(true);
+    expect(d.notes.some((n) => /Cave/.test(n) && /séparé par l’isolant/.test(n))).toBe(false);
+    // Le garage, lui, reste exclu.
+    expect((d.unheatedZones ?? []).map((z) => z.names.join('+'))).toEqual(['Garage']);
+  });
+
+  it('boîte de vue qui couvre les deux plans (erreur du découpage) : le mélange est signalé', async () => {
+    const f = await load('A1');
+    const plans = f.views.filter((v) => v.kind === 'floor-plan');
+    const both = {
+      ...plans[0]!,
+      box: { minX: Math.min(...plans.map((v) => v.box.minX)), minY: Math.min(...plans.map((v) => v.box.minY)), maxX: Math.max(...plans.map((v) => v.box.maxX)), maxY: Math.max(...plans.map((v) => v.box.maxY)) },
+    };
+    const g = analyseFloorPlan(f.pages[both.page - 1]!, both, { declaredMpp: METRES_PER_POINT * 100, lang: 'fr' });
+    expect(g.doubts.some((q) => /deux plans/.test(q))).toBe(true);
+    // Une vue juste : aucun signalement.
+    for (const { g: one } of f.plans) expect(one.doubts.some((q) => /deux plans/.test(q))).toBe(false);
+  });
+
   it('les lignes « clé : valeur » des encadrés d’éclairement ne deviennent pas des pièces', async () => {
     const f = await load('A1');
     for (const { g } of f.plans) for (const r of g.detection.rooms) expect(r.name).not.toMatch(/surface|coefficient/i);
@@ -459,8 +493,46 @@ describe.each(['A1', 'A2', 'P2'] as Key[])('planche %s : façades dessinées', (
         expect(o.height, `${view.id} ${t.name}`).toBeDefined();
         expect(Math.abs(o.height! - t.height_m), `${view.id} ${t.name}`).toBeLessThanOrEqual(0.03);
         expect(o.heightFrom === 'plan-dim' || o.heightFrom === 'elevation').toBe(true);
+        // Les deux hauteurs sont portées quand elles existent : cote du plan, et mesure de la façade.
+        if (o.heightFrom === 'plan-dim') expect(o.heightPlan, `${view.id} ${t.name}`).toBe(o.height);
+        expect(o.heightElevation, `${view.id} ${t.name}`).toBeDefined();
+        expect(Math.abs(o.heightElevation! - t.height_m), `${view.id} ${t.name}`).toBeLessThanOrEqual(0.03);
       }
     }
+  });
+});
+
+describe('planche A1 : hauteur du plan face à la façade', () => {
+  /** Relit les plans de A1 avec des cotes de hauteur décalées de `delta` m, puis les façades. */
+  async function shifted(delta: number): Promise<{ ops: DetectedOpening[]; doubts: string[] }> {
+    const f = await load('A1');
+    const pairs = f.pairs.map((p) => ({ ...p, height: Math.round((p.height + delta) * 100) / 100 }));
+    const entries: FloorPlanEntry[] = [];
+    for (const v of f.views.filter((x) => x.kind === 'floor-plan')) {
+      const g = analyseFloorPlan(f.pages[v.page - 1]!, v, { declaredMpp: METRES_PER_POINT * 100, openingPairs: pairs, lang: 'fr' });
+      if (g.mpp) entries.push({ view: v, detection: g.detection, mpp: g.mpp });
+    }
+    const b = readBuildingGeometry(f.pages, f.views, entries, { lang: 'fr' });
+    applyOpeningUpdates(entries, b.openingUpdates);
+    return { ops: entries.flatMap((e) => e.detection.openings), doubts: b.doubts };
+  }
+
+  it('plan plus haut que la façade de 12 cm : la cote du plan est gardée mais pas « confirmée », les deux valeurs portées', async () => {
+    const { ops, doubts } = await shifted(0.12);
+    const both = ops.filter((o) => o.heightPlan !== undefined && o.heightElevation !== undefined);
+    expect(both.length).toBeGreaterThan(0);
+    for (const o of both) {
+      expect(o.height).toBe(o.heightPlan);
+      expect(o.heightPlan! - o.heightElevation!).toBeGreaterThan(0.05);
+      expect(o.confidence!).toBeLessThan(0.9);
+    }
+    expect(doubts.some((q) => /Hauteur de baie/.test(q))).toBe(false);
+  });
+
+  it('plan plus haut que la façade de 40 cm : désaccord, question posée', async () => {
+    const { ops, doubts } = await shifted(0.4);
+    expect(doubts.some((q) => /Hauteur de baie/.test(q))).toBe(true);
+    for (const o of ops.filter((x) => x.heightPlan !== undefined && x.heightElevation !== undefined)) expect(o.confidence!).toBeLessThanOrEqual(0.5);
   });
 });
 

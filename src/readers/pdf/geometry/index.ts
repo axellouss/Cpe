@@ -12,7 +12,7 @@
  */
 import type { DetectedEdge, DetectedOpening, DetectedRoom, Lang, SheetDetection, Vec2 } from '../../../core/types';
 import type { ReadElevation, ReadNorth, ReadRoof, ReadView, SheetReading } from '../../../core/reading';
-import { intersectPolys, pointInPoly, polyArea, type Poly } from '../planar';
+import { intersectPolys, pointInPoly, pointRingDistance, polyArea, type Poly } from '../planar';
 import { METRES_PER_POINT, type RawPage, type RawSeg } from '../raw';
 import { climateDoors, coverage, footprintEdges, gapsOf, planBays, type PlanBay } from './bays';
 import {
@@ -149,12 +149,15 @@ function insulatedShareOnEdge(e: { a: Vec2; u: Vec2; n: Vec2; len: number }, ins
 
 export function analyseFloorPlan(page: RawPage, view: Pick<ReadView, 'id' | 'box' | 'storeyRank'>, ctx: FloorPlanContext = {}): FloorPlanGeometry {
   const t0 = performance.now();
-  const lang: Lang = ctx.lang ?? 'fr';
+  const lang: Lang = ctx.lang === 'de' ? 'de' : 'fr';
   const v = viewInput(page, view);
   const notes: string[] = [];
   const doubts: string[] = [];
   const labels = mergeContextRooms(findRoomLabels(v.texts), ctx.rooms);
-  const declared = ctx.declaredMpp ?? null;
+  // Échelle annoncée hors des bornes d'un plan de bâtiment (1:1 à 1:5000), négative ou infinie : écartée.
+  const d0 = ctx.declaredMpp;
+  const declared = d0 !== undefined && d0 !== null && Number.isFinite(d0) && d0 >= METRES_PER_POINT && d0 <= 5000 * METRES_PER_POINT ? d0 : null;
+  if (d0 !== undefined && d0 !== null && declared === null) notes.push(gmsg(lang, 'geo.scale.declared.ignored'));
   const matched = matchRoomZones(labels, zonePool(v), declared);
   let rooms = matched.rooms;
   const empty = (mpp: number | null): FloorPlanGeometry => ({
@@ -214,13 +217,20 @@ export function analyseFloorPlan(page: RawPage, view: Pick<ReadView, 'id' | 'box
     .map((s) => ({ ax: s.x0, ay: s.y0, bx: s.x1, by: s.y1 }));
   let fp = buildFootprint(innerPolys, own, mpp, thick, labels.map((l) => l.at));
   if (!fp) {
-    notes.push(gmsg(lang, 'geo.walls.fallback'));
+    // Sans emprise : la remarque des murs non reconnus n'est dite qu'une fois.
+    const fallback = gmsg(lang, 'geo.walls.fallback');
+    if (!notes.includes(fallback)) notes.push(fallback);
     const g = empty(mpp);
     g.detection.rooms = rooms.map((r) => toDetectedRoom(r, null, [], lang));
     g.scale = { ...matched.scale, source: scaleSource, confidence: scaleConf };
     g.materials = materials.mode;
     return g;
   }
+  // Boîte de vue qui couvre deux plans (erreur du découpage) : des pièces intérieures restent loin de l'emprise
+  // retenue (plus de 1 m). Au moins deux, et au moins le quart des pièces : la vue mélange sans doute deux niveaux.
+  const fpPoly = fp.poly;
+  const away = inner.filter((r) => !pointInPoly(r.label.at.x, r.label.at.y, fpPoly) && pointRingDistance(r.label.at.x, r.label.at.y, fpPoly.outer) * mpp > 1);
+  if (away.length >= 2 && away.length >= 0.25 * inner.length) doubts.push(gmsg(lang, 'geo.view.twoPlans', { rooms: away.map((r) => r.label.name).join(', ') }));
   // Mitoyenneté par signaux structurels (voisin dessiné, limite de propriété, pas d'isolant, pas de baie).
   const edgesFp = footprintEdges(fp, mpp, 3);
   const shares = edgesFp.map((e) => insulatedShareOnEdge(e, own.insulation, mpp));
@@ -266,12 +276,13 @@ export function analyseFloorPlan(page: RawPage, view: Pick<ReadView, 'id' | 'box
   const seeds: SeedRoom[] = inner.map((r) => ({ poly: r.poly!, heated: !UNHEATED_RE.test(r.label.name), name: r.label.name }));
   let zones: ThermalZones;
   if (basement && seeds.some((s) => !s.heated)) {
-    zones = { heated: null, unheated: [{ poly: fp.poly, names: seeds.map((s) => s.name), areaM2: fp.areaM2 }], unsealed: [], bridges: [] };
+    zones = { heated: null, unheated: [{ poly: fp.poly, names: seeds.map((s) => s.name), areaM2: fp.areaM2 }], unsealed: [], enclosed: [], bridges: [] };
     notes.push(gmsg(lang, 'geo.unheated.basement'));
   } else {
     zones = splitHeatedZones(fp, seeds, own.insulation, mpp);
   }
   for (const name of zones.unsealed) doubts.push(gmsg(lang, 'geo.unheated.unsealed', { name }));
+  for (const name of zones.enclosed) doubts.push(gmsg(lang, 'geo.unheated.enclosed', { name }));
   const edges = classifyBoundary(zones, fp, own.insulation, mpp);
   // Baies.
   const pairs = (ctx.openingPairs ?? []).filter(
@@ -293,7 +304,7 @@ export function analyseFloorPlan(page: RawPage, view: Pick<ReadView, 'id' | 'box
     .flatMap((f) => f.polys)
     .filter((p) => !used.has(p) && !labels.some((l) => pointInPoly(l.at.x, l.at.y, p)))
     .filter((p) => polyArea(p) * mpp * mpp >= 1 && polyArea(p) * mpp * mpp <= 60);
-  const unlabelled = unlabelledAreas(zones.heated, inner, [...own.masonry, ...own.insulation], unlabelledFills, mpp);
+  const unlabelled = unlabelledAreas(zones.heated, inner, [...own.masonry, ...own.insulation], unlabelledFills, mpp, { segs: v.segs, bayCentres: allBays.map((x) => x.centre) });
   // Cotes hors tout.
   const dims = overallDimensions(v.texts, fp, mpp);
   let outlineConfidence = fp.basis === 'walls' ? 0.75 : fp.basis === 'strokes' ? 0.5 : 0.35;
@@ -338,7 +349,7 @@ export function analyseFloorPlan(page: RawPage, view: Pick<ReadView, 'id' | 'box
   }
   if (unlabelled.length > 0) {
     detection.unlabelledAreas = unlabelled.map((u) => ({ polygon: u.poly.outer.map((p) => ({ x: p.x, y: p.y })), area: round(u.areaM2, 2) }));
-    for (const u of unlabelled) doubts.push(gmsg(lang, 'geo.unlabelled', { area: fmt(u.areaM2) }));
+    for (const u of unlabelled) doubts.push(gmsg(lang, u.kind === 'unknown' ? 'geo.unlabelled' : 'geo.unlabelled.' + u.kind, { area: fmt(u.areaM2) }));
   }
   const ext = allBays.filter((b) => b.opening.exterior);
   notes.push(
@@ -396,7 +407,7 @@ function toDetectedRoom(r: RoomZone, zones: ThermalZones | null, glazing: NonNul
   if (OUTSIDE_RE.test(r.label.name)) {
     out.exterior = true;
     out.heatedGuess = 'no';
-  } else if (UNHEATED_RE.test(r.label.name)) out.heatedGuess = zones && zones.unsealed.includes(r.label.name) ? 'ask' : 'no';
+  } else if (UNHEATED_RE.test(r.label.name)) out.heatedGuess = zones && (zones.unsealed.includes(r.label.name) || zones.enclosed.includes(r.label.name)) ? 'ask' : 'no';
   else if (basement) out.heatedGuess = 'ask';
   void lang;
   const g = glazing.find(
@@ -433,6 +444,8 @@ export interface OpeningUpdate {
   index: number;
   height: number;
   heightFrom: 'plan-dim' | 'elevation';
+  /** Hauteur mesurée sur la façade (m), toujours reportée, qu'elle confirme la cote du plan ou non. */
+  heightElevation: number;
   confidence: number;
   doubt: string | null;
 }
@@ -551,7 +564,7 @@ export function readBuildingGeometry(
   floorPlans: readonly FloorPlanEntry[],
   ctx: BuildingContext = {},
 ): BuildingGeometry {
-  const lang: Lang = ctx.lang ?? 'fr';
+  const lang: Lang = ctx.lang === 'de' ? 'de' : 'fr';
   const doubts: string[] = [];
   const pageOf = new Map(pages.map((p) => [p.number, p]));
   const clipsOf = new Map(pages.map((p) => [p.number, clipBoxes(p)]));
@@ -678,7 +691,14 @@ export function readBuildingGeometry(
   return { roof, elevations, alignment, floorOverUnheated: floorOver, floorOverOutside, openingUpdates, doubts };
 }
 
-/** Hauteurs de baies : cote du plan face au cadre dessiné en façade. */
+/**
+ * Hauteurs de baies : cote du plan face au cadre dessiné en façade.
+ * - Sans cote au plan : la hauteur de la façade est reprise (0,65).
+ * - Écart d'au plus 5 cm : la cote du plan est CONFIRMÉE (0,9).
+ * - Façade plus basse de 5 à 25 cm : la façade est souvent dessinée au vitrage ou au dormant, le plan au gros œuvre ;
+ *   la cote du plan est gardée mais NON confirmée (0,7), les deux valeurs restent portées, sans question.
+ * - Au-delà : désaccord, question (0,5).
+ */
 function crossCheckHeights(
   bays: readonly ElevationBay[],
   match: { group: { n: Vec2; deg: number; uMin: number; lengthM: number }; mirrored: boolean; levelOf: number[] },
@@ -708,15 +728,16 @@ function crossCheckHeights(
       if (!best) continue;
       const hf = (best as { bay: ElevationBay }).bay.heightM;
       if (b.heightM === null) {
-        out.push({ ...b.ref, height: hf, heightFrom: 'elevation', confidence: 0.65, doubt: null });
+        out.push({ ...b.ref, height: hf, heightFrom: 'elevation', heightElevation: hf, confidence: 0.65, doubt: null });
         continue;
       }
       const diff = b.heightM - hf;
-      if (diff >= -0.03 && diff <= 0.25) out.push({ ...b.ref, height: b.heightM, heightFrom: 'plan-dim', confidence: 0.9, doubt: null });
+      if (Math.abs(diff) <= 0.05 + 1e-9) out.push({ ...b.ref, height: b.heightM, heightFrom: 'plan-dim', heightElevation: hf, confidence: 0.9, doubt: null });
+      else if (diff > 0 && diff <= 0.25) out.push({ ...b.ref, height: b.heightM, heightFrom: 'plan-dim', heightElevation: hf, confidence: 0.7, doubt: null });
       else {
         const q = gmsg(lang, 'geo.height.ask', { plan: fmt(b.heightM), elev: fmt(hf) });
         doubts.push(q);
-        out.push({ ...b.ref, height: b.heightM, heightFrom: 'plan-dim', confidence: 0.5, doubt: q });
+        out.push({ ...b.ref, height: b.heightM, heightFrom: 'plan-dim', heightElevation: hf, confidence: 0.5, doubt: q });
       }
     }
   }
@@ -731,9 +752,10 @@ export function applyOpeningUpdates(floorPlans: readonly FloorPlanEntry[], updat
     if (!o) continue;
     o.height = u.height;
     o.heightFrom = u.heightFrom;
-    // Hauteur du plan confirmée par la façade : la confiance monte ; hauteur venue de la seule façade ou en
-    // désaccord : elle ne dépasse pas celle de la recoupe.
-    o.confidence = u.heightFrom === 'plan-dim' && !u.doubt ? Math.max(o.confidence ?? 0, u.confidence) : Math.min(o.confidence ?? 1, u.confidence);
+    o.heightElevation = round(u.heightElevation, 3);
+    // Hauteur du plan confirmée par la façade (à 5 cm) : la confiance monte ; hauteur venue de la seule façade, non
+    // confirmée ou en désaccord : elle ne dépasse pas celle de la recoupe.
+    o.confidence = u.heightFrom === 'plan-dim' && !u.doubt && u.confidence >= 0.9 ? Math.max(o.confidence ?? 0, u.confidence) : Math.min(o.confidence ?? 1, u.confidence);
   }
 }
 

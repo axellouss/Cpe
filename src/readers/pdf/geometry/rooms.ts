@@ -2,7 +2,7 @@
  * Pièces d'une vue en plan : étiquettes (nom + surface écrite) appariées aux polygones du dessin, et échelle
  * retrouvée par les surfaces.
  *
- * 1. Étiquette : un texte de surface (« S: 35,00 m² », « Fläche: 12,30 m² », « 21,95 m² ») et le nom écrit juste
+ * 1. Étiquette : un texte de surface (« S: 27,40 m² », « Fläche: 12,30 m² », « 21,95 m² ») et le nom écrit juste
  *    au-dessus (ou, à défaut, juste en dessous), dans la même colonne.
  * 2. Candidats : tout polygone de remplissage ou de zone hachurée (carrelage) qui contient la surface ET le nom.
  *    Chaque candidat donne une échelle k = √(surface écrite / aire dessinée).
@@ -17,11 +17,11 @@ import { pointInPoly, polyArea, polygonizeSegments, type Poly, type Seg } from '
 import type { RawText } from '../raw';
 import type { ViewInput } from './types';
 
-/** Texte de surface avec préfixe (« S: 35,00 m », « SU = 12,3 », « Fläche: 12,30 m² »). */
+/** Texte de surface avec préfixe (« S: 27,40 m », « SU = 12,3 », « Fläche: 12,30 m² »). */
 const AREA_PREFIXED_RE =
   /^(?:S|SU|SH|SN|SHAB|A|NF|NGF|NRF|WF|Fl(?:ä|ae|a)che|Surf(?:ace|\.)?)\s*[:=]\s*(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:m2|m²|m|qm)?\.?$/i;
 /** Texte de surface sans préfixe : l'unité est alors exigée (« 21,95 m² »). */
-const AREA_BARE_RE = /^(\d{1,4}[.,]\d{1,2})\s*(?:m2|m²|m|qm)$/i;
+const AREA_BARE_RE = /^(\d{1,4}[.,]\d{1,2})\s*(?:m2|m²|qm)$/i;
 /** Un nom de pièce a au moins deux lettres et ne commence pas par un nombre ou une cote de niveau. */
 const NAME_RE = /[A-Za-zÀ-ÖØ-öø-ÿ]{2}/;
 const NOT_NAME_RE = /^\s*(?:[+\-±]?\d|all\.?\s|nf\b|okff|ok\s|s\s*[:=])/i;
@@ -70,9 +70,16 @@ function isKeyedValue(t: RawText, texts: readonly RawText[]): boolean {
   for (const n of texts) {
     if (n === t || !/[:=]\s*$/.test(n.s)) continue;
     const size = Math.max(t.size, n.size);
-    if (Math.abs(n.cy - t.cy) > 0.4 * size) continue;
-    const gap = t.x0 - n.x1;
-    if (gap >= -0.5 * size && gap <= 2 * size) return true;
+    if (Math.abs(n.cy - t.cy) <= 0.4 * size) {
+      const gap = t.x0 - n.x1;
+      if (gap >= -0.5 * size && gap <= 2 * size) return true;
+      continue;
+    }
+    // Variante : la clé sur sa ligne, la valeur sur la ligne du dessous, dans la même colonne (début aligné ou
+    // recouvrement horizontal). Un nom de pièce ne finit jamais par « : ».
+    const dy = t.cy - n.cy;
+    const overlap = Math.min(t.x1, n.x1) - Math.max(t.x0, n.x0);
+    if (dy >= 0.3 * size && dy <= 2.2 * size && (overlap > 0 || Math.abs(t.x0 - n.x0) <= 2 * size)) return true;
   }
   return false;
 }

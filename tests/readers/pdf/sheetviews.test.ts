@@ -4,9 +4,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { BBox } from '../../../src/core/types';
-import { METRES_PER_POINT } from '../../../src/readers/pdf';
+import { analysePdf, METRES_PER_POINT } from '../../../src/readers/pdf';
 import type { ClipZone, FillArea, RawPage, RawSeg, RawText } from '../../../src/readers/pdf/raw';
-import { cotaMetres, decideDims, repeatedFrame, zoneArea } from '../../../src/readers/pdf/building';
+import { cotaMetres, decideDims, OUTDOOR_RE, repeatedFrame, zoneArea } from '../../../src/readers/pdf/building';
 import { clipFrames, elevationSide, matchTitlesToBlocks, splitSheet, titleKind, titleLines, visiblePage } from '../../../src/readers/pdf/sheetviews';
 import type { SheetTitle } from '../../../src/readers/pdf/sheetviews';
 import { fold } from '../../../src/semantics/labels';
@@ -78,8 +78,8 @@ describe('titres des vues', () => {
     expect(k('FAÇADE ARRIÈRE')).toBe('elevation');
     expect(k('Gartenansicht')).toBe('elevation');
     expect(k('Plan de situation')).toBe('site-plan');
-    expect(k('CALCULS DES SURFACES')).toBe('table');
-    expect(k('PHOTO AÉRIENNE')).toBe('photo');
+    expect(k('TABLEAU DES SURFACES')).toBe('table');
+    expect(k('PHOTO DU SITE')).toBe('photo');
     expect(k('Maison Exemple')).toBeNull();
   });
 
@@ -173,7 +173,7 @@ describe('emprise du bâtiment', () => {
     expect(cotaMetres('8,00')).toBe(8);
     expect(cotaMetres('1100')).toBe(11);
     expect(cotaMetres('8,00 m²')).toBeNull();
-    expect(zoneArea('S: 35,00 m')).toBe(35);
+    expect(zoneArea('S: 27,40 m')).toBe(27.4);
     expect(zoneArea('12,40 m²')).toBe(12.4);
   });
 
@@ -198,6 +198,13 @@ describe('emprise du bâtiment', () => {
   });
 });
 
+describe('espaces extérieurs (liste commune des lecteurs PDF)', () => {
+  it('terrasse, balcon, carport et parcelle sont extérieurs ; un jardin d’hiver est une pièce', () => {
+    for (const n of ['Terrasse', 'Balkon', 'Carport', 'Car-port', 'Parcelle', 'Trottoir']) expect(OUTDOOR_RE.test(fold(n)), n).toBe(true);
+    for (const n of ['Jardin d’hiver', "Jardin d'hiver", 'Wintergarten', 'Séjour', 'Garage']) expect(OUTDOOR_RE.test(fold(n)), n).toBe(false);
+  });
+});
+
 describe('découpage d’une page', () => {
   it('un tableau à côté d’un plan reste une vue à part, le plan garde ses pièces', () => {
     const plan = floorPlan(100, 100, 10, 8, [
@@ -210,7 +217,7 @@ describe('découpage d’une page', () => {
     // Tableau des surfaces : une grille de textes, à droite du plan.
     const rows = ['Séjour', 'Cuisine', 'Chambre', 'Bain', 'Total'];
     rows.forEach((r, i) => texts.push(at(r, 600, 140 + i * 12, 6), at(`${10 + i},00 m²`, 640, 140 + i * 12, 6), at('chauffé', 690, 140 + i * 12, 6)));
-    texts.push(at('CALCULS DES SURFACES', 600, 120, 14));
+    texts.push(at('TABLEAU DES SURFACES', 600, 120, 14));
     const split = splitSheet(page(plan.segs, texts), { den: 100, lang: 'fr' });
     const fp = split.views.find((v) => v.kind === 'floor-plan')!;
     const table = split.views.find((v) => v.kind === 'table')!;
@@ -219,9 +226,77 @@ describe('découpage d’une page', () => {
     expect(fp.title).toBe('PLAN REZ-DE-CHAUSSÉE');
     expect(fp.storeyRank).toBe(0);
     expect(fp.box.maxX).toBeLessThan(table.box.minX);
-    expect(table.title).toBe('CALCULS DES SURFACES');
+    expect(table.title).toBe('TABLEAU DES SURFACES');
     expect(fp.id).toBe('p1-floor-plan1');
     expect(table.id).toBe('p1-table1');
+    // Les étiquettes de pièces en grille 2 × 2 ne font pas du plan un tableau : titre et contenu s'accordent.
+    expect(fp.confidence).toBeGreaterThanOrEqual(0.9);
+    expect(fp.doubts).toEqual([]);
+    // Les quatre étiquettes de pièces sont dans la boîte du plan, aucune dans celle du tableau (page trop maigre
+    // pour être lue en entier ici : la lecture des pièces est vérifiée sur les pages à trois plans ci-dessous).
+    for (const t of plan.texts) {
+      expect(t.cx >= fp.box.minX && t.cx <= fp.box.maxX && t.cy >= fp.box.minY && t.cy <= fp.box.maxY).toBe(true);
+      expect(t.cx >= table.box.minX && t.cx <= table.box.maxX && t.cy >= table.box.minY && t.cy <= table.box.maxY).toBe(false);
+    }
+  });
+
+  it('trois plans dont un sans titre : le plan sans titre reste une feuille, avec son doute', () => {
+    const a = floorPlan(40, 120, 8, 8, [
+      ['Séjour', '30,00 m²'],
+      ['Cuisine', '12,00 m²'],
+    ]);
+    const b = floorPlan(420, 120, 8, 8, [
+      ['Chambre 1', '14,00 m²'],
+      ['Bain', '6,00 m²'],
+    ]);
+    const c = floorPlan(800, 120, 8, 8, [
+      ['Cave', '20,00 m²'],
+      ['Buanderie', '9,00 m²'],
+    ]);
+    const y1 = 120 + 8 * PPM;
+    const texts = [...a.texts, ...b.texts, ...c.texts, at('PLAN REZ-DE-CHAUSSÉE', 40, y1 + 30, 14), at('PLAN ÉTAGE', 420, y1 + 30, 14), at('Échelle 1:100', 1000, 800, 7)];
+    const { doc } = analysePdf([page([...a.segs, ...b.segs, ...c.segs], texts)], 'x.pdf');
+    expect(doc.sheets).toHaveLength(3);
+    const lost = doc.sheets.find((s) => s.detected.rooms.some((r) => r.name === 'Cave'))!;
+    expect(lost).toBeDefined();
+    expect(lost.detected.rooms.map((r) => r.name).sort()).toEqual(['Buanderie', 'Cave']);
+    expect(lost.storeyRank ?? null).toBeNull();
+    expect(lost.detected.notes.some((n) => /sans titre/i.test(n))).toBe(true);
+    const v = doc.reading!.views.find((x) => x.sheetId === lost.id)!;
+    expect(v.confidence).toBeLessThan(0.65);
+    expect(v.doubts.some((d) => /sans titre/i.test(d))).toBe(true);
+    // Les deux plans titrés gardent leur niveau.
+    expect(doc.sheets.filter((s) => s.storeyRank !== null && s.storeyRank !== undefined).map((s) => s.storeyRank).sort()).toEqual([0, 1]);
+  });
+
+  it('un plan titré dont les quatre pièces tombent en grille garde son niveau et ses pièces', () => {
+    const a = floorPlan(40, 120, 8, 8, [
+      ['Séjour', '30,00 m²'],
+      ['Cuisine', '12,00 m²'],
+    ]);
+    const b = floorPlan(420, 120, 8, 8, [
+      ['Chambre 1', '14,00 m²'],
+      ['Bain', '6,00 m²'],
+    ]);
+    const c = floorPlan(800, 120, 8, 8, [
+      ['Cave', '20,00 m²'],
+      ['Buanderie', '9,00 m²'],
+      ['Cellier', '5,00 m²'],
+      ['Chaufferie', '6,00 m²'],
+    ]);
+    const y1 = 120 + 8 * PPM;
+    const texts = [...a.texts, ...b.texts, ...c.texts, at('PLAN REZ-DE-CHAUSSÉE', 40, y1 + 30, 14), at('PLAN ÉTAGE', 420, y1 + 30, 14), at('PLAN SOUS-SOL', 800, y1 + 30, 14), at('Échelle 1:100', 1000, 800, 7)];
+    const pg = page([...a.segs, ...b.segs, ...c.segs], texts);
+    const split = splitSheet(pg, { den: 100, lang: 'fr' });
+    const basement = split.views.find((v) => v.title === 'PLAN SOUS-SOL')!;
+    expect(basement.kind).toBe('floor-plan');
+    expect(basement.confidence).toBeGreaterThanOrEqual(0.9);
+    expect(split.views.some((v) => v.kind === 'table')).toBe(false);
+    const { doc } = analysePdf([pg], 'x.pdf');
+    expect(doc.sheets).toHaveLength(3);
+    const s = doc.sheets.find((x) => x.storeyRank === -1)!;
+    expect(s).toBeDefined();
+    expect(s.detected.rooms.map((r) => r.name).sort()).toEqual(['Buanderie', 'Cave', 'Cellier', 'Chaufferie']);
   });
 
   it('un cartouche touché par une chaîne de cotes reste à sa taille et ne mange pas le plan', () => {

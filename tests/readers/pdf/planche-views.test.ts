@@ -66,12 +66,23 @@ const SIDE: Record<string, string> = { front: 'front', rear: 'back', side: 'side
 
 const box = (b: readonly [number, number, number, number]): BBox => ({ minX: b[0], minY: b[1], maxX: b[2], maxY: b[3] });
 
-/** Part de la plus petite des deux boîtes couverte par l'autre. */
-function cover(a: BBox, b: BBox): number {
+const area = (x: BBox): number => (x.maxX - x.minX) * (x.maxY - x.minY);
+function inter(a: BBox, b: BBox): number {
   const w = Math.max(0, Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX));
   const h = Math.max(0, Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY));
-  const area = (x: BBox): number => (x.maxX - x.minX) * (x.maxY - x.minY);
-  return (w * h) / Math.min(area(a), area(b));
+  return w * h;
+}
+/** Part de la plus petite des deux boîtes couverte par l'autre (sert seulement à apparier). */
+function cover(a: BBox, b: BBox): number {
+  return inter(a, b) / Math.min(area(a), area(b));
+}
+/**
+ * Recouvrement MUTUEL : la part de la vraie boîte couverte par la boîte lue, et la part de la boîte lue couverte par
+ * la vraie ; le plus petit des deux. Une boîte tronquée (cartouche lu à moitié) ou démesurée (la page entière) échoue.
+ */
+function mutual(read: BBox, truthBox: BBox): number {
+  const i = inter(read, truthBox);
+  return Math.min(i / area(truthBox), i / area(read));
 }
 
 /** Plus grand écart entre les bords de deux boîtes (pt). */
@@ -98,7 +109,7 @@ async function checkViews(name: string): Promise<void> {
       expect(v, `${name} p${page.number} ${t.kind} « ${t.title ?? '—'} »`).toBeDefined();
       if (!v) continue;
       // Boîte : l'essentiel du dessin de la vue est dans la boîte lue, et inversement.
-      expect(cover(v.box, box(t.bbox_pt)), `${v.id} boîte`).toBeGreaterThan(0.6);
+      expect(mutual(v.box, box(t.bbox_pt)), `${v.id} boîte`).toBeGreaterThan(0.6);
       if (t.title && t.kind !== 'north') expect(fold(v.title ?? '')).toBe(fold(t.title));
       if (t.kind === 'plan') {
         expect(v.storeyRank).toBe(t.level);
@@ -164,6 +175,14 @@ describe('planche A1 « Archicad » (trois plans dans un cadre de situation, tre
     const terrasse = doc.sheets[0]!.detected.rooms.find((r) => r.name === 'Terrasse')!;
     expect(terrasse.exterior).toBe(true);
     expect(terrasse.heatedGuess).toBe('no');
+  });
+
+  it('le cartouche est lu en entier, jusqu’au logo du bas, dans son cadre', async () => {
+    const doc = await read(name);
+    const tb = doc.reading!.views.find((v) => v.kind === 'title-block')!;
+    const t = truth(name).pages[0]!.views.find((x) => x.kind === 'titleblock')!;
+    expect(mutual(tb.box, box(t.bbox_pt))).toBeGreaterThan(0.9);
+    expect(tb.box.maxY).toBeGreaterThan(t.bbox_pt[3] - 20);
   });
 
   it('aucun avertissement de niveaux non séparés ni de dessin lu en partie', async () => {

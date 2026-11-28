@@ -10,6 +10,7 @@ export const GEOMETRY_MESSAGES: Dictionary = {
     'geo.scale.areas.agree': 'Échelle 1:{den} : les surfaces écrites de {rooms} pièces confirment l’échelle annoncée.',
     'geo.scale.areas.contradict': 'Les surfaces écrites donnent 1:{den}, l’échelle annoncée 1:{declared} : laquelle est juste ?',
     'geo.scale.declared': 'Échelle 1:{den} annoncée, non recoupée par les surfaces.',
+    'geo.scale.declared.ignored': 'Échelle annoncée impossible : ignorée.',
     'geo.scale.none': 'Échelle inconnue : posez la règle sur une cote.',
     'geo.rooms.found': '{found} pièce(s) sur {total} retrouvée(s) sur le dessin ; écart maximal {gap} %.',
     'geo.rooms.fallback': 'Pièces sans remplissage : contours pris entre les murs, moins sûrs.',
@@ -26,8 +27,13 @@ export const GEOMETRY_MESSAGES: Dictionary = {
     'geo.unheated': 'Local non chauffé : {names} ({area} m²), séparé par l’isolant.',
     'geo.unheated.unsealed': 'Le local « {name} » n’est pas séparé du logement par l’isolant : est-il chauffé ?',
     'geo.unheated.basement': 'Sous-sol sans isolant dessiné : tout le niveau est proposé non chauffé.',
+    'geo.unheated.enclosed': 'Le local « {name} » est entouré par le logement : compté chauffé. Est-il chauffé ?',
+    'geo.view.twoPlans': 'La vue semble contenir deux plans (pièces loin du bâtiment : {rooms}). Vérifiez le découpage.',
     'geo.heated': 'Contour chauffé : {area} m².',
     'geo.unlabelled': 'Surface sans étiquette de {area} m² dans le volume chauffé (escalier ?) : à compter ?',
+    'geo.unlabelled.stairs': 'Escalier sans étiquette de {area} m² (marches dessinées) dans le volume chauffé : à compter ?',
+    'geo.unlabelled.void': 'Trémie (vide) de {area} m² dans le volume chauffé : à compter ?',
+    'geo.unlabelled.passage': 'Dégagement sans étiquette de {area} m² dans le volume chauffé : à compter ?',
     'geo.wallToUnheated': 'Parois vers le non chauffé : {length} m.',
     'geo.openings': 'Baies des murs extérieurs : {windows} fenêtre(s), {doors} porte(s), {unknown} incertaine(s).',
     'geo.opening.unknown': 'Ouverture de {width} m côté {side} : porte, fenêtre ou rien ?',
@@ -49,6 +55,7 @@ export const GEOMETRY_MESSAGES: Dictionary = {
     'geo.scale.areas.agree': 'Maßstab 1:{den}: die Flächenangaben von {rooms} Räumen bestätigen den angegebenen Maßstab.',
     'geo.scale.areas.contradict': 'Die Flächenangaben ergeben 1:{den}, angegeben ist 1:{declared}: welcher stimmt?',
     'geo.scale.declared': 'Angegebener Maßstab 1:{den}, nicht durch Flächen bestätigt.',
+    'geo.scale.declared.ignored': 'Angegebener Maßstab unmöglich: ignoriert.',
     'geo.scale.none': 'Maßstab unbekannt: bitte an einem Maß das Lineal anlegen.',
     'geo.rooms.found': '{found} von {total} Räumen in der Zeichnung gefunden; größte Abweichung {gap} %.',
     'geo.rooms.fallback': 'Räume ohne Füllung: Umrisse zwischen den Wänden ermittelt, weniger sicher.',
@@ -65,8 +72,13 @@ export const GEOMETRY_MESSAGES: Dictionary = {
     'geo.unheated': 'Unbeheizter Raum: {names} ({area} m²), durch die Dämmung getrennt.',
     'geo.unheated.unsealed': 'Der Raum „{name}“ ist nicht durch Dämmung von der Wohnung getrennt: ist er beheizt?',
     'geo.unheated.basement': 'Untergeschoss ohne gezeichnete Dämmung: das ganze Geschoss gilt als unbeheizt.',
+    'geo.unheated.enclosed': 'Der Raum „{name}“ liegt mitten in der Wohnung: als beheizt gezählt. Ist er beheizt?',
+    'geo.view.twoPlans': 'Die Ansicht scheint zwei Grundrisse zu enthalten (Räume weit vom Gebäude: {rooms}). Bitte Zuschnitt prüfen.',
     'geo.heated': 'Beheizter Umriss: {area} m².',
     'geo.unlabelled': 'Fläche ohne Beschriftung von {area} m² im beheizten Volumen (Treppe?): mitzählen?',
+    'geo.unlabelled.stairs': 'Treppe ohne Beschriftung von {area} m² (Stufen gezeichnet) im beheizten Volumen: mitzählen?',
+    'geo.unlabelled.void': 'Deckenöffnung (Luftraum) von {area} m² im beheizten Volumen: mitzählen?',
+    'geo.unlabelled.passage': 'Flur ohne Beschriftung von {area} m² im beheizten Volumen: mitzählen?',
     'geo.wallToUnheated': 'Wände zum unbeheizten Bereich: {length} m.',
     'geo.openings': 'Öffnungen der Außenwände: {windows} Fenster, {doors} Tür(en), {unknown} unklar.',
     'geo.opening.unknown': 'Öffnung von {width} m auf der Seite {side}: Tür, Fenster oder nichts?',
@@ -88,7 +100,8 @@ export const GEOMETRY_MESSAGES: Dictionary = {
 registerMessages(GEOMETRY_MESSAGES);
 
 export function gmsg(lang: Lang, key: string, params?: Record<string, string | number>): string {
-  return t(lang, key, params);
+  // Langue hors du dictionnaire (« en » venu de l'interface…) : repli sur le français, jamais d'erreur.
+  return t(lang === 'de' ? 'de' : 'fr', key, params);
 }
 
 /** Nom du côté d'une normale de la feuille (haut, droit, bas, gauche, oblique). */

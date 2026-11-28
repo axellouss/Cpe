@@ -22,8 +22,13 @@ import { msg } from './messages';
 import type { FillArea, RawPage, RawText } from './raw';
 import { AREA_RE, boxArea, containsBox, H, inBox, median, textBox, unionBox, W } from './sheetviews';
 
-/** Espaces extérieurs ou étiquettes de parcelle : jamais une pièce du bâtiment. */
-export const OUTDOOR_RE = /terrasse|balcon|balkon|loggia|jardin|garten|\bcour\b|\bhof\b|pergola|carport|parking|stellplatz|zufahrt|acces|trottoir|rue\b|strasse|parcelle|parzelle|\blot\b/;
+/**
+ * Espaces extérieurs ou étiquettes de parcelle (texte replié par `fold`) : jamais une pièce du bâtiment. Liste
+ * unique des lecteurs PDF. Un jardin d'hiver (Wintergarten) est une pièce, souvent chauffée : il n'en fait pas partie.
+ */
+const OUTDOOR_WORDS_RE = /terrasse|balcon|balkon|loggia|jardin|garten|\bcour\b|\bhof\b|pergola|car-?port|parking|stellplatz|zufahrt|acces|trottoir|rue\b|strasse|parcelle|parzelle|\blot\b/;
+const INDOOR_GARDEN_RE = /jardin d\W?\s?hiver|wintergarten/;
+export const OUTDOOR_RE = { test: (folded: string): boolean => OUTDOOR_WORDS_RE.test(folded) && !INDOOR_GARDEN_RE.test(folded) };
 
 export type FootprintSource = 'room-zones' | 'walls' | 'wall-ring' | 'repeat-frame' | 'roof-fill';
 
@@ -83,7 +88,7 @@ export interface RoomZone {
   area: number | null;
 }
 
-/** Surface écrite sur la ligne d'une zone (« S: 35,00 m », exposant « 2 » à part ; « 12,40 m² »). */
+/** Surface écrite sur la ligne d'une zone (« S: 27,40 m », exposant « 2 » à part ; « 12,40 m² »). */
 export function zoneArea(s: string): number | null {
   const m = /(\d{1,4}[.,]\d{1,2})/.exec(s);
   if (!m) return null;

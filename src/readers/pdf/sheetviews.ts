@@ -491,7 +491,7 @@ export function northArrow(page: RawPage): BBox | null {
 // ───────────────────────────── Contenu d'un bloc ─────────────────────────────
 
 const LEVEL_MARK_RE = /(?:^|[\s=])[+\-±−]\s?\d{1,3}[.,]\d{2,3}\b/;
-/** Ligne de surface d'une pièce : « 12,40 m² », « 12.4 qm », « S: 35,00 ». */
+/** Ligne de surface d'une pièce : « 12,40 m² », « 12.4 qm », « S: 27,40 ». */
 export const AREA_RE = /\d+[.,]\d{1,2}\s*(?:m(?:²|2)?|qm)(?![a-z])|\bS\s*[:=]\s*\d/i;
 const NUMBER_UNIT_RE = /\d+(?:[.,]\d+)?\s*(?:m²|m2|m|%)\b|\d+(?:[.,]\d+)?m$/;
 
@@ -569,7 +569,57 @@ export function findTitleBlock(page: RawPage, blocks: readonly Block[], body: nu
     }
     if (!grew) break;
   }
+  extendToFrame(page, box, outer, body);
   return box;
+}
+
+/**
+ * Cadre tracé autour du cartouche : un trait vertical posé sur un bord de la boîte (à 3 corps près) et qui la
+ * traverse sur au moins la moitié de sa hauteur en donne la vraie hauteur ; de même un trait horizontal pour la
+ * largeur. Sans cela, un logo ou des cases vides en bas du cartouche (loin des mots) restent dehors. Borné au bloc
+ * d'origine ; le cadre de la feuille n'en est jamais un.
+ */
+function extendToFrame(page: RawPage, box: BBox, outer: BBox, body: number): void {
+  const tol = 3 * body;
+  const segs = page.segs.filter((s) => !isSheetFrameSeg(s, page.width, page.height));
+  for (let k = 0; k < 3; k++) {
+    let grew = false;
+    for (const s of segs) {
+      const vertical = Math.abs(s.x1 - s.x0) < 0.5 && Math.abs(s.y1 - s.y0) > 0;
+      const horizontal = Math.abs(s.y1 - s.y0) < 0.5 && Math.abs(s.x1 - s.x0) > 0;
+      if (vertical) {
+        const x = s.x0;
+        const y0 = Math.max(outer.minY, Math.min(s.y0, s.y1));
+        const y1 = Math.min(outer.maxY, Math.max(s.y0, s.y1));
+        const onEdge = Math.abs(x - box.minX) <= tol || Math.abs(x - box.maxX) <= tol;
+        const across = Math.min(y1, box.maxY) - Math.max(y0, box.minY) >= 0.5 * (box.maxY - box.minY);
+        if (!onEdge || !across || x < outer.minX - 1 || x > outer.maxX + 1) continue;
+        if (y0 < box.minY - 0.5 || y1 > box.maxY + 0.5) {
+          box.minY = Math.min(box.minY, y0);
+          box.maxY = Math.max(box.maxY, y1);
+          grew = true;
+        }
+        if (x < box.minX - 0.5 || x > box.maxX + 0.5) {
+          box.minX = Math.min(box.minX, x);
+          box.maxX = Math.max(box.maxX, x);
+          grew = true;
+        }
+      } else if (horizontal) {
+        const y = s.y0;
+        const x0 = Math.max(outer.minX, Math.min(s.x0, s.x1));
+        const x1 = Math.min(outer.maxX, Math.max(s.x0, s.x1));
+        const onEdge = Math.abs(y - box.minY) <= tol || Math.abs(y - box.maxY) <= tol;
+        const across = Math.min(x1, box.maxX) - Math.max(x0, box.minX) >= 0.5 * (box.maxX - box.minX);
+        if (!onEdge || !across || y < outer.minY - 1 || y > outer.maxY + 1) continue;
+        if (x0 < box.minX - 0.5 || x1 > box.maxX + 0.5) {
+          box.minX = Math.min(box.minX, x0);
+          box.maxX = Math.max(box.maxX, x1);
+          grew = true;
+        }
+      }
+    }
+    if (!grew) break;
+  }
 }
 
 // ───────────────────────────── Association titre ↔ bloc ─────────────────────────────
@@ -761,6 +811,26 @@ export interface SplitOptions {
   lang: Lang;
 }
 
+/** Genres de vues dessinées : un bloc titré ainsi n'est jamais un tableau. */
+const DRAWN_TITLE_KINDS = new Set<ViewKind>(['floor-plan', 'roof-plan', 'section', 'elevation', 'site-plan']);
+
+/**
+ * Étiquettes posées dans un dessin : la boîte des textes (hors titres, plus gros que le corps courant) couvre moins
+ * de la moitié du bloc ; un tableau, lui, remplit son cadre.
+ */
+function labelsInDrawing(texts: readonly RawText[], box: BBox): boolean {
+  const body = bodySize(texts);
+  const small = texts.filter((t) => t.size <= 1.5 * body);
+  if (small.length === 0) return false;
+  const tb: BBox = {
+    minX: Math.min(...small.map((t) => t.x0)),
+    minY: Math.min(...small.map((t) => t.y0)),
+    maxX: Math.max(...small.map((t) => t.x1)),
+    maxY: Math.max(...small.map((t) => t.y1)),
+  };
+  return boxArea(tb) < 0.5 * boxArea(box);
+}
+
 /** Ordre des genres dans la liste des vues. */
 const KIND_ORDER: ViewKind[] = ['floor-plan', 'roof-plan', 'section', 'elevation', 'site-plan', 'table', 'title-block', 'photo', 'legend', 'north-arrow', 'other'];
 
@@ -856,8 +926,10 @@ export function splitSheet(input: RawPage, opts: SplitOptions): SheetSplit {
     let ck: ViewKind | null = null;
     if (b.source === 'image') ck = 'photo';
     else if (b.source === 'text-cluster') ck = b.table ? 'table' : 'legend';
-    // Un bloc dont les textes forment une grille est un tableau, même s'il porte des surfaces.
-    else if (b.source === 'ink-block' && c.texts.length >= 6 && c.areas >= 0.2 * c.texts.length && isTable(c.texts)) ck = 'table';
+    // Un bloc dont les textes forment une grille est un tableau, même s'il porte des surfaces ; sauf un bloc titré
+    // comme une vue dessinée (plan, coupe, façade) ou dont les textes ne couvrent qu'une partie du dessin : ce sont
+    // alors des étiquettes de pièces posées dans les murs, en grille par hasard.
+    else if (b.source === 'ink-block' && c.texts.length >= 6 && c.areas >= 0.2 * c.texts.length && !(tk && DRAWN_TITLE_KINDS.has(tk)) && !labelsInDrawing(c.texts, b.box) && isTable(c.texts)) ck = 'table';
     else if (c.areas >= 2 && c.levels <= c.areas) ck = 'floor-plan';
     else if (c.levels >= 2 && c.areas === 0 && b.source !== 'ink-block') ck = 'section';
     else if (c.numberUnits >= 4 && c.texts.length <= 40 && Math.max(W(b.box), H(b.box)) < 0.3 * Math.max(page.width, page.height)) ck = 'table';
