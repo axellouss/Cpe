@@ -27,8 +27,14 @@ export const HATCH_MIN_SEGS = 8;
 export const HATCH_WIDTH_TOL = 0.02;
 /** Hachure sans découpe : nombre minimal de traits d'un même tracé… */
 export const PATH_HATCH_MIN_SEGS = 12;
-/** … dont au plus cette part est jointe bout à bout (une polyligne n'est pas une hachure). */
+/** … dont au plus cette part est jointe bout à bout (une polyligne n'est pas une hachure)… */
 export const PATH_HATCH_MAX_JOINED = 0.2;
+/**
+ * … et de pas serré (pt, ≈ 0,9 mm sur le papier). Sans découpe pour borner la zone, des marches d'escalier ou un
+ * quadrillage dessinés d'un seul tracé ressemblent à une hachure ; une marche (≥ 0,18 m) dépasse ce pas jusqu'au
+ * 1/200, une hachure de mur ou d'isolant reste en dessous.
+ */
+export const PATH_HATCH_MAX_SPACING = 2.5;
 
 /** Largeur d'une classe de direction (degrés). */
 const ANGLE_BIN = 5;
@@ -206,7 +212,8 @@ export interface HatchGrouping {
  *  1. sous une même découpe (pas la page, ≤ 5 % de la page) : au moins HATCH_MIN_SEGS traits tracés (non remplis),
  *     d'encre homogène, qui passent `hatchOf` → zone de contour = la découpe ;
  *  2. repli sans découpe : un même tracé d'au moins PATH_HATCH_MIN_SEGS traits droits disjoints, qui passe
- *     `hatchOf` et dont l'emprise couvre ≤ 5 % de la page → zone de contour = la boîte des traits.
+ *     `hatchOf` avec un pas ≤ PATH_HATCH_MAX_SPACING et dont l'emprise couvre ≤ 5 % de la page → zone de contour
+ *     = la boîte des traits.
  * Les bords de remplissage (`fill`) ne sont jamais regroupés.
  */
 export function groupHatches(segs: readonly RawSeg[], clips: readonly ClipZone[], clipRings: readonly (Ring[] | undefined)[], pageArea: number): HatchGrouping {
@@ -245,7 +252,7 @@ export function groupHatches(segs: readonly RawSeg[], clips: readonly ClipZone[]
     const mine = idx.map((i) => segs[i]!);
     if (!isDisjointRun(mine)) continue;
     const h = hatchOf(mine);
-    if (!h) continue;
+    if (!h || h.spacing > PATH_HATCH_MAX_SPACING) continue;
     const b = emptyBox();
     for (const s of mine) {
       growBox(b, s.x0, s.y0);
