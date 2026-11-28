@@ -115,6 +115,10 @@ export interface DetectedOpening {
   sill?: number;
   /** D'où vient la hauteur : cote à deux nombres du plan, façade dessinée, ou valeur d'usage. */
   heightFrom?: 'plan-dim' | 'elevation' | 'default';
+  /** Hauteur écrite sur le plan (cote à deux nombres), quand elle existe, même si une autre a été retenue (m). */
+  heightPlan?: number;
+  /** Hauteur de la baie mesurée sur la façade dessinée, quand elle a été retrouvée (m). */
+  heightElevation?: number;
   /** Précision sur le genre d'ouverture, quand le lecteur la connaît. */
   detail?: 'entrance-door' | 'garage-door' | 'door-to-unheated' | 'french-window';
   /** Vrai si l'ouverture sépare le volume chauffé d'un local non chauffé (porte vers le garage). */
