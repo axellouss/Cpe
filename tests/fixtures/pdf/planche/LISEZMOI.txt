@@ -1,5 +1,5 @@
-Planches d'autorisation de bâtir SYNTHÉTIQUES (essais du futur lecteur de planches)
-=================================================================================
+Planches d'autorisation de bâtir SYNTHÉTIQUES (essais de la lecture automatique des planches)
+==============================================================================================
 
 Ces PDF imitent la STRUCTURE d'une planche d'architecte luxembourgeoise exportée d'Archicad : plusieurs vues sur
 une même page, titres de vues, murs hachurés, isolant, pièces en « zones », cotes, compositions de parois, coupes,
@@ -20,7 +20,17 @@ exterior, to_unheated, in_envelope, azimuth_deg}, arêtes mitoyennes, arêtes ve
 niveaux, hauteurs d'étage, compositions {title, element, layers [{thickness_cm, text, material_key}]}, tableau des
 surfaces, cartouche, nord (north_azimuth_deg = azimut du haut de la feuille ; north_cw_from_up_deg = direction du
 nord vue sur la feuille), équipements écrits, nombre de micro-traits et de traits de hachure (counts).
-Le test tests/readers/pdf/planche-fixtures.test.ts vérifie la cohérence PDF ↔ vérité (pas l'analyse du lecteur).
+Tests qui s'en servent :
+  tests/readers/pdf/planche-fixtures.test.ts   cohérence PDF ↔ vérité (le script et ses fichiers, pas le lecteur) ;
+  tests/readers/pdf/planche-views.test.ts      découpage en vues ;
+  tests/readers/pdf/geometry/planches.test.ts  géométrie des plans, toiture, façades ;
+  tests/readers/pdf/planche-lecture.test.ts    lecture complète de bout en bout (readPdfDetailed + moteur) ;
+  tests/engine/auto*.test.ts                   projet automatique et réponses aux questions (vérité → document,
+                                               via tests/engine/auto-planche.ts) ;
+  tests/ui/shell/autoflow-planches.test.tsx    parcours complet dans l'interface.
+Après une régénération, relancez au moins ces tests : une vérité qui change change leurs attendus.
+planche_sans_titres.pdf n'a ni coupe ni plan de toiture : le moteur la renvoie au parcours guidé (c'est voulu).
+Fonctionnement de la lecture : docs/lecture-automatique.md.
 
 planche_A1_archicad.pdf   A1 paysage, 1/100, français. Maison jumelée (mitoyen à droite) 9,20 × 12,40 m, garage non
                           chauffé dans l'emprise. Trois plans côte à côte dans le même cadre de situation découpé

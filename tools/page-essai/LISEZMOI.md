@@ -28,3 +28,10 @@ node tools/page-essai/echapper_controles.cjs /chemin/vers/sortie/copie/assets/*.
 - `fichiers.json` — la liste de ces chemins ;
 - `essai-local/index.html` — la même page dans un squelette imitant celui de l'hébergeur, à servir depuis `copie/`
   (`python3 -m http.server` après y avoir copié ce fichier) pour l'essayer avant de publier.
+
+## Plans d'exemple
+
+Les fichiers de `public/samples/` (le plan DXF et, quand il est présent, la planche PDF d'exemple) se retrouvent dans
+`dist/samples/` puis dans `copie/samples/` : ils sont publiés avec le reste. Après publication, vérifiez que le
+bouton « Essayer avec un exemple » ouvre bien la planche : si l'hébergeur ne sert pas un PDF, l'application le dit
+(« Le plan d’exemple n’est pas disponible dans cette installation »).

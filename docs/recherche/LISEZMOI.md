@@ -1,5 +1,10 @@
 # Notes de recherche (novembre 2026)
 
+> Ces notes datent d'avant la lecture automatique des planches d'autorisation. Ce que fait l'outil aujourd'hui est
+> décrit dans le [README](../../README.md) et, pour la lecture d'une planche, dans
+> [`docs/lecture-automatique.md`](../lecture-automatique.md). Depuis, une planche réelle (privée, hors dépôt) a servi
+> à régler la lecture : la remarque ci-dessous sur l'absence de plan réel ne vaut que pour ces notes.
+
 Ces notes ont servi à concevoir Plan2CPE. Elles sont conservées telles quelles (en anglais) parce qu'elles
 disent, pour chaque affirmation, si elle a été **prouvée en exécutant du code**, lue dans une source officielle,
 tirée d'une source secondaire, ou **non vérifiée**.
