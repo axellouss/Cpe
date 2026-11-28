@@ -40,8 +40,6 @@ export const PATH_HATCH_MAX_SPACING = 2.5;
  * émis en un seul tracé : deux à quatre traits serrés par baie, puis un grand saut jusqu'à la façade suivante.
  */
 export const PATH_HATCH_MIN_LINES = 6;
-/** Hachure croisée : rapport maximal entre les pas des deux directions (carreaux jusqu'au 1 × 2). */
-export const HATCH_CROSS_MAX_RATIO = 2.2;
 
 /** Largeur d'une classe de direction (degrés). */
 const ANGLE_BIN = 5;
@@ -55,8 +53,8 @@ const SPACING_TOL = 0.2;
 const MAX_STEP_MULTIPLE = 6;
 /** Part des écarts qui doivent être des multiples du pas. */
 const REGULAR_SHARE = 0.8;
-/** Bande continue (hachure sans découpe) : part des écarts égaux au pas, les autres valant au plus deux pas. */
-const BAND_SHARE = 0.9;
+/** Bande continue (hachure sans découpe) : part des écarts égaux au pas, les autres valant deux pas. */
+const BAND_SHARE = 0.8;
 /** Bande continue : part des droites voisines dont les étendues se recouvrent. */
 const BAND_OVERLAP_SHARE = 0.9;
 
@@ -124,15 +122,11 @@ export function hatchOf(segs: readonly LineLike[]): HatchPattern | null {
 }
 
 /**
- * Hachure d'après ses familles et leurs pas : angles croissants ; une hachure croisée garde des pas voisins
- * (rapport ≤ HATCH_CROSS_MAX_RATIO) — une grille de tableau (lignes serrées, colonnes larges) n'en est pas une.
+ * Hachure d'après ses familles et leurs pas, angles en ordre croissant. Les pas des deux directions d'une croisée
+ * ne sont PAS comparés : un parquet ou un carrelage en bandes a des pas très différents (mesuré sur une planche
+ * réelle), comme une grille de tableau sous une petite découpe, qui reste donc regroupée (limite connue).
  */
-function patternOf(fam: readonly (readonly [number, readonly LineLike[]])[], spacings: readonly number[]): HatchPattern | null {
-  if (spacings.length === 2) {
-    const a = spacings[0]!;
-    const b = spacings[1]!;
-    if (Math.max(a, b) > HATCH_CROSS_MAX_RATIO * Math.min(a, b)) return null;
-  }
+function patternOf(fam: readonly (readonly [number, readonly LineLike[]])[], spacings: readonly number[]): HatchPattern {
   const angles = fam.map((f) => f[0]).sort((p, q) => p - q);
   return { angles, spacing: spacings.reduce((p, q) => p + q, 0) / spacings.length };
 }
@@ -184,7 +178,7 @@ interface BandLine {
 
 /**
  * Pas d'une BANDE CONTINUE de droites parallèles de direction `deg`, ou null : au moins PATH_HATCH_MIN_LINES
- * droites distinctes ; écarts entre droites voisines presque tous (≥ 90 %) égaux au pas (médiane), les autres
+ * droites distinctes ; écarts entre droites voisines presque tous (≥ 80 %) égaux au pas (médiane), les autres
  * valant deux pas (une droite manquante) — aucun grand saut ; et droites voisines qui se recouvrent le long de
  * leur direction (≥ 90 %) : elles remplissent une même zone. Des groupes de traits serrés séparés par de grands
  * vides (vitrages de plusieurs fenêtres, rangées de symboles) ne forment pas une bande.
@@ -251,7 +245,6 @@ export function pathHatchOf(segs: readonly LineLike[], pageArea: number): { patt
     spacings.push(step);
   }
   const pattern = patternOf(fam, spacings);
-  if (!pattern) return null;
   const bbox = emptyBox();
   for (const s of segs) {
     growBox(bbox, s.x0, s.y0);
@@ -333,9 +326,10 @@ export interface HatchGrouping {
  *     d'encre homogène, qui passent `hatchOf` → zone de contour = la découpe ;
  *  2. repli sans découpe : un même tracé qui passe `pathHatchOf` (traits droits disjoints en bandes continues de
  *     pas serré, emprise ≤ 5 % de la page) → zone de contour = la boîte des traits.
- * Les bords de remplissage (`fill`) ne sont jamais regroupés.
+ * Les bords de remplissage (`fill`) ne sont jamais regroupés. `notPathHatch` : tracés déjà jugés (mêmes traits,
+ * même critère) qui ne sont pas des hachures d'un seul tracé — l'étape 2 les saute.
  */
-export function groupHatches(segs: readonly RawSeg[], clips: readonly ClipZone[], clipRings: readonly (Ring[] | undefined)[], pageArea: number): HatchGrouping {
+export function groupHatches(segs: readonly RawSeg[], clips: readonly ClipZone[], clipRings: readonly (Ring[] | undefined)[], pageArea: number, notPathHatch?: ReadonlySet<number>): HatchGrouping {
   const drop = new Uint8Array(segs.length);
   const zones: HatchZone[] = [];
   let count = 0;
@@ -361,7 +355,7 @@ export function groupHatches(segs: readonly RawSeg[], clips: readonly ClipZone[]
   }
   const byPid = new Map<number, number[]>();
   segs.forEach((s, i) => {
-    if (drop[i] || !s.stroke || s.fill || s.curve) return;
+    if (drop[i] || !s.stroke || s.fill || s.curve || notPathHatch?.has(s.pid)) return;
     let a = byPid.get(s.pid);
     if (!a) byPid.set(s.pid, (a = []));
     a.push(i);

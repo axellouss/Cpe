@@ -19,8 +19,8 @@
  *
  * Mémoire : un tracé qu'aucune règle d'allègement ne peut retirer (remplissage, tracé hors petite découpe qui n'est
  * pas une hachure d'un seul tracé) est « sûr ». Dès que les traits sûrs atteignent le plafond, la suite serait
- * coupée de toute façon : on ne garde plus ses traits (on compte seulement les bilans des découpes, pour que les
- * décisions de trame restent les mêmes), comme l'ancienne lecture s'arrêtait au plafond.
+ * coupée de toute façon : comme l'ancienne lecture s'arrêtait au plafond, on ne lit plus les tracés seulement
+ * tracés, et on ne garde plus les traits des remplissages (leurs anneaux restent lus).
  *
  * C'est le seul fichier qui manipule les listes d'opérateurs non typées de pdf.js.
  */
@@ -343,6 +343,8 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
   let rawStrokeSegs = 0;
   /** Traits gardés qu'aucune règle d'allègement ne peut retirer (voir l'en-tête). */
   let sureSegs = 0;
+  /** Tracés déjà jugés : pas des hachures d'un seul tracé (voir isSure). */
+  const notPathHatch = new Set<number>();
 
   interface GraphicState {
     ctm: Matrix;
@@ -393,10 +395,12 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
     if (fill || !lighten) return true;
     if (clip !== 0 && boxArea(clips[clip]!.bbox) <= HATCH_MAX_CLIP_SHARE * pageArea) return false;
     if (hasMicro) return false;
-    if (segs.length - from < PATH_HATCH_MIN_SEGS) return true;
     const straight: RawSeg[] = [];
-    for (let k = from; k < segs.length; k++) if (!segs[k]!.curve) straight.push(segs[k]!);
-    return straight.length < PATH_HATCH_MIN_SEGS || pathHatchOf(straight, pageArea) === null;
+    if (segs.length - from >= PATH_HATCH_MIN_SEGS) for (let k = from; k < segs.length; k++) if (!segs[k]!.curve) straight.push(segs[k]!);
+    if (straight.length >= PATH_HATCH_MIN_SEGS && pathHatchOf(straight, pageArea) !== null) return false;
+    // Jugé une fois pour toutes : groupHatches verra exactement ces traits (ni micro-traits, ni petite découpe).
+    notPathHatch.add(segs[from]!.pid);
+    return true;
   };
 
   const save = (): void => {
@@ -490,13 +494,14 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
       if (typeof paintOp !== 'number' || !(data instanceof Float32Array)) continue;
       const stroke = strokeOps.has(paintOp);
       const fill = fillOps.has(paintOp);
-      const paint = (stroke || fill) && hidden === 0; // sinon : tracé de découpe seul, ou calque masqué
-      // Collecte saturée : ce tracé serait au-delà du plafond ; il compte encore dans les bilans (trames) et ses
-      // remplissages restent lus, mais ses traits ne sont plus gardés.
+      let paint = (stroke || fill) && hidden === 0; // sinon : tracé de découpe seul, ou calque masqué
+      // Collecte saturée : ce tracé serait au-delà du plafond. Un remplissage reste lu (anneaux, couleur), sans
+      // garder ses traits ; un tracé seulement tracé est sauté, comme dans l'ancienne lecture.
       let keep = paint;
       if (paint && (sureSegs >= maxSegments || segs.length >= collectLimit)) {
         truncated = true;
         keep = false;
+        if (!fill) paint = false;
       }
       if (!paint && !clipNow) continue;
       const M = mul(V, gs.ctm);
@@ -690,7 +695,7 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
   let hatchSegs = 0;
   let hatches: RawPage['hatches'] = [];
   if (lighten) {
-    const grouping = groupHatches(all, clips, clipRings, pageArea);
+    const grouping = groupHatches(all, clips, clipRings, pageArea, notPathHatch);
     hatches = grouping.zones;
     hatchSegs = grouping.count;
     if (grouping.count > 0) all = all.filter((_, i) => !grouping.drop[i]);

@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  bandStep,
   boxArea,
   directionBin,
   groupHatches,
@@ -19,6 +20,8 @@ import {
   isStipple,
   MIN_STIPPLE,
   PATH_HATCH_MAX_SPACING,
+  PATH_HATCH_MIN_LINES,
+  pathHatchOf,
   regularStep,
   sameInk,
   SMALL_PT,
@@ -35,6 +38,8 @@ import { fixtureBytes, seg } from './helpers';
 // ───────────────────────────── Outils ─────────────────────────────
 
 const PAGE_AREA = 1000 * 1000;
+/** Aire d'une feuille A1 (pt²) : 5 % en couvrent un bâtiment entier au 1/100. */
+const A1_AREA = 2384 * 1684;
 const box = (minX: number, minY: number, maxX: number, maxY: number): RawBox => ({ minX, minY, maxX, maxY });
 const zone = (id: number, b: RawBox, parent = 0): ClipZone => ({ id, parent, bbox: b, rect: true, ops: 0 });
 
@@ -135,6 +140,23 @@ function insetSamples(outline: readonly [number, number][], inset: number, every
 }
 
 const PLANCHES = ['planche/planche_A1_archicad.pdf', 'planche/planche_A2_de_titres_dessus.pdf', 'planche/planche_2pages.pdf', 'planche/planche_sans_titres.pdf'];
+
+/**
+ * Traits de vitrage de toutes les fenêtres d'un niveau, émis en UN SEUL tracé (comme le font des exports CAO) :
+ * `lines` traits par fenêtre, espacés de `gap` (pt), sur deux façades horizontales et deux verticales (ou une
+ * seule de chaque si `oneFacade`). Au 1/100, 0,05 m = 1,42 pt.
+ */
+function windowGlazing(lines: number, gap: number, oneFacade = false, pid = 3): RawSeg[] {
+  const out: RawSeg[] = [];
+  const offs = Array.from({ length: lines }, (_, k) => (k - (lines - 1) / 2) * gap);
+  for (const y of oneFacade ? [200] : [200, 480]) {
+    for (let k = 0; k < 4; k++) for (const d of offs) out.push(seg(150 + k * 80, y + d, 184 + k * 80, y + d, 0.2, { pid }));
+  }
+  for (const x of oneFacade ? [120] : [120, 620]) {
+    for (let k = 0; k < 3; k++) for (const d of offs) out.push(seg(x + d, 230 + k * 80, x + d, 264 + k * 80, 0.2, { pid }));
+  }
+  return out;
+}
 
 // ───────────────────────────── 1. Critères purs ─────────────────────────────
 
@@ -248,6 +270,51 @@ describe('critères de trame et de hachure (hatch.ts)', () => {
     expect(groupHatches(stairs, clips, [], PAGE_AREA).count).toBe(0);
     // Trop peu de traits.
     expect(groupHatches(family(135, 2.2, 11, 10, { pid: 9 }), clips, [], PAGE_AREA).count).toBe(0);
+  });
+
+  it('bande continue : droites consécutives au pas régulier, qui se recouvrent', () => {
+    expect(bandStep(family(45, 2, 10, 20), 45)).toBeCloseTo(2, 2);
+    // Une droite manquante au milieu de vingt : toujours une bande.
+    expect(bandStep(family(0, 1.5, 20, 30).filter((_, k) => k !== 9), 0)).toBeCloseTo(1.5, 2);
+    // Moins de PATH_HATCH_MIN_LINES droites.
+    expect(bandStep(family(0, 1.5, PATH_HATCH_MIN_LINES - 1, 30), 0)).toBeNull();
+    // Deux paquets serrés séparés par un grand vide : pas une bande.
+    const packs = [...family(0, 1.4, 4, 30), ...family(0, 1.4, 4, 30, {}, 100, 300)];
+    expect(bandStep(packs, 0)).toBeNull();
+    // Droites voisines qui ne se recouvrent pas (décalées en escalier le long de leur direction) : pas une bande.
+    const staggered = family(0, 1.5, 10, 8).map((s, k) => ({ ...s, x0: s.x0 + 12 * k, x1: s.x1 + 12 * k }));
+    expect(bandStep(staggered, 0)).toBeNull();
+    // Écarts quelconques.
+    expect(bandStep([0, 1.1, 3.9, 4.6, 8.8, 9.1, 13.7].map((o) => seg(0, o, 10, o, 0.28)), 0)).toBeNull();
+  });
+
+  it('repli sans découpe : les vitrages de toutes les fenêtres émis en un seul tracé ne sont pas une hachure', () => {
+    const clips = [zone(0, box(0, 0, 2384, 1684))];
+    // Trois traits à 0,05 m, quatre à 0,04 m, ou une seule façade par direction (trois droites parfaitement régulières).
+    for (const glazing of [windowGlazing(3, 1.42), windowGlazing(4, 1.13), windowGlazing(3, 1.42, true)]) {
+      expect(glazing.length).toBeGreaterThanOrEqual(12);
+      // Emprise sous 5 % de la feuille : ce critère seul ne protège pas les fenêtres.
+      const b = box(Infinity, Infinity, -Infinity, -Infinity);
+      for (const s of glazing) {
+        b.minX = Math.min(b.minX, s.x0);
+        b.minY = Math.min(b.minY, s.y0);
+        b.maxX = Math.max(b.maxX, s.x1);
+        b.maxY = Math.max(b.maxY, s.y1);
+      }
+      expect(boxArea(b)).toBeLessThan(HATCH_MAX_CLIP_SHARE * A1_AREA);
+      // Le seul critère de pas régulier (celui des hachures sous découpe) s'y laisserait prendre…
+      expect(hatchOf(glazing)).not.toBeNull();
+      // … pas le repli sans découpe : aucun trait de fenêtre n'est retiré.
+      expect(pathHatchOf(glazing, A1_AREA)).toBeNull();
+      const g = groupHatches(glazing, clips, [], A1_AREA);
+      expect(g.count).toBe(0);
+      expect(g.zones).toHaveLength(0);
+    }
+    // Une vraie hachure croisée d'un seul tracé reste regroupée, angles en ordre croissant.
+    const crossed = [...family(135, 1.8, 16, 30, { pid: 4 }), ...family(45, 1.8, 16, 30, { pid: 4 }, 80, 100)];
+    const found = pathHatchOf(crossed, A1_AREA);
+    expect(found?.pattern.angles).toEqual([45, 135]);
+    expect(found?.pattern.spacing).toBeCloseTo(1.8, 1);
   });
 });
 
@@ -461,4 +528,84 @@ describe('planches d’essai existantes : rien n’est retiré', () => {
       });
     });
   }
+});
+
+// ───────────────────────────── 4. PDF fabriqués ─────────────────────────────
+
+/** PDF d'une page (points, y vers le haut) avec ce flux de contenu, sans compression. */
+function pdfOf(content: string, width = 842, height = 1191): Uint8Array {
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Contents 4 0 R /Resources << >> >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+  ];
+  let out = '%PDF-1.4\n';
+  const offs: number[] = [];
+  objs.forEach((o, i) => {
+    offs.push(out.length);
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offs.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new TextEncoder().encode(out);
+}
+
+async function extractBytes(bytes: Uint8Array, options: ExtractOptions = {}): Promise<RawPage> {
+  const opened = await engine.open(bytes);
+  try {
+    return await extractPage(await opened.doc.getPage(1), engine.ops, options);
+  } finally {
+    await opened.close();
+  }
+}
+
+/** Un tracé (une opération S) fait de ces traits. */
+const strokeOp = (segs: readonly RawSeg[], w = 0.2): string => `${w} w ${segs.map((s) => `${s.x0.toFixed(2)} ${s.y0.toFixed(2)} m ${s.x1.toFixed(2)} ${s.y1.toFixed(2)} l`).join(' ')} S\n`;
+
+const sameLine = (a: RawSeg, b: RawSeg): boolean => a.x0 === b.x0 && a.y0 === b.y0 && a.x1 === b.x1 && a.y1 === b.y1 && a.w === b.w && a.pid === b.pid;
+
+describe('PDF fabriqués : repli sans découpe et plafond', () => {
+  it('fenêtres d’un niveau en un seul tracé : tous leurs traits restent ; une hachure d’un seul tracé est regroupée', async () => {
+    const content = strokeOp(windowGlazing(3, 1.42)) + strokeOp(windowGlazing(4, 1.13).map((s) => ({ ...s, y0: s.y0 + 500, y1: s.y1 + 500 }))) + strokeOp(family(135, 1.8, 30, 40, {}, 700, 900), 0.28);
+    const bytes = pdfOf(content, 2384, 1684);
+    const lite = await extractBytes(bytes);
+    const full = await extractBytes(bytes, { lighten: false });
+    expect(full.segs).toHaveLength(windowGlazing(3, 1.42).length + windowGlazing(4, 1.13).length + 30);
+    // Seule la hachure (troisième tracé, pid 2) est retirée, résumée en une zone « path ».
+    expect(lite.hatches).toHaveLength(1);
+    expect(lite.hatches[0]).toMatchObject({ source: 'path', angles: [45], count: 30 }); // 135° dans le PDF, y retourné
+    expect(lite.lightening.hatchSegs).toBe(30);
+    const kept = full.segs.filter((s) => s.pid !== 2);
+    expect(lite.segs).toHaveLength(kept.length);
+    lite.segs.forEach((s, i) => expect(sameLine(s, kept[i]!)).toBe(true));
+  });
+
+  it('plafond : les tracés sûrs saturent la collecte ; une hachure retirée ne compte pas ; un remplissage tardif reste lu', async () => {
+    const hatch = (k: number): string => strokeOp(family(45, 1.6, 30, 30, {}, 60 + 60 * k, 1100), 0.28);
+    let lines = '';
+    for (let k = 0; k < 1300; k++) lines += `0.5 w ${20 + (k % 40) * 20} ${40 + Math.floor(k / 40) * 30} m ${30 + (k % 40) * 20} ${45 + Math.floor(k / 40) * 30} l S\n`;
+    const content = hatch(0) + hatch(1) + lines + '0.5 0.5 0.5 rg 400 600 m 500 600 l 500 700 l 400 700 l f\n';
+    const bytes = pdfOf(content);
+    const full = await extractBytes(bytes, { lighten: false });
+    expect(full.segs).toHaveLength(60 + 1300 + 4);
+    const lite = await extractBytes(bytes, { maxSegments: 1000 });
+    const cut = await extractBytes(bytes, { maxSegments: 1000, lighten: false });
+    // Sans allègement : les 1 000 premiers traits, comme l'ancienne lecture.
+    expect(cut.truncated).toBe(true);
+    expect(cut.segs).toHaveLength(1000);
+    // Avec : les deux hachures retirées, puis les 1 000 premiers traits gardés, page tronquée.
+    expect(lite.truncated).toBe(true);
+    expect(lite.lightening.hatchSegs).toBe(60);
+    // La lecture s'arrête dès que les traits sûrs atteignent le plafond (mémoire bornée sur une page lourde) :
+    // les deux hachures et les 1 000 premiers traits seulement ont été parcourus, pas les 300 suivants.
+    expect(lite.lightening.rawStrokeSegs).toBe(60 + 1000);
+    const kept = full.segs.filter((s) => s.pid > 1).slice(0, 1000);
+    expect(lite.segs).toHaveLength(1000);
+    lite.segs.forEach((s, i) => expect(sameLine(s, kept[i]!)).toBe(true));
+    // Le remplissage peint après le plafond est encore décrit (anneau, aire), sans ses bords dans segs.
+    expect(lite.fills.some((f) => Math.abs(f.area - 10_000) < 1)).toBe(true);
+    expect(lite.segs.some((s) => s.fill)).toBe(false);
+  });
 });

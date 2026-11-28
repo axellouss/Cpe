@@ -86,9 +86,12 @@ export interface HatchZone {
   bbox: RawBox;
   /** Contour de la zone hachurée. */
   rings: [number, number][][];
-  /** Directions des traits, 0..180° ; une seule = hachure simple, deux = hachure croisée. */
+  /** Directions des traits, 0..175° par pas de 5°, en ordre croissant ; une seule = hachure simple, deux = croisée. */
   angles: number[];
-  /** Écart moyen entre deux traits (uf). */
+  /**
+   * Pas entre deux droites voisines (uf) : moyenne, sur les directions, du pas de chaque direction (quartile bas
+   * des écarts sous découpe, médiane pour une hachure d'un seul tracé).
+   */
   spacing: number;
   color: number;
   width: number;
@@ -139,7 +142,10 @@ export interface RawPage {
   clips: ClipZone[];
   /** Emprise de chaque image matricielle. */
   imageAreas: ImageArea[];
-  /** Bilan de l'allègement : traits rencontrés, et retirés comme trame ou regroupés en hachure. */
+  /**
+   * Bilan de l'allègement : traits tracés rencontrés, et retirés comme trame ou regroupés en hachure. Sur une page
+   * tronquée, la lecture s'arrête au plafond : les tracés seulement tracés au-delà ne sont pas comptés.
+   */
   lightening: { rawStrokeSegs: number; stippleSegs: number; hatchSegs: number };
 }
 
