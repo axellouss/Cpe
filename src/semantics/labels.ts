@@ -6,7 +6,9 @@
  * du chauffage et qui sont dans l'enveloppe thermique. Le classement ci-dessous n'est qu'une PROPOSITION :
  * les pièces ambiguës (cave, buanderie, grenier, hobby…) sont rendues 'ask' et l'expert tranche.
  */
-import type { DetectedRoom, PlanText } from '../core/types';
+import type { ReadGlazingBox, ReadView } from '../core/reading';
+import type { BBox, DetectedRoom, Lang, PlanText, Vec2 } from '../core/types';
+import { registerMessages, t, type Dictionary } from '../i18n';
 
 /** Supprime accents et casse pour comparer des libellés. */
 export function fold(text: string): string {
@@ -18,6 +20,11 @@ export function fold(text: string): string {
     .replace(/[’‘`´]/g, "'")
     .toLowerCase()
     .trim();
+}
+
+/** Nombre écrit à la française ou à l'allemande (« 1.234,56 », « 32,45 », « 32.45 », « −0,05 »). */
+export function parseDecimal(raw: string): number {
+  return toNumber(raw.replace(/[−–]/g, '-'));
 }
 
 function toNumber(raw: string): number {
@@ -94,7 +101,7 @@ const ROOM_RULES: RoomRule[] = [
     guess: 'ask',
   },
   {
-    re: /sejour|salon|living|wohn|stube|salle a manger|\bess|\brepas\b|piece de vie|chambre|\bch\.? ?\d|suite parentale|schlaf|zimmer|bureau|\bburo|\bbuero|arbeiten|bibliotheque|bibliothek|salle de jeux|spielzimmer|cuisine|kuche|kochen|kitchen|\bsdb\b|\bs\.d\.b|\bsde\b|salle de bain|salle d'eau|\bbain\b|\bbad|douche|dusch|\bwc\b|\bw\.c|toilet|dressing|ankleide|\bkind\b|\bkind ?\d|kinderzimmer|enfant|parents|eltern|gast|\bamis?\b|mezzanine|studio|galerie|empore/,
+    re: /sejour|salon|living|wohn|stube|salle a manger|\bess|\brepas\b|piece de vie|chambre|\bch\.? ?\d|suite parentale|schlaf|zimmer|bureau|\bburo|\bbuero|arbeiten|bibliotheque|bibliothek|salle de jeux|spielzimmer|cuisine|kuche|kochen|kitchen|\bsdb\b|\bs\.d\.b|\bsde\b|\bsdd\b|\bs\.d\.d|salle de bain|salle d'eau|salle de douche|\bbain\b|\bbad|douche|dusch|\bwc\b|\bw\.c|toilet|dressing|ankleide|\bkind\b|\bkind ?\d|kinderzimmer|enfant|parents|eltern|gast|\bamis?\b|mezzanine|studio|galerie|empore/,
     guess: 'yes',
   },
   {
@@ -361,4 +368,270 @@ export function parseClearHeight(text: string): number | null {
   if (!m) return null;
   const v = toNumber(m[2]!);
   return v >= 1.8 && v <= 5 ? v : null;
+}
+
+// ───────────────────────────── Lignes de texte placées ─────────────────────────────
+
+/**
+ * Ligne de texte PLACÉE sur une feuille : ce que les lecteurs (PDF, plus tard DXF) donnent aux fonctions de lecture
+ * de texte ci-dessous et dans semantics/compositions, levels, siteareas, equipment. Une ligne réunit les morceaux de
+ * même direction, même corps et même ligne de base (lecteur PDF : readers/pdf/textlines.ts).
+ *
+ * Repère local de la ligne : u le long du sens de lecture, v vers le HAUT du texte. Pour un texte horizontal,
+ * u = x et v = −y ; pour un texte lu de bas en haut (angle 90), u = −y et v = −x. `base` est la position v de la
+ * ligne de base : une ligne écrite SOUS une autre a un `base` plus petit.
+ */
+export interface SheetLine {
+  text: string;
+  /** Page, à partir de 1. */
+  page: number;
+  /** Sens de lecture, degrés, sens trigonométrique à l'écran (0 = vers la droite, 90 = vers le haut). */
+  angle: number;
+  /** Corps du texte (unités de feuille). */
+  size: number;
+  box: BBox;
+  /** Étendue le long de la lecture et ligne de base, dans le repère local de la ligne. */
+  u0: number;
+  u1: number;
+  base: number;
+}
+
+/** Axes du repère local d'un sens de lecture : d le long de la lecture, up vers le haut du texte (page y vers le bas). */
+export function readingFrame(angle: number): { d: Vec2; up: Vec2 } {
+  const a = (angle * Math.PI) / 180;
+  return { d: { x: Math.cos(a), y: -Math.sin(a) }, up: { x: -Math.sin(a), y: -Math.cos(a) } };
+}
+
+/** Coordonnées (u, v) d'un point de la feuille dans le repère local d'un sens de lecture. */
+export function toReadingFrame(angle: number, p: Vec2): { u: number; v: number } {
+  const { d, up } = readingFrame(angle);
+  return { u: p.x * d.x + p.y * d.y, v: p.x * up.x + p.y * up.y };
+}
+
+/** Vrai si deux sens de lecture sont les mêmes à `tol` degrés près. */
+export function sameDirection(a: number, b: number, tol = 2): boolean {
+  const d = Math.abs(((((a - b) % 360) + 540) % 360) - 180);
+  return d <= tol;
+}
+
+export function lineCenter(l: { box: BBox }): Vec2 {
+  return { x: (l.box.minX + l.box.maxX) / 2, y: (l.box.minY + l.box.maxY) / 2 };
+}
+
+export function inBox(b: BBox, p: Vec2, pad = 0): boolean {
+  return p.x >= b.minX - pad && p.x <= b.maxX + pad && p.y >= b.minY - pad && p.y <= b.maxY + pad;
+}
+
+/** Vue de la page qui contient le point : la plus petite (une vue peut en contenir une autre, cartouche dans un cadre). */
+export function viewAt(views: readonly ReadView[], page: number, p: Vec2): ReadView | null {
+  let best: ReadView | null = null;
+  let bestArea = Infinity;
+  for (const v of views) {
+    if (v.page !== page || !inBox(v.box, p)) continue;
+    const area = (v.box.maxX - v.box.minX) * (v.box.maxY - v.box.minY);
+    if (area < bestArea) {
+      best = v;
+      bestArea = area;
+    }
+  }
+  return best;
+}
+
+/** Position v, dans le repère local de `ref`, de la ligne de base d'une autre ligne de même sens. */
+export function baseIn(ref: SheetLine, o: SheetLine): number {
+  if (sameDirection(ref.angle, o.angle, 0.01)) return o.base;
+  const { d, up } = readingFrame(o.angle);
+  const p = { x: o.u0 * d.x + o.base * up.x, y: o.u0 * d.y + o.base * up.y };
+  return toReadingFrame(ref.angle, p).v;
+}
+
+// ───────────────────────────── Pièces écrites sur les plans ─────────────────────────────
+
+const ROOM_MESSAGES: Dictionary = {
+  fr: {
+    'read.room.ask': '« {name} » ({area} m²) : dans le volume chauffé, comptée dans An ?',
+    'read.room.technical': '« {name} » ({area} m²) : local technique ; dans l’isolation (compté dans An) ou dehors ?',
+    'read.room.basement': '« {name} » ({area} m²) au sous-sol : dans le volume chauffé, comptée dans An ?',
+  },
+  de: {
+    'read.room.ask': '„{name}“ ({area} m²): im beheizten Volumen, zählt zu An?',
+    'read.room.technical': '„{name}“ ({area} m²): Technikraum; innerhalb der Dämmung (zählt zu An) oder außerhalb?',
+    'read.room.basement': '„{name}“ ({area} m²) im Untergeschoss: im beheizten Volumen, zählt zu An?',
+  },
+};
+registerMessages(ROOM_MESSAGES);
+
+/** Pièce lue sur un plan : un NOM et, juste en dessous, sa surface écrite (« S: 28,40 m² »). */
+export interface RoomLine {
+  name: string;
+  statedArea: number;
+  /** Centre du nom (uf). */
+  at: Vec2;
+  page: number;
+  viewId: string | null;
+  heatedGuess: HeatedGuess;
+  /** Espace à l'air libre (terrasse, balcon, loggia) : jamais une pièce du bâtiment. */
+  exterior: boolean;
+  /** Hors de l'enveloppe thermique par nature (garage, abri, terrasse…) : voir isOutsideEnvelopeName. */
+  outsideEnvelope: boolean;
+  confidence: number;
+  doubt: string | null;
+}
+
+/** Ligne de surface d'une étiquette de pièce : « S: 28,40 m² », « F: 32,50 m² », « NF = 12,10 m² », « Fläche: 7,8 ». */
+const AREA_LINE_RE = /^(?:s|surf\.?|surface|sh|sn|nf|ngf|wf|f|fl\.?|flache|a)\s*[:=]\s*(\d{1,4}(?:[.,]\d{1,3})?)\s*(?:m\s?[²2]|m\^2|qm|m)?\s*$/;
+/** Surface seule : « 21,95 m² ». */
+const AREA_ONLY_RE = /^(\d{1,4}(?:[.,]\d{1,3})?)\s*(?:m\s?[²2]|m\^2|qm|㎡)$/;
+/** Espaces à l'air libre. */
+const EXTERIOR_RE = /terrasse|balcon|balkon|loggia|jardin|garten(?!geschoss)|\bcour\b|pergola|auvent|vordach/;
+/** Intitulés qui ne nomment pas une pièce (encadrés d'éclairement, tableaux, totaux, niveaux, renvois). */
+const NOT_A_ROOM_LINE_RE =
+  /^(?:surface|surf\.|flache|coefficient|total|gesamt|summe|somme|hsp|okff|ok ff|niveau|niv\.|nf\b|coupe|schnitt|facade|fassade|ansicht|plan\b|grundriss|voir|siehe|echelle|massstab|composition|aufbau)|[:=]\s*$|^[+\-±−]?\s?\d/;
+const TOTAL_WORD_RE =
+  /\b(?:total|totale|gesamt|summe|somme|wohnflache|nutzflache|surface habitable|surface utile|surface nette|surface brute|emprise|terrain|grundstuck|parcelle|parzelle)\b/;
+
+/** Nom de pièce lisible dans une ligne (sans surface ni numéro de local) ; null si la ligne n'en est pas un. */
+export function roomNameOf(text: string): string | null {
+  let s = text.replace(/\s+/g, ' ').trim();
+  if (parseClearHeight(s) !== null) return null;
+  s = s.replace(AREA_RE, ' ').replace(/[\s=\-–—|/]+$/g, '').replace(/^[\s:=\-–—|/]+/g, '').trim();
+  s = s.replace(/^\d{1,2}[.\-]\d{1,3}\s+/, '').trim();
+  if (s.length < 2 || s.length > 40) return null;
+  const f = fold(s);
+  if ((f.match(/[a-z]/g) ?? []).length < 2) return null;
+  if (f.split(/\s+/).length > 5) return null;
+  if (/^[a-z]\s?\d+[a-z]?$/.test(f)) return null; // « F1 », « T 02 » : repère de menuiserie
+  if (NOT_A_ROOM_LINE_RE.test(f) || TOTAL_WORD_RE.test(f) || NOT_A_ROOM_RE.test(f)) return null;
+  if (/\b1\s*[:/]\s*\d/.test(f) || parseOpeningSize(s) !== null) return null;
+  return s;
+}
+
+function areaOfLine(text: string): number | null {
+  const f = fold(text).replace(/\s+/g, ' ');
+  const m = AREA_LINE_RE.exec(f) ?? AREA_ONLY_RE.exec(f);
+  if (!m) return null;
+  const v = toNumber(m[1]!);
+  return v > 0.5 && v < 2000 ? v : null;
+}
+
+function roomLine(name: string, area: number, at: Vec2, page: number, view: ReadView | null, lang: Lang): RoomLine {
+  let guess = classifyRoomName(name);
+  const outside = isOutsideEnvelopeName(name);
+  const exterior = EXTERIOR_RE.test(fold(name));
+  const areaText = area.toFixed(2).replace('.', ',');
+  let doubt: string | null = null;
+  // Au sous-sol, même un dégagement ou une pièce « de vie » peut être hors du volume chauffé : on demande.
+  const basement = view?.kind === 'floor-plan' && view.storeyRank !== null && view.storeyRank < 0;
+  if (basement && guess === 'yes') {
+    guess = 'ask';
+    doubt = t(lang, 'read.room.basement', { name, area: areaText });
+  } else if (guess === 'ask') doubt = t(lang, 'read.room.ask', { name, area: areaText });
+  else if (guess === 'no' && !outside) doubt = t(lang, 'read.room.technical', { name, area: areaText });
+  return {
+    name,
+    statedArea: area,
+    at,
+    page,
+    viewId: view?.id ?? null,
+    heatedGuess: guess,
+    exterior,
+    outsideEnvelope: outside,
+    // Nom et surface écrits : une seule source (le texte) ; un classement à demander abaisse la confiance.
+    confidence: doubt ? 0.5 : 0.75,
+    doubt,
+  };
+}
+
+/**
+ * Pièces écrites sur les plans : une ligne de SURFACE (« S: 28,40 m² », ou « 21,95 m² » seul) et la ligne de NOM
+ * juste au-dessus (ligne de base 0,5 à 2,2 corps plus haut, alignée à gauche ou centrée à 1 corps près).
+ * Une ligne qui finit par « : » est un intitulé (encadré d'éclairement, tableau) : jamais un nom. Repli : une ligne
+ * « Séjour 28,40 m² » d'un seul tenant. Les lignes « Surface … : » des encadrés d'éclairement ne créent jamais de pièce.
+ */
+export function roomsFromLines(lines: readonly SheetLine[], views: readonly ReadView[], lang: Lang = 'fr'): RoomLine[] {
+  const out: RoomLine[] = [];
+  const used = new Set<SheetLine>();
+  for (const a of lines) {
+    const area = areaOfLine(a.text);
+    if (area === null) continue;
+    let best: SheetLine | null = null;
+    let bestDv = Infinity;
+    for (const o of lines) {
+      if (o === a || o.page !== a.page || used.has(o) || !sameDirection(o.angle, a.angle)) continue;
+      const dv = baseIn(a, o) - a.base;
+      if (dv < 0.5 * a.size || dv > 2.2 * a.size) continue;
+      const leftAligned = Math.abs(o.u0 - a.u0) < a.size;
+      const centred = Math.abs((o.u0 + o.u1) / 2 - (a.u0 + a.u1) / 2) < a.size;
+      if (!leftAligned && !centred) continue;
+      if (/:\s*$/.test(o.text)) continue;
+      if (dv < bestDv) {
+        best = o;
+        bestDv = dv;
+      }
+    }
+    if (!best) continue;
+    const name = roomNameOf(best.text);
+    if (!name) continue;
+    used.add(best);
+    used.add(a);
+    out.push(roomLine(name, area, lineCenter(best), a.page, viewAt(views, a.page, lineCenter(a)), lang));
+  }
+  // Repli : « Séjour 28,40 m² » sur une seule ligne (étiquettes Revit, Allplan).
+  for (const l of lines) {
+    if (used.has(l) || l.text.includes(':')) continue;
+    if (/^(?:surface|flache|surf\.|total|gesamt)/.test(fold(l.text))) continue;
+    const parsed = parseRoomLabel(l.text);
+    if (!parsed || parsed.area === undefined || !parsed.name) continue;
+    const name = roomNameOf(parsed.name);
+    if (!name) continue;
+    out.push(roomLine(name, parsed.area, lineCenter(l), l.page, viewAt(views, l.page, lineCenter(l)), lang));
+  }
+  return out;
+}
+
+// ───────────────────────────── Encadrés d'éclairement naturel ─────────────────────────────
+
+const GLAZED_RE = /^(surface vitree|surface de vitrage|surface eclairante|surface des baies|fensterflache|glasflache|belichtungsflache)\b/;
+
+function areaAfterColon(text: string): number | null {
+  const a = parseArea(text);
+  if (a !== null) return a;
+  const m = /[:=]\s*(\d+(?:[.,]\d+)?)\s*m?\s*$/.exec(text);
+  return m ? toNumber(m[1]!) : null;
+}
+
+/**
+ * Encadrés d'éclairement d'une pièce de vie (« Surface vitrée : 6,20 m² » / « Surface séjour : 32,50 m² » /
+ * « 1/8 surface du plancher : 4,06 m² ») : la ligne « surface vitrée » et les lignes alignées à gauche (à 1 corps)
+ * dans les 5 corps en dessous. Ne crée AUCUNE pièce ; sert à recouper les baies lues pièce par pièce.
+ */
+export function glazingBoxes(lines: readonly SheetLine[], views: readonly ReadView[]): ReadGlazingBox[] {
+  const out: ReadGlazingBox[] = [];
+  for (const v of lines) {
+    if (!GLAZED_RE.test(fold(v.text))) continue;
+    const group = lines
+      .filter((o) => o !== v && o.page === v.page && sameDirection(o.angle, v.angle) && Math.abs(o.u0 - v.u0) < v.size)
+      .filter((o) => {
+        const dv = v.base - baseIn(v, o);
+        return dv > 0.2 * v.size && dv < 5 * v.size;
+      })
+      .sort((a, b) => b.base - a.base);
+    // Une autre ligne « surface vitrée » plus bas ouvre l'encadré suivant : on s'arrête avant.
+    const next = group.findIndex((l) => GLAZED_RE.test(fold(l.text)));
+    const own = next >= 0 ? group.slice(0, next) : group;
+    const roomRow = own.find((l) => /^(surface|flache)\s+(?!vitree|de vitrage|eclairante|du plancher|des baies)\S/.test(fold(l.text)) && !/coefficient|1\/\d/.test(fold(l.text)));
+    const reqRow = own.find((l) => /1\/\d+|coefficient|erforderlich|requis|exige/.test(fold(l.text)) && areaAfterColon(l.text) !== null);
+    const room = roomRow ? roomRow.text.replace(/^(surface|fl(?:ä|a)che)\s+/i, '').replace(/\s*[:=].*$/, '').trim() || null : null;
+    const at = lineCenter(v);
+    out.push({
+      viewId: viewAt(views, v.page, at)?.id ?? null,
+      room,
+      glazedArea: areaAfterColon(v.text),
+      floorArea: roomRow ? areaAfterColon(roomRow.text) : null,
+      required: reqRow ? areaAfterColon(reqRow.text) : null,
+      page: v.page,
+      at,
+    });
+  }
+  return out;
 }
