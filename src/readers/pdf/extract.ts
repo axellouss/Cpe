@@ -422,12 +422,9 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
       save();
       const m = toMatrix(args[0]);
       if (m) gs.ctm = mul(gs.ctm, m);
-      // Le cadre (BBox) d'un formulaire découpe son contenu.
-      const bb = args[1];
-      if (isNumberList(bb, 4)) {
-        const M = mul(V, gs.ctm);
-        addClip([[apply(M, bb[0]!, bb[1]!), apply(M, bb[2]!, bb[1]!), apply(M, bb[2]!, bb[3]!), apply(M, bb[0]!, bb[3]!)]]);
-      }
+      // Le cadre (BBox) du formulaire n'est PAS compté comme découpe : les exports en peignent des milliers de
+      // minuscules (un par symbole ou par point de trame), ce qui morcellerait les trames et les hachures ; le
+      // contenu garde la découpe englobante, et la pile save / restore isole l'état du formulaire.
     } else if (fn === ops.paintFormXObjectEnd) restore();
     else if (fn === ops.beginMarkedContent || fn === ops.beginMarkedContentProps) {
       let off = false;
