@@ -10,15 +10,29 @@
  *  - `item.transform` d'un texte reste dans le repère NATIF de la page : le sens de lecture se transforme
  *    avec la matrice de la vue (qui contient la rotation).
  *
+ * En plus des traits, l'extraction suit les zones de découpe (clip / eoClip, pile save / restore, cadre des Form
+ * XObjects), les couleurs de trait et de remplissage, l'opacité et les paramètres d'un ExtGState (LW, D, ca), et
+ * rend les remplissages (anneaux, couleur, aire). Elle ALLÈGE la page (voir hatch.ts) : les trames de micro-traits
+ * et les hachures sont retirées de `segs` et résumées en zones ; le plafond de traits s'applique ensuite seulement.
+ * Les bords de remplissage restent dans `segs` (fill: true) comme avant.
+ *
  * C'est le seul fichier qui manipule les listes d'opérateurs non typées de pdf.js.
  */
+import { emptyBox, groupHatches, growBox, isMicroExtent, stippleZones } from './hatch';
+import type { ClipStrokeStat, Ring } from './hatch';
 import type { OpCodes, PDFPageProxy } from './pdfjs';
-import type { RawPage, RawSeg, RawText } from './raw';
+import type { ClipZone, FillArea, ImageArea, RawBox, RawPage, RawSeg, RawText } from './raw';
 
 type Matrix = [number, number, number, number, number, number];
 
-/** Au-delà, la page est lue en partie seulement (plans très lourds : hachures, fonds de carte). */
+/** Au-delà (après allègement), la page est lue en partie seulement (plans très lourds, fonds de carte). */
 export const MAX_PAGE_SEGMENTS = 400_000;
+/** Pendant la lecture, on garde au plus ce multiple du plafond en traits ordinaires (avant allègement). */
+const COLLECT_FACTOR = 3;
+/** Micro-traits gardés en attente de la décision « trame » (stockage compact) ; au-delà ils sont comptés seulement. */
+const MAX_MICRO_SEGS = 1_500_000;
+const MAX_PAGE_FILLS = 50_000;
+const MAX_PAGE_CLIPS = 100_000;
 const MAX_PAGE_TEXTS = 30_000;
 /** Nombre de cordes par courbe de Bézier. */
 const CURVE_STEPS = 8;
@@ -87,10 +101,148 @@ function dominantReading(items: readonly TextItemLike[], view: Matrix): number {
   return weight[best]! >= 0.6 * total ? best * 90 : 0;
 }
 
+// ───────────── Couleurs ─────────────
+
+const clampByte = (v: number): number => Math.max(0, Math.min(255, Math.round(v)));
+
+/** Couleur RGB d'un opérateur pdf.js : « #rrggbb » (pdf.js 4 et plus) ou trois composantes 0..255. */
+function rgbColor(args: readonly unknown[]): number | null {
+  const a = args[0];
+  if (typeof a === 'string') {
+    const m = /^#?([0-9a-f]{6})$/i.exec(a);
+    return m ? parseInt(m[1]!, 16) : null;
+  }
+  if (isNumberList(args, 3)) return (clampByte(args[0]!) << 16) | (clampByte(args[1]!) << 8) | clampByte(args[2]!);
+  return null;
+}
+
+/** Gris 0..1 (si pdf.js ne l'a pas déjà converti en RGB). */
+function grayColor(args: readonly unknown[]): number | null {
+  if (typeof args[0] === 'string') return rgbColor(args);
+  if (!isNumberList(args, 1)) return null;
+  const v = clampByte(args[0]! * 255);
+  return (v << 16) | (v << 8) | v;
+}
+
+/** CMJN 0..1, conversion naïve (si pdf.js ne l'a pas déjà convertie en RGB). */
+function cmykColor(args: readonly unknown[]): number | null {
+  if (typeof args[0] === 'string') return rgbColor(args);
+  if (!isNumberList(args, 4)) return null;
+  const k = 1 - args[3]!;
+  return (clampByte(255 * (1 - args[0]!) * k) << 16) | (clampByte(255 * (1 - args[1]!) * k) << 8) | clampByte(255 * (1 - args[2]!) * k);
+}
+
+// ───────────── Anneaux ─────────────
+
+/** Aire (valeur absolue, formule du lacet) d'un anneau. */
+function ringArea(r: Ring): number {
+  let a = 0;
+  for (let k = 0; k < r.length; k++) {
+    const p = r[k]!;
+    const q = r[(k + 1) % r.length]!;
+    a += p[0] * q[1] - q[0] * p[1];
+  }
+  return Math.abs(a) / 2;
+}
+
+/** Anneaux utilisables : sans point de fermeture répété, au moins trois sommets. */
+function cleanRings(rings: Ring[]): Ring[] {
+  const out: Ring[] = [];
+  for (const r of rings) {
+    const a = r[0];
+    const b = r[r.length - 1];
+    if (r.length > 1 && a && b && a[0] === b[0] && a[1] === b[1]) r.pop();
+    if (r.length >= 3) out.push(r);
+  }
+  return out;
+}
+
+function boxOfRings(rings: readonly Ring[]): RawBox {
+  const b = emptyBox();
+  for (const r of rings) for (const [x, y] of r) growBox(b, x, y);
+  return b;
+}
+
+/** Un seul anneau de quatre sommets, tous sur les bords de sa boîte : un rectangle aligné sur les axes. */
+function isAxisRect(rings: readonly Ring[], b: RawBox): boolean {
+  const r = rings[0];
+  if (rings.length !== 1 || !r || r.length !== 4) return false;
+  if (!(b.maxX - b.minX > 0.5 && b.maxY - b.minY > 0.5)) return false;
+  const near = (v: number, w: number): boolean => Math.abs(v - w) < 0.5;
+  return r.every(([x, y]) => (near(x, b.minX) || near(x, b.maxX)) && (near(y, b.minY) || near(y, b.maxY)));
+}
+
+// ───────────── Micro-traits en attente ─────────────
+
+/**
+ * Micro-traits mis de côté pendant la lecture, en tableaux typés (une page réelle en porte des centaines de
+ * milliers) ; chacun garde sa place dans la suite des traits pour être réinséré à l'identique s'il n'est pas
+ * dans une trame.
+ */
+class MicroStore {
+  n = 0;
+  private f = new Float64Array(5 * 1024);
+  private i = new Int32Array(4 * 1024);
+  private b = new Uint8Array(1024);
+
+  constructor(private readonly limit: number) {}
+
+  /** Garde le trait ; faux si la réserve est pleine. */
+  add(s: RawSeg, pos: number): boolean {
+    if (this.n >= this.limit) return false;
+    if (this.n >= this.b.length) {
+      const cap = Math.min(this.limit, this.b.length * 2);
+      const f = new Float64Array(5 * cap);
+      f.set(this.f);
+      const i = new Int32Array(4 * cap);
+      i.set(this.i);
+      const b = new Uint8Array(cap);
+      b.set(this.b);
+      this.f = f;
+      this.i = i;
+      this.b = b;
+    }
+    const k = this.n++;
+    const f = this.f;
+    const o = 5 * k;
+    f[o] = s.x0;
+    f[o + 1] = s.y0;
+    f[o + 2] = s.x1;
+    f[o + 3] = s.y1;
+    f[o + 4] = s.w;
+    const n = this.i;
+    const j = 4 * k;
+    n[j] = s.pid;
+    n[j + 1] = s.clip ?? 0;
+    n[j + 2] = s.color ?? 0;
+    n[j + 3] = pos;
+    this.b[k] = (s.curve ? 1 : 0) | (s.dash ? 2 : 0);
+    return true;
+  }
+
+  pos(k: number): number {
+    return this.i[4 * k + 3]!;
+  }
+
+  clip(k: number): number {
+    return this.i[4 * k + 1]!;
+  }
+
+  seg(k: number): RawSeg {
+    const f = this.f;
+    const o = 5 * k;
+    const flags = this.b[k]!;
+    // Micro-traits : tracés seulement (jamais des bords de remplissage).
+    return { x0: f[o]!, y0: f[o + 1]!, x1: f[o + 2]!, y1: f[o + 3]!, w: f[o + 4]!, curve: (flags & 1) !== 0, stroke: true, fill: false, dash: (flags & 2) !== 0, pid: this.i[4 * k]!, clip: this.i[4 * k + 1]!, color: this.i[4 * k + 2]! };
+  }
+}
+
 export interface ExtractOptions {
   /** Dit si un groupe de contenu optionnel (calque PDF) est affiché ; absent = tout est affiché. */
   isVisible?: (group: unknown) => boolean;
   maxSegments?: number;
+  /** Faux = ne rien retirer (ni trames ni hachures) : diagnostic et comparaison. Vrai par défaut. */
+  lighten?: boolean;
 }
 
 export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: ExtractOptions = {}): Promise<RawPage> {
@@ -161,7 +313,7 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
     });
   }
 
-  // ───────────── Traits vectoriels ─────────────
+  // ───────────── Traits vectoriels, remplissages, découpes ─────────────
   const list = await page.getOperatorList();
   const fnArray = list.fnArray as readonly number[];
   const argsArray = list.argsArray as readonly unknown[];
@@ -171,12 +323,31 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
   const closeOps = new Set([ops.closeStroke, ops.closeFillStroke, ops.closeEOFillStroke]);
   const imageOps = new Set([ops.paintImageXObject, ops.paintInlineImageXObject, ops.paintImageXObjectRepeat]);
 
+  const lighten = options.lighten !== false;
+  const collectLimit = COLLECT_FACTOR * maxSegments;
+  /** Traits ordinaires (les micro-traits attendent à part, dans `micro`). */
   const segs: RawSeg[] = [];
+  const micro = new MicroStore(lighten ? MAX_MICRO_SEGS : 0);
+  /** Micro-traits non gardés faute de place, par découpe. */
+  const lostMicro = new Map<number, number>();
+  const stats: (ClipStrokeStat | undefined)[] = [];
+  const fills: FillArea[] = [];
+  const imageAreas: ImageArea[] = [];
   let truncated = false;
-  let ctm: Matrix = [1, 0, 0, 1, 0, 0];
-  let lineWidth = 1;
-  let dash = false;
-  const stack: { ctm: Matrix; lineWidth: number; dash: boolean }[] = [];
+  let rawStrokeSegs = 0;
+
+  interface GraphicState {
+    ctm: Matrix;
+    lineWidth: number;
+    dash: boolean;
+    fillColor: number;
+    strokeColor: number;
+    fillAlpha: number;
+    /** Zone de découpe active (indice dans `clips`). */
+    clip: number;
+  }
+  let gs: GraphicState = { ctm: [1, 0, 0, 1, 0, 0], lineWidth: 1, dash: false, fillColor: 0, strokeColor: 0, fillAlpha: 1, clip: 0 };
+  const stack: GraphicState[] = [];
   /** Pile des contenus balisés : vrai = calque masqué. */
   const marked: boolean[] = [];
   let hidden = 0;
@@ -184,14 +355,33 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
   let images = 0;
   let imageCoverage = 0;
   let imagePixelsPerPoint = 0;
+  /** Un opérateur clip / eoClip attend le tracé qui suit (la découpe s'applique APRÈS sa peinture éventuelle). */
+  let pendingClip = false;
   const pageArea = Math.max(1, viewport.width * viewport.height);
 
+  const clips: ClipZone[] = [{ id: 0, parent: -1, bbox: { minX: 0, minY: 0, maxX: viewport.width, maxY: viewport.height }, rect: true, ops: 0 }];
+  const clipRings: Ring[][] = [[]];
+  const addClip = (rings: Ring[]): void => {
+    if (clips.length >= MAX_PAGE_CLIPS) return;
+    const b = boxOfRings(rings);
+    if (!Number.isFinite(b.minX + b.minY + b.maxX + b.maxY)) return;
+    const id = clips.length;
+    clips.push({ id, parent: gs.clip, bbox: b, rect: isAxisRect(rings, b), ops: 0 });
+    clipRings.push(rings);
+    gs.clip = id;
+  };
+  const statOf = (clip: number): ClipStrokeStat => {
+    let s = stats[clip];
+    if (!s) stats[clip] = s = { all: 0, micro: 0, box: emptyBox(), color: 0 };
+    return s;
+  };
+
   const save = (): void => {
-    stack.push({ ctm, lineWidth, dash });
+    stack.push({ ...gs });
   };
   const restore = (): void => {
     const s = stack.pop();
-    if (s) ({ ctm, lineWidth, dash } = s);
+    if (s) gs = s;
   };
 
   for (let i = 0; i < fnArray.length; i++) {
@@ -201,16 +391,43 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
     else if (fn === ops.restore) restore();
     else if (fn === ops.transform) {
       const m = toMatrix(args);
-      if (m) ctm = mul(ctm, m);
+      if (m) gs.ctm = mul(gs.ctm, m);
     } else if (fn === ops.setLineWidth) {
-      if (typeof args[0] === 'number') lineWidth = args[0];
+      if (typeof args[0] === 'number') gs.lineWidth = args[0];
     } else if (fn === ops.setDash) {
       const pattern = args[0];
-      dash = (Array.isArray(pattern) || ArrayBuffer.isView(pattern)) && (pattern as ArrayLike<unknown>).length > 0;
+      gs.dash = (Array.isArray(pattern) || ArrayBuffer.isView(pattern)) && (pattern as ArrayLike<unknown>).length > 0;
+    } else if (fn === ops.setFillRGBColor) gs.fillColor = rgbColor(args) ?? gs.fillColor;
+    else if (fn === ops.setStrokeRGBColor) gs.strokeColor = rgbColor(args) ?? gs.strokeColor;
+    else if (fn === ops.setFillGray) gs.fillColor = grayColor(args) ?? gs.fillColor;
+    else if (fn === ops.setStrokeGray) gs.strokeColor = grayColor(args) ?? gs.strokeColor;
+    else if (fn === ops.setFillCMYKColor) gs.fillColor = cmykColor(args) ?? gs.fillColor;
+    else if (fn === ops.setStrokeCMYKColor) gs.strokeColor = cmykColor(args) ?? gs.strokeColor;
+    else if (fn === ops.setGState) {
+      // Paramètres d'un ExtGState : [[clé, valeur], …] (seuls ceux qui comptent pour la lecture).
+      const entries = args[0];
+      if (Array.isArray(entries)) {
+        for (const kv of entries as unknown[]) {
+          if (!Array.isArray(kv)) continue;
+          const [key, value] = kv as [unknown, unknown];
+          if (key === 'LW' && typeof value === 'number' && Number.isFinite(value)) gs.lineWidth = value;
+          else if (key === 'ca' && typeof value === 'number' && Number.isFinite(value)) gs.fillAlpha = Math.max(0, Math.min(1, value));
+          else if (key === 'D' && Array.isArray(value)) {
+            const pattern = value[0] as unknown;
+            gs.dash = (Array.isArray(pattern) || ArrayBuffer.isView(pattern)) && (pattern as ArrayLike<unknown>).length > 0;
+          }
+        }
+      }
     } else if (fn === ops.paintFormXObjectBegin) {
       save();
       const m = toMatrix(args[0]);
-      if (m) ctm = mul(ctm, m);
+      if (m) gs.ctm = mul(gs.ctm, m);
+      // Le cadre (BBox) d'un formulaire découpe son contenu.
+      const bb = args[1];
+      if (isNumberList(bb, 4)) {
+        const M = mul(V, gs.ctm);
+        addClip([[apply(M, bb[0]!, bb[1]!), apply(M, bb[2]!, bb[1]!), apply(M, bb[2]!, bb[3]!), apply(M, bb[0]!, bb[3]!)]]);
+      }
     } else if (fn === ops.paintFormXObjectEnd) restore();
     else if (fn === ops.beginMarkedContent || fn === ops.beginMarkedContentProps) {
       let off = false;
@@ -225,42 +442,117 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
       if (off) hidden++;
     } else if (fn === ops.endMarkedContent) {
       if (marked.pop()) hidden--;
-    } else if (imageOps.has(fn)) {
+    } else if (fn === ops.clip || fn === ops.eoClip) pendingClip = true;
+    else if (imageOps.has(fn)) {
       if (hidden > 0) continue;
       images++;
+      const ctm = gs.ctm;
       // Une image occupe le carré unité de son repère : son emprise sur la page est celle du CTM.
       const a = Math.hypot(ctm[0], ctm[1]);
       const b = Math.hypot(ctm[2], ctm[3]);
+      const pw = typeof args[1] === 'number' ? args[1] : 0;
+      const ph = typeof args[2] === 'number' ? args[2] : 0;
+      const ppp = a > 0 && b > 0 ? Math.max(pw / a, ph / b) : 0;
       const coverage = Math.min(1, Math.abs(ctm[0] * ctm[3] - ctm[1] * ctm[2]) / pageArea);
       if (coverage > imageCoverage) {
         imageCoverage = coverage;
-        const pw = typeof args[1] === 'number' ? args[1] : 0;
-        const ph = typeof args[2] === 'number' ? args[2] : 0;
-        imagePixelsPerPoint = a > 0 && b > 0 ? Math.max(pw / a, ph / b) : 0;
+        imagePixelsPerPoint = ppp;
       }
+      const M = mul(V, ctm);
+      const box = boxOfRings([[apply(M, 0, 0), apply(M, 1, 0), apply(M, 1, 1), apply(M, 0, 1)]]);
+      if (Number.isFinite(box.minX + box.minY + box.maxX + box.maxY)) imageAreas.push({ bbox: box, pixelsPerPoint: ppp });
     } else if (fn === ops.constructPath) {
       const paintOp = args[0];
       const holder = args[1];
       const data = Array.isArray(holder) ? (holder[0] as unknown) : undefined;
+      const clipNow = pendingClip;
+      pendingClip = false;
       if (typeof paintOp !== 'number' || !(data instanceof Float32Array)) continue;
       const stroke = strokeOps.has(paintOp);
       const fill = fillOps.has(paintOp);
-      if ((!stroke && !fill) || hidden > 0) continue; // tracé de découpe, ou calque masqué
-      if (segs.length >= maxSegments) {
+      let paint = (stroke || fill) && hidden === 0; // sinon : tracé de découpe seul, ou calque masqué
+      if (paint && segs.length >= collectLimit) {
         truncated = true;
-        continue;
+        paint = false;
       }
-      const M = mul(V, ctm);
-      const scale = Math.sqrt(Math.abs(ctm[0] * ctm[3] - ctm[1] * ctm[2]));
-      const w = stroke ? lineWidth * scale : 0;
-      const id = pid++;
-      let cur: [number, number] | null = null;
-      let start: [number, number] | null = null;
+      if (!paint && !clipNow) continue;
+      const M = mul(V, gs.ctm);
+      const scale = Math.sqrt(Math.abs(gs.ctm[0] * gs.ctm[3] - gs.ctm[1] * gs.ctm[2]));
+      const w = stroke ? gs.lineWidth * scale : 0;
+      const id = paint ? pid++ : -1;
+      const clip = gs.clip;
+      const color = stroke ? gs.strokeColor : gs.fillColor;
+      const dash = gs.dash;
+      if (paint) clips[clip]!.ops++;
+      // Un tracé seulement tracé est jugé sous-tracé par sous-tracé : un seul tracé peut porter des milliers de
+      // points de trame (un sous-tracé par point).
+      const judge = paint && stroke && !fill && lighten;
+      const wantRings = (paint && fill) || clipNow;
+      const rings: Ring[] = [];
+      let ring: Ring | null = null;
+      let ringClosed = false;
+      let sub: RawSeg[] = [];
+      let sx0 = Infinity;
+      let sy0 = Infinity;
+      let sx1 = -Infinity;
+      let sy1 = -Infinity;
+      const emit = (s: RawSeg): void => {
+        segs.push(s);
+        if (stroke) {
+          rawStrokeSegs++;
+          statOf(clip).all++;
+        }
+      };
+      const flush = (): void => {
+        if (sub.length === 0) return;
+        if (isMicroExtent(sx1 - sx0, sy1 - sy0)) {
+          const st = statOf(clip);
+          for (const s of sub) {
+            rawStrokeSegs++;
+            st.all++;
+            if (st.micro === 0) st.color = color;
+            st.micro++;
+            growBox(st.box, s.x0, s.y0);
+            growBox(st.box, s.x1, s.y1);
+            if (!micro.add(s, segs.length)) lostMicro.set(clip, (lostMicro.get(clip) ?? 0) + 1);
+          }
+        } else for (const s of sub) emit(s);
+        sub = [];
+        sx0 = sy0 = Infinity;
+        sx1 = sy1 = -Infinity;
+      };
       const push = (p: [number, number], q: [number, number], curve: boolean): void => {
+        if (!paint) return;
         if (p[0] === q[0] && p[1] === q[1]) return;
         if (!Number.isFinite(p[0] + p[1] + q[0] + q[1])) return;
-        segs.push({ x0: p[0], y0: p[1], x1: q[0], y1: q[1], w, curve, stroke, fill, dash, pid: id });
+        const s: RawSeg = { x0: p[0], y0: p[1], x1: q[0], y1: q[1], w, curve, stroke, fill, dash, pid: id, clip, color };
+        if (!judge) {
+          emit(s);
+          return;
+        }
+        sub.push(s);
+        if (p[0] < sx0) sx0 = p[0];
+        if (p[0] > sx1) sx1 = p[0];
+        if (p[1] < sy0) sy0 = p[1];
+        if (p[1] > sy1) sy1 = p[1];
+        if (q[0] < sx0) sx0 = q[0];
+        if (q[0] > sx1) sx1 = q[0];
+        if (q[1] < sy0) sy0 = q[1];
+        if (q[1] > sy1) sy1 = q[1];
       };
+      /** Sommet d'anneau (remplissage, découpe). */
+      const vertex = (p: [number, number], start: [number, number] | null): void => {
+        if (!wantRings) return;
+        if (!ring || ringClosed) {
+          ring = start && ringClosed ? [start] : [];
+          rings.push(ring);
+          ringClosed = false;
+        }
+        const last = ring[ring.length - 1];
+        if (!last || last[0] !== p[0] || last[1] !== p[1]) ring.push(p);
+      };
+      let cur: [number, number] | null = null;
+      let start: [number, number] | null = null;
       const cubic = (p0: [number, number], p1: [number, number], p2: [number, number], p3: [number, number]): void => {
         let prev = p0;
         for (let k = 1; k <= CURVE_STEPS; k++) {
@@ -272,6 +564,7 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
           const d = t * t * t;
           const next: [number, number] = [a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0], a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1]];
           push(prev, next, true);
+          vertex(next, start);
           prev = next;
         }
       };
@@ -280,12 +573,19 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
         if (op === DRAW_MOVE) {
           // Un remplissage referme implicitement chaque sous-tracé.
           if (fill && !stroke && cur && start) push(cur, start, false);
+          if (judge) flush();
           cur = start = apply(M, data[k]!, data[k + 1]!);
           k += 2;
+          if (wantRings) {
+            ring = [start];
+            rings.push(ring);
+            ringClosed = false;
+          }
         } else if (op === DRAW_LINE) {
           const p = apply(M, data[k]!, data[k + 1]!);
           k += 2;
           if (cur) push(cur, p, false);
+          vertex(p, start);
           cur = p;
         } else if (op === DRAW_CURVE) {
           const p1 = apply(M, data[k]!, data[k + 1]!);
@@ -307,6 +607,7 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
         } else if (op === DRAW_CLOSE) {
           if (cur && start) push(cur, start, false);
           cur = start;
+          ringClosed = true;
         } else {
           // Code inconnu (autre version de pdf.js) : on abandonne ce tracé plutôt que de lire n'importe quoi.
           break;
@@ -314,6 +615,57 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
       }
       // Un remplissage, ou un tracé « fermer puis tracer », referme implicitement le contour.
       if ((closeOps.has(paintOp) || (fill && !stroke)) && cur && start) push(cur, start, false);
+      if (judge) flush();
+      if (wantRings) {
+        const clean = cleanRings(rings);
+        if (paint && fill && clean.length > 0 && fills.length < MAX_PAGE_FILLS) {
+          const bbox = boxOfRings(clean);
+          if (Number.isFinite(bbox.minX + bbox.minY + bbox.maxX + bbox.maxY)) {
+            let area = 0;
+            for (const r of clean) area = Math.max(area, ringArea(r));
+            fills.push({ rings: clean, bbox, color: gs.fillColor, alpha: gs.fillAlpha, clip, stroked: stroke, area });
+          }
+        }
+        if (clipNow && clean.length > 0) addClip(clean);
+      }
+    }
+  }
+
+  // ───────────── Allègement : trames, puis hachures, puis plafond ─────────────
+  const stipples = lighten ? stippleZones(clips, stats, pageArea) : [];
+  const stippleClips = new Set(stipples.map((z) => z.clip));
+  let stippleSegs = 0;
+  for (const z of stipples) stippleSegs += z.count;
+  // Des micro-traits perdus faute de place hors d'une trame : la page n'est pas complète.
+  for (const clip of lostMicro.keys()) if (!stippleClips.has(clip)) truncated = true;
+  let all = segs;
+  if (micro.n > 0) {
+    // Réinsertion des micro-traits qui ne sont pas dans une trame, à leur place d'origine.
+    all = [];
+    let k = 0;
+    for (let i = 0; i <= segs.length; i++) {
+      while (k < micro.n && micro.pos(k) <= i) {
+        if (!stippleClips.has(micro.clip(k))) all.push(micro.seg(k));
+        k++;
+      }
+      if (i < segs.length) all.push(segs[i]!);
+    }
+  }
+  let hatchSegs = 0;
+  let hatches: RawPage['hatches'] = [];
+  if (lighten) {
+    const grouping = groupHatches(all, clips, clipRings, pageArea);
+    hatches = grouping.zones;
+    hatchSegs = grouping.count;
+    if (grouping.count > 0) all = all.filter((_, i) => !grouping.drop[i]);
+  }
+  if (all.length > maxSegments) {
+    // Comme avant l'allègement : on garde le tracé entamé au moment où le plafond est atteint.
+    let cut = maxSegments;
+    while (cut < all.length && all[cut]!.pid === all[cut - 1]!.pid) cut++;
+    if (cut < all.length) {
+      truncated = true;
+      all = all.slice(0, cut);
     }
   }
 
@@ -324,16 +676,16 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
     rotation,
     turned,
     texts,
-    segs,
+    segs: all,
     images,
     imageCoverage,
     imagePixelsPerPoint,
     truncated,
-    fills: [],
-    hatches: [],
-    stipples: [],
-    clips: [],
-    imageAreas: [],
-    lightening: { rawStrokeSegs: segs.length, stippleSegs: 0, hatchSegs: 0 },
+    fills,
+    hatches,
+    stipples,
+    clips,
+    imageAreas,
+    lightening: { rawStrokeSegs, stippleSegs, hatchSegs },
   };
 }
