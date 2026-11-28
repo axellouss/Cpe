@@ -3,8 +3,10 @@
  *   tokens.css      couleurs clair / sombre, typographie, socle, accessibilité
  *   components.css  boutons, champs, étiquettes, cartes, dialogues, messages
  *   screens.css     barre du haut et les cinq écrans
+ *   auto.css        parcours automatique : lecture, « lu », questions de doute, dossier
  * L'éditeur de plan apporte sa propre feuille (src/ui/plan/plan-editor.css) et reprend les teintes --p2c-*.
  */
 @import './tokens.css';
 @import './components.css';
 @import './screens.css';
+@import './auto.css';

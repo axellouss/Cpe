@@ -5,8 +5,8 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { Lang } from '../../../core/types';
 import { computeMeters, percent, stepsDone } from '../meters';
-import { selectCanRedo, selectCanUndo, selectMarks, selectProject, useShell, useShellStore } from '../store';
-import { STEPS } from '../types';
+import { selectAutoFlow, selectCanRedo, selectCanUndo, selectMarks, selectOpenDoubts, selectProject, useShell, useShellStore } from '../store';
+import { AUTO_STEPS, STEPS } from '../types';
 import type { Step } from '../types';
 import { Meter, useT } from './common';
 import { Icon, Logo } from './icons';
@@ -45,7 +45,12 @@ export function TopBar() {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const current = STEPS.indexOf(step);
+  const autoFlow = useShell(selectAutoFlow);
+  const openCount = useShell((s) => selectOpenDoubts(s).length);
+  const fixFrom = useShell((s) => s.fixReturn?.step ?? null);
+  // Parcours automatique : Lecture, Lu, Doutes, Dossier ; l'éditeur (« corriger sur le plan ») garde l'écran d'origine.
+  const autoBar = autoFlow && (AUTO_STEPS.includes(step) || step === 'plan');
+  const current = STEPS.indexOf(step as (typeof STEPS)[number]);
   // Mêmes règles que `canGoTo` du magasin, exprimées sur ce que ce composant observe déjà.
   const reachable = (target: Step): boolean =>
     target === 'read' ? documentCount > 0 : target === 'plan' ? project.model.storeys.length > 0 : true;
@@ -61,6 +66,9 @@ export function TopBar() {
         </span>
       </div>
 
+      {autoBar ? (
+        <AutoSteps step={step === 'plan' ? (fixFrom ?? 'overview') : step} open={openCount} hasPlan={documentCount > 0 || project.model.storeys.length > 0} />
+      ) : (
       <nav className="steps" aria-label={tr('shell.steps.label')}>
         <ol className="steps__list">
           {STEPS.map((s, i) => {
@@ -93,11 +101,21 @@ export function TopBar() {
           })}
         </ol>
       </nav>
+      )}
 
-      <div className="topbar__meters">
-        <Meter tone="complete" label={tr('shell.meter.complete')} percent={percent(meters.complete)} title={tr('shell.meter.complete.title')} />
-        <Meter tone="confirmed" label={tr('shell.meter.confirmed')} percent={percent(meters.confirmed)} title={tr('shell.meter.confirmed.title')} />
-      </div>
+      {autoBar ? (
+        <div className="topbar__meters topbar__doubts" data-testid="doubts-left">
+          <button type="button" className={`doubt-chip ${openCount === 0 ? 'is-clear' : ''}`} onClick={() => store.getState().goTo(openCount > 0 ? 'doubts' : 'dossier')} title={tr('shell.auto.left.title')}>
+            {openCount === 0 ? <Icon name="check" size={14} /> : <span className="doubt-chip__num">{openCount}</span>}
+            <span>{openCount === 0 ? tr('shell.auto.left.none') : tr('shell.auto.left', { count: openCount })}</span>
+          </button>
+        </div>
+      ) : (
+        <div className="topbar__meters">
+          <Meter tone="complete" label={tr('shell.meter.complete')} percent={percent(meters.complete)} title={tr('shell.meter.complete.title')} />
+          <Meter tone="confirmed" label={tr('shell.meter.confirmed')} percent={percent(meters.confirmed)} title={tr('shell.meter.confirmed.title')} />
+        </div>
+      )}
 
       <div className="topbar__actions">
         <div className="btn-group" role="group" aria-label={tr('shell.undo.group')}>
@@ -155,5 +173,39 @@ export function TopBar() {
         </button>
       </div>
     </header>
+  );
+}
+
+/** Indicateur du parcours automatique : Lecture, Lu, Doutes, Dossier. */
+function AutoSteps({ step, open, hasPlan }: { step: Step; open: number; hasPlan: boolean }) {
+  const tr = useT();
+  const store = useShellStore();
+  const current = AUTO_STEPS.indexOf(step);
+  return (
+    <nav className="steps steps--auto" aria-label={tr('shell.steps.label')} data-testid="auto-steps">
+      <ol className="steps__list">
+        {AUTO_STEPS.map((s, i) => {
+          const state = i === current ? 'current' : i < current ? 'past' : 'future';
+          const done = i !== current && ((s === 'home' && hasPlan) || (s === 'doubts' && open === 0) || (s === 'overview' && i < current));
+          return (
+            <li key={s} className={`steps__item steps__item--${state} ${done ? 'is-done' : ''}`}>
+              <button
+                type="button"
+                className="steps__button"
+                aria-current={i === current ? 'step' : undefined}
+                onClick={() => store.getState().goTo(s)}
+                data-testid={`auto-step-${s}`}
+                title={tr(`shell.auto.steps.${s}.title`)}
+              >
+                <span className="steps__num" aria-hidden="true">
+                  {done ? <Icon name="check" size={13} /> : i + 1}
+                </span>
+                <span className="steps__text">{tr(`shell.auto.steps.${s}`)}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }

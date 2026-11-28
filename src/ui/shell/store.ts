@@ -11,13 +11,17 @@ import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import type { StoreApi } from 'zustand/vanilla';
 import { createContext, useContext } from 'react';
-import type { BottomKind, Lang, Project, ProjectAnswers, Storey, TopClosure } from '../../core/types';
-import { carryOverFromPrevious, createEmptyProject } from '../../engine';
+import type { SheetReading } from '../../core/reading';
+import type { BottomKind, Lang, PlanSheet, Project, ProjectAnswers, Storey, TopClosure } from '../../core/types';
+import { applyDoubtAnswer, buildAutoProject, carryOverFromPrevious, collectDoubts, createEmptyProject } from '../../engine';
+import type { AutoBuild, Doubt, DoubtId } from '../../engine';
 import { projectFileErrorMessage } from '../../export';
 import { t } from '../../i18n';
 import { readPlanFile, UnsupportedFormatError } from '../../readers';
 import type { FileLike } from '../../readers';
 import type { PlanTool } from '../plan';
+import { confirmValueOf, doubtStamp, mergeDeck, openDoubts, pendingStages, setStage, stageDetails } from './auto';
+import type { Anchor } from './auto';
 import { browserStorage, clearWorkspace, dropLegacyEntered, initialLang, loadPosition, loadWorkspace, parseWorkspace, saveLang, savePosition, saveWorkspace } from './autosave';
 import type { StorageLike, StoredWorkspace } from './autosave';
 import { dropStoreyMarks, firstOpenStep, markPlanStep, nextOpenStep, sameScaleStoreyIds, stepOfTool, storeySteps } from './checklist';
@@ -72,7 +76,7 @@ import {
 /** Première question du parcours : la seule indispensable. */
 const FIRST_QUESTION: QuestionId = QUESTION_ORDER[0]!;
 import { emptyMarks } from './types';
-import type { ClosedFile, ExpertTab, LoadedDocument, Marks, PlanStepKey, QuestionId, ReadingItem, Step, Toast, Workspace } from './types';
+import type { ClosedFile, ExpertTab, FixReturn, LoadedDocument, Marks, PlanStepKey, QuestionId, ReadingItem, ReadingStage, ReadingStageKey, Step, Toast, Workspace } from './types';
 
 // ───────────────────────────── Dépendances injectables ─────────────────────────────
 
@@ -85,6 +89,11 @@ export interface ShellDeps {
   /** Va chercher le plan d'exemple ; lève une erreur s'il est absent. */
   fetchSample: () => Promise<FileLike>;
   languages: readonly string[];
+  /**
+   * Temps minimal (ms) pendant lequel chaque étape de lecture reste « en cours » à l'écran, pour qu'on puisse la lire
+   * (1,5 s ajoutée au plus en tout) ; 0 = aucune attente (tests).
+   */
+  stagePause: number;
 }
 
 const SAMPLE_PATH = './samples/maison-exemple.dxf';
@@ -117,6 +126,7 @@ function defaultDeps(): ShellDeps {
     autosaveDelay: 400,
     fetchSample: fetchSampleFromServer,
     languages: typeof navigator !== 'undefined' ? (navigator.languages ?? [navigator.language]) : [],
+    stagePause: 220,
   };
 }
 
@@ -169,6 +179,22 @@ export interface ShellState {
   saved: SavedProjectInfo | null;
   /** État de l'enregistrement automatique. */
   saveState: 'idle' | 'saved' | 'failed' | 'off';
+
+  // ── Parcours automatique ──
+  /** Étapes de la lecture en cours d'une planche (vide hors lecture d'un PDF). */
+  stages: ReadingStage[];
+  /** Document dont la lecture a construit le projet ; null après un rechargement sans la planche. */
+  autoDocId: string | null;
+  /** Pourquoi la lecture d'une planche ne suffisait pas : le parcours guidé l'explique en tête. */
+  guidedReason: string | null;
+  /** Questions de doute vues pendant la session, dans l'ordre (pour « précédent ») ; jamais enregistrées. */
+  doubtSeen: Doubt[];
+  /** Question affichée. */
+  doubtId: DoubtId | null;
+  /** « Corriger sur le plan » en cours : l'écran où revenir. */
+  fixReturn: FixReturn | null;
+  /** Endroit allumé sur la miniature de la planche (« voir sur la planche »). */
+  locate: Anchor | null;
 
   setLang(lang: Lang): void;
   goTo(step: Step): void;
@@ -225,6 +251,18 @@ export interface ShellState {
   jumpTo(target: JumpTarget): void;
   setExpert(open: boolean, tab?: ExpertTab): void;
 
+  /** Répond à une question de doute (un pas d'annulation), puis passe à la suivante ou au dossier. */
+  answerDoubt(doubt: Doubt, value: string): void;
+  /** Confirme d'un seul pas d'annulation toutes les questions données (leur proposition). */
+  confirmAllDoubts(doubts: readonly Doubt[]): void;
+  showDoubt(id: DoubtId | null): void;
+  /** Question précédente du paquet de la session. */
+  previousDoubt(): void;
+  /** Ouvre l'éditeur de plan sur l'outil voulu ; « Terminé, revenir » ramène à l'écran d'origine. */
+  openFix(target: { planStep: PlanStepKey; storeyId?: string | null; what: string }): void;
+  closeFix(): void;
+  setLocate(anchor: Anchor | null): void;
+
   /** Écrit tout de suite l'enregistrement en attente (fermeture de la page, tests). */
   flushAutosave(): void;
   /** Arrête les minuteries (tests, démontage). */
@@ -240,6 +278,61 @@ export const selectProject = (s: ShellState): Project => s.history.present.proje
 export const selectMarks = (s: ShellState): Marks => s.history.present.marks;
 export const selectCanUndo = (s: ShellState): boolean => canUndo(s.history);
 export const selectCanRedo = (s: ShellState): boolean => canRedo(s.history);
+
+/** Vrai si le projet suit le parcours automatique (cartes de doute). */
+export const selectAutoFlow = (s: ShellState): boolean => s.history.present.marks.flow === 'auto';
+
+let lastReading: { documents: readonly LoadedDocument[]; autoDocId: string | null; result: { reading: SheetReading | undefined; docId: string | null } } | null = null;
+
+/** Lecture de planche du projet : celle du document lu automatiquement, sinon la première disponible (mémorisée). */
+export function selectReading(s: ShellState): { reading: SheetReading | undefined; docId: string | null } {
+  if (lastReading && lastReading.documents === s.documents && lastReading.autoDocId === s.autoDocId) return lastReading.result;
+  const doc = s.documents.find((d) => d.id === s.autoDocId && d.doc.reading) ?? s.documents.find((d) => d.doc.reading);
+  const result = { reading: doc?.doc.reading, docId: doc?.id ?? null };
+  lastReading = { documents: s.documents, autoDocId: s.autoDocId, result };
+  return result;
+}
+
+let lastDoubts: { project: Project; documents: readonly LoadedDocument[]; lang: Lang; autoDocId: string | null; result: Doubt[] } | null = null;
+
+/** Toutes les questions de doute du moteur (répondues comprises), mémorisées pour le dernier état. */
+export function selectAllDoubts(s: ShellState): Doubt[] {
+  const project = selectProject(s);
+  if (lastDoubts && lastDoubts.project === project && lastDoubts.documents === s.documents && lastDoubts.lang === s.lang && lastDoubts.autoDocId === s.autoDocId) return lastDoubts.result;
+  let result: Doubt[];
+  try {
+    const sheets: PlanSheet[] = s.documents.flatMap((d) => d.doc.sheets);
+    result = collectDoubts(selectReading(s).reading, project, sheets, s.lang);
+  } catch {
+    // Moteur en échec : aucune question plutôt qu'un écran cassé (le dossier le dira).
+    result = [];
+  }
+  lastDoubts = { project, documents: s.documents, lang: s.lang, autoDocId: s.autoDocId, result };
+  return result;
+}
+
+/** Questions encore ouvertes (celles qui ont une réponse valable sont retirées). */
+let lastOpen: { all: Doubt[]; doubts: Marks['doubts']; result: Doubt[] } | null = null;
+
+export function selectOpenDoubts(s: ShellState): Doubt[] {
+  const all = selectAllDoubts(s);
+  const doubts = selectMarks(s).doubts;
+  if (lastOpen && lastOpen.all === all && lastOpen.doubts === doubts) return lastOpen.result;
+  const result = openDoubts(all, { doubts });
+  lastOpen = { all, doubts, result };
+  return result;
+}
+
+let lastDeck: { seen: Doubt[]; open: Doubt[]; result: Doubt[] } | null = null;
+
+/** Paquet de cartes de la session : questions vues puis questions ouvertes (mémorisé : sélecteur de composant). */
+export function selectDeck(s: ShellState): Doubt[] {
+  const open = selectOpenDoubts(s);
+  if (lastDeck && lastDeck.seen === s.doubtSeen && lastDeck.open === open) return lastDeck.result;
+  const result = mergeDeck(s.doubtSeen, open);
+  lastDeck = { seen: s.doubtSeen, open, result };
+  return result;
+}
 
 /** Étage affiché sur l'écran « Plan » : celui choisi s'il existe encore, sinon le premier. */
 export function currentStorey(state: ShellState): Storey | null {
@@ -258,7 +351,11 @@ export function canGoTo(state: ShellState, step: Step): boolean {
       return selectProject(state).model.storeys.length > 0;
     case 'questions':
     case 'result':
+    case 'dossier':
       return true;
+    case 'overview':
+    case 'doubts':
+      return selectAutoFlow(state);
   }
 }
 
@@ -273,7 +370,7 @@ function savedInfo(workspace: Workspace): SavedProjectInfo {
 }
 
 /** Pas d'historique qui remplacent le bâtiment : les annuler ou les rétablir ramène un autre projet, avec ses coches. */
-const PROJECT_SWAP_LABELS: ReadonlySet<string> = new Set(['shell.undo.openProject', 'shell.undo.newProject', 'shell.undo.acceptProposal']);
+const PROJECT_SWAP_LABELS: ReadonlySet<string> = new Set(['shell.undo.openProject', 'shell.undo.newProject', 'shell.undo.acceptProposal', 'shell.undo.autoRead']);
 
 /**
  * Annuler ou rétablir ne touche pas aux lignes cochées « saisies dans LuxEeB-Tool » : ce que l'expert a déjà
@@ -423,6 +520,76 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       set((s) => ({ history: sealHistory(s.history) }));
     };
 
+    const stage = (key: ReadingStageKey, status: ReadingStage['status'], detail?: ReadingStage['detail']): void => {
+      if (get().stages.length > 0) set((st) => ({ stages: setStage(st.stages, key, status, detail) }));
+    };
+
+    const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+    /**
+     * Après la lecture : une planche PDF seule et assez bien lue part dans le parcours automatique (cartes de doute).
+     * Sinon le parcours guidé reprend la main, avec la raison donnée par le moteur. Renvoie vrai si le parcours
+     * automatique a été pris (ou si la planche a simplement retrouvé le projet en cours).
+     */
+    const tryAutoFlow = async (readIds: readonly string[], closed: ClosedFile[]): Promise<boolean> => {
+      const state = get();
+      const justRead = state.documents.filter((d) => readIds.includes(d.id));
+      const loaded = justRead.length === 1 && justRead[0]!.doc.kind === 'pdf' ? justRead[0]! : null;
+      if (!loaded) return false;
+      const project = selectProject(state);
+      const lang = state.lang;
+
+      // Projet automatique repris sans sa planche, qu'on redépose : la planche retrouve ses étages, rien n'est relu.
+      if (selectAutoFlow(state) && project.model.storeys.some((s) => s.sheetId !== null && loaded.doc.sheets.some((sh) => sh.id === s.sheetId))) {
+        set({ busy: false, closedFiles: closed, stages: [], autoDocId: loaded.id, step: state.step === 'home' ? 'overview' : state.step });
+        toast(tr('shell.auto.rebound'), 'ok');
+        return true;
+      }
+
+      // Pas de fausse attente : chaque étape lue reste un instant à l'écran, 1,5 s ajoutée au plus en tout.
+      const details = stageDetails(loaded.doc);
+      const keys: Exclude<ReadingStageKey, 'doubts'>[] = ['open', 'views', 'rooms', 'envelope', 'layers', 'check'];
+      const wait = deps.stagePause > 0 ? Math.min(deps.stagePause, Math.floor(1500 / keys.length)) : 0;
+      for (const key of keys) {
+        const detail = details[key];
+        if (detail) stage(key, 'done', detail);
+        else stage(key, 'skipped');
+        if (wait > 0) await pause(wait);
+      }
+      stage('doubts', 'running');
+
+      // Le projet de base garde ce que l'expert a déjà saisi, sauf s'il s'agit d'un autre bâtiment (étages déjà là).
+      const base = project.model.storeys.length === 0 && project.model.manualRows.length === 0 ? project : createEmptyProject(lang);
+      let build: AutoBuild | null = null;
+      try {
+        build = buildAutoProject(loaded.doc, base, lang);
+      } catch {
+        build = null;
+      }
+      if (!build || !build.sufficient || build.project.model.storeys.length === 0) {
+        set({ guidedReason: build?.notes.find((n) => n.trim().length > 0) ?? tr('shell.auto.guided.generic') });
+        return false;
+      }
+      const built = build.project;
+      replaceWorkspace({ project: built, marks: { ...emptyMarks(), flow: 'auto' } }, 'shell.undo.autoRead');
+      set({ autoDocId: loaded.id, doubtSeen: [], doubtId: null, fixReturn: null, locate: null, proposal: null });
+      const count = selectOpenDoubts(get()).length;
+      stage('doubts', 'done', { key: 'shell.reading.detail.doubts', params: { count } });
+      if (wait > 0) await pause(wait);
+      set({ busy: false, closedFiles: closed, step: 'overview', stages: [] });
+      return true;
+    };
+
+    /** Question suivante après une réponse : la prochaine ouverte du paquet, sinon le dossier. */
+    const advanceDoubt = (fromId: DoubtId): void => {
+      const state = get();
+      const deck = selectDeck(state);
+      const open = new Set(selectOpenDoubts(state).map((d) => d.id));
+      const at = deck.findIndex((d) => d.id === fromId);
+      const next = deck.slice(at + 1).find((d) => open.has(d.id)) ?? deck.find((d) => open.has(d.id));
+      set({ doubtSeen: deck, ...(next ? { doubtId: next.id } : { step: 'dossier' }) });
+    };
+
     return {
       lang,
       step: 'home',
@@ -443,6 +610,13 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       toast: null,
       saved,
       saveState: deps.storage ? 'idle' : 'off',
+      stages: [],
+      autoDocId: null,
+      guidedReason: null,
+      doubtSeen: [],
+      doubtId: null,
+      fixReturn: null,
+      locate: null,
 
       setLang(next) {
         const previous = get().lang;
@@ -470,6 +644,14 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
       goTo(step) {
         const state = get();
         if (!canGoTo(state, step)) return;
+        // Quitter l'éditeur autrement que par « Terminé, revenir » abandonne le retour prévu.
+        if (state.fixReturn !== null) set({ fixReturn: null });
+        if (step === 'doubts') {
+          const open = selectOpenDoubts(state);
+          const current = open.some((d) => d.id === state.doubtId) ? state.doubtId : (open[0]?.id ?? state.doubtId);
+          set({ step, doubtId: current, doubtSeen: selectDeck(state) });
+          return;
+        }
         if (step === 'plan') {
           enterPlan(state.storeyId);
           return;
@@ -524,7 +706,9 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
 
       async ingestFiles(files) {
         if (files.length === 0 || get().busy) return;
-        set({ busy: true, reading: files.map((f) => ({ name: f.name, status: 'reading' })) });
+        // Une planche PDF seule : la lecture se suit étape par étape (le parcours automatique peut suivre).
+        const planche = files.length === 1 && /\.pdf$/i.test(files[0]!.name);
+        set({ busy: true, reading: files.map((f) => ({ name: f.name, status: 'reading' })), stages: planche ? pendingStages() : [], guidedReason: null });
         const closed: ClosedFile[] = [];
         const readIds: string[] = [];
         let read = 0;
@@ -536,7 +720,13 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
             }));
           };
           try {
-            const doc = await readPlanFile(file, { lang: get().lang });
+            const doc = await readPlanFile(file, {
+              lang: get().lang,
+              onProgress: (p) => {
+                // Le lecteur dit où il en est ; le détail (ce qui a été trouvé) vient du document lu.
+                stage(p.stage, p.status === 'skipped' ? 'skipped' : p.status);
+              },
+            });
             const signature = documentSignature(doc, (file as { size?: number }).size);
             let loaded = toLoadedDocument(doc, signature, get().lang);
             const sameName = get().documents.find((d) => d.id === loaded.id);
@@ -571,7 +761,10 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         const state = get();
         const project = selectProject(state);
         const patch: Partial<ShellState> = { busy: false, closedFiles: closed };
+        if (read > 0 && (await tryAutoFlow(readIds, closed))) return;
         if (read > 0) {
+          const reason = get().guidedReason;
+          if (reason !== null) patch.guidedReason = reason;
           const proposal = proposeStoreys(state.documents, project, state.lang);
           patch.proposal = proposal;
           // Fichiers de ce dépôt dont une feuille sert déjà de fond à un étage du projet.
@@ -588,6 +781,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           }
           patch.step = 'read';
         }
+        patch.stages = [];
         set(patch);
       },
 
@@ -638,7 +832,9 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         replaceWorkspace(opened, 'shell.undo.openProject');
         set({ saved: null, proposal: null });
         const state = get();
-        if (project.model.storeys.length > 0) enterPlan(null);
+        set({ autoDocId: null, doubtSeen: [], doubtId: null, fixReturn: null, locate: null });
+        if (opened.marks.flow === 'auto') set({ step: 'overview' });
+        else if (project.model.storeys.length > 0) enterPlan(null);
         else set({ step: 'questions', question: FIRST_QUESTION, questionPart: null });
         toast(tr(state.documents.length === 0 && project.model.storeys.some((s) => s.sheetId !== null) ? 'shell.home.opened.noPlans' : 'shell.home.opened'), 'ok');
         return true;
@@ -661,6 +857,15 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         // Langue changée (ou jamais enregistrée) : on réécrit le projet avec la langue actuelle.
         if (current !== asSaved || workspace.lang !== get().lang) scheduleSave(current);
         const storeys = workspace.project.model.storeys;
+        set({ autoDocId: null, doubtSeen: [], doubtId: null, fixReturn: null, locate: null });
+        if (workspace.marks.flow === 'auto') {
+          // Parcours automatique : on reprend sur son écran (la planche, elle, n'est pas enregistrée).
+          const auto: readonly Step[] = ['overview', 'doubts', 'dossier'];
+          const step = position && auto.includes(position.step) ? position.step : 'overview';
+          if (step === 'doubts') get().goTo('doubts');
+          else set({ step });
+          return;
+        }
         if (storeys.length === 0) {
           set({ step: 'questions', question: position?.step === 'questions' ? position.question : FIRST_QUESTION, questionPart: null });
           return;
@@ -700,6 +905,13 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
           question: FIRST_QUESTION,
           questionPart: null,
           saved: null,
+          stages: [],
+          autoDocId: null,
+          guidedReason: null,
+          doubtSeen: [],
+          doubtId: null,
+          fixReturn: null,
+          locate: null,
         });
       },
 
@@ -710,6 +922,7 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         for (const url of doc.urls) deps.revokeUrl(url);
         sources.delete(id);
         const documents = state.documents.filter((d) => d.id !== id);
+        if (state.autoDocId === id) set({ autoDocId: null, locate: null });
         const project = selectProject(state);
         set({
           documents,
@@ -1022,6 +1235,85 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
 
       setExpert(open, tab) {
         set(tab ? { expertOpen: open, expertTab: tab } : { expertOpen: open });
+      },
+
+      answerDoubt(doubt, value) {
+        const lang = get().lang;
+        // Le paquet garde la question répondue (pour « précédent »), même si le moteur ne la pose plus.
+        set((st) => ({ doubtSeen: selectDeck(st) }));
+        let failed = false;
+        apply(
+          (ws) => {
+            let project = ws.project;
+            try {
+              project = applyDoubtAnswer(ws.project, doubt, value, lang);
+            } catch {
+              failed = true;
+            }
+            const doubts = { ...(ws.marks.doubts ?? {}), [doubt.id]: { value, stamp: doubtStamp(doubt), via: 'card' as const } };
+            return { project, marks: { ...ws.marks, doubts } };
+          },
+          { label: 'shell.undo.doubt' },
+        );
+        if (failed) toast(tr('shell.doubt.applyFailed'), 'warn');
+        advanceDoubt(doubt.id);
+      },
+
+      confirmAllDoubts(list) {
+        if (list.length === 0) return;
+        const lang = get().lang;
+        set((st) => ({ doubtSeen: selectDeck(st) }));
+        let failed = false;
+        apply(
+          (ws) => {
+            let project = ws.project;
+            const doubts = { ...(ws.marks.doubts ?? {}) };
+            for (const d of list) {
+              const value = confirmValueOf(d);
+              try {
+                project = applyDoubtAnswer(project, d, value, lang);
+              } catch {
+                failed = true;
+              }
+              doubts[d.id] = { value, stamp: doubtStamp(d), via: 'confirmAll' };
+            }
+            return { project, marks: { ...ws.marks, doubts } };
+          },
+          { label: 'shell.undo.confirmAll' },
+        );
+        if (failed) toast(tr('shell.doubt.applyFailed'), 'warn');
+        advanceDoubt(list[list.length - 1]!.id);
+      },
+
+      showDoubt(id) {
+        set((st) => ({ doubtId: id, doubtSeen: selectDeck(st), step: 'doubts' }));
+      },
+
+      previousDoubt() {
+        const state = get();
+        const deck = selectDeck(state);
+        const at = deck.findIndex((d) => d.id === state.doubtId);
+        if (at > 0) set({ doubtId: deck[at - 1]!.id, doubtSeen: deck });
+        else set({ step: 'overview', doubtSeen: deck });
+      },
+
+      openFix(target) {
+        const state = get();
+        const project = selectProject(state);
+        if (project.model.storeys.length === 0) return;
+        const from = state.step;
+        get().jumpTo({ step: 'plan', storeyId: target.storeyId ?? project.model.storeys[0]!.id, planStep: target.planStep, focus: null });
+        set({ fixReturn: { step: from === 'plan' ? 'overview' : from, what: target.what } });
+      },
+
+      closeFix() {
+        const back = get().fixReturn;
+        // Les questions se recalculent d'elles-mêmes sur le projet corrigé (sélecteurs mémorisés).
+        set({ fixReturn: null, step: back?.step ?? 'overview' });
+      },
+
+      setLocate(anchor) {
+        set({ locate: anchor });
       },
 
       flushAutosave() {

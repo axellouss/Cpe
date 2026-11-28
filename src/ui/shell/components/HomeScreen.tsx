@@ -10,6 +10,7 @@ import { useShell, useShellStore } from '../store';
 import type { ShellStore } from '../store';
 import { useT } from './common';
 import { Icon } from './icons';
+import { ReadingProgress } from './ReadingProgress';
 
 /** Extensions proposées par le sélecteur de fichiers : les formats lisibles, et les formats fermés pour pouvoir les expliquer. */
 export const PLAN_ACCEPT = '.ifc,.dwg,.dxf,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.pln,.pla,.rvt,.skp,.json';
@@ -218,6 +219,7 @@ export function HomeScreen() {
         <p className="dropzone__hint">{tr('shell.home.drop.hint')}</p>
       </div>
 
+      <ReadingProgress />
       <ReadingList />
 
       <p className="privacy">

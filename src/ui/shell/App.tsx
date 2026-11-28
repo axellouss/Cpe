@@ -6,10 +6,13 @@ import { useEffect, useRef, useState } from 'react';
 import { ClosedFormatDialog } from './components/ClosedFormatDialog';
 import { AnnounceProvider, useT } from './components/common';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { DoubtsScreen } from './components/DoubtsScreen';
 import { ExpertPanel } from './components/ExpertPanel';
+import { FixBanner, GuidedReason } from './components/FixBanner';
 import { handleDroppedFiles, HomeScreen } from './components/HomeScreen';
 import { Icon } from './components/icons';
 import { PlanScreen } from './components/PlanScreen';
+import { OverviewScreen } from './components/OverviewScreen';
 import { QuestionsScreen } from './components/QuestionsScreen';
 import { ReadScreen } from './components/ReadScreen';
 import { ResultScreen } from './components/ResultScreen';
@@ -61,13 +64,29 @@ function Screen({ step }: { step: Step }) {
     case 'home':
       return <HomeScreen />;
     case 'read':
-      return <ReadScreen />;
+      return (
+        <>
+          <GuidedReason />
+          <ReadScreen />
+        </>
+      );
     case 'plan':
-      return <PlanScreen />;
+      return (
+        <>
+          <FixBanner />
+          <PlanScreen />
+        </>
+      );
     case 'questions':
       return <QuestionsScreen />;
     case 'result':
       return <ResultScreen />;
+    case 'overview':
+      return <OverviewScreen />;
+    case 'doubts':
+      return <DoubtsScreen />;
+    case 'dossier':
+      return <ResultScreen variant="dossier" />;
   }
 }
 
@@ -157,7 +176,7 @@ function Shell() {
     // Rien au premier affichage (ni au double passage des effets en mode strict) : seulement quand l'écran change.
     if (shownStep.current === step) return;
     shownStep.current = step;
-    if (step !== 'questions') main.current?.focus({ preventScroll: true });
+    if (step !== 'questions' && step !== 'doubts') main.current?.focus({ preventScroll: true });
     if (typeof window.scrollTo !== 'function') return;
     try {
       window.scrollTo({ top: 0 });

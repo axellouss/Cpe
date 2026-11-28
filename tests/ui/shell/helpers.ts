@@ -93,6 +93,8 @@ export function testStore(overrides: Partial<ShellDeps> = {}, initial: Record<st
       throw new Error('sample-missing');
     },
     languages: ['fr-LU'],
+    // Lecture d'une planche : pas de pause d'affichage entre les étapes.
+    stagePause: 0,
     ...overrides,
   });
   return {

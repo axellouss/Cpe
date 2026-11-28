@@ -23,10 +23,18 @@ export function sheetKey(fileName: string, sheetId: string): string {
 /** Copie du document dont les feuilles portent un identifiant unique entre fichiers. Idempotent. */
 export function namespaceDocument(doc: PlanDocument): PlanDocument {
   const prefix = `${doc.fileName}${SEPARATOR}`;
-  return {
-    ...doc,
-    sheets: doc.sheets.map((s) => (s.id.startsWith(prefix) ? s : { ...s, id: sheetKey(doc.fileName, s.id) })),
-  };
+  const key = (id: string): string => (id.startsWith(prefix) ? id : sheetKey(doc.fileName, id));
+  const spaced: PlanDocument = { ...doc, sheets: doc.sheets.map((s) => (s.id.startsWith(prefix) ? s : { ...s, id: key(s.id) })) };
+  // La lecture de la planche désigne les mêmes feuilles (vue → feuille, alignement) : même espace de noms.
+  if (doc.reading) {
+    spaced.reading = {
+      ...doc.reading,
+      views: doc.reading.views.map((v) => (v.sheetId === null ? v : { ...v, sheetId: key(v.sheetId) })),
+      alignment: doc.reading.alignment.map((a) => ({ ...a, sheetId: key(a.sheetId) })),
+      roof: doc.reading.roof && doc.reading.roof.sheetId !== null ? { ...doc.reading.roof, sheetId: key(doc.reading.roof.sheetId) } : doc.reading.roof,
+    };
+  }
+  return spaced;
 }
 
 /** Adresses d'objets (blob:) créées par le lecteur pour les fonds matriciels : à libérer quand le document part. */

@@ -5,8 +5,8 @@
  */
 import type { Lang } from '../../core/types';
 import { parseProject, serializeProject } from '../../export';
-import { emptyMarks } from './types';
-import type { Marks, PlanStepKey, QuestionId, Step, Workspace } from './types';
+import { ALL_STEPS, emptyMarks } from './types';
+import type { DoubtMark, Marks, PlanStepKey, QuestionId, Step, Workspace } from './types';
 import { PLAN_STEP_KEYS } from './types';
 
 /**
@@ -133,6 +133,20 @@ export function sanitizeMarks(raw: unknown): Marks {
       kept += 1;
     }
   }
+  if (raw.flow === 'auto') marks.flow = 'auto';
+  if (isRecord(raw.doubts)) {
+    const doubts: Record<string, DoubtMark> = {};
+    let kept = 0;
+    for (const [id, mark] of Object.entries(raw.doubts)) {
+      if (kept >= MAX_DOUBT_MARKS) break;
+      if (!/^[a-z][a-z-]{1,40}$/.test(id) || id === 'constructor' || id === 'prototype') continue;
+      if (!isRecord(mark) || typeof mark.value !== 'string' || typeof mark.stamp !== 'string') continue;
+      if (mark.value.length > 400 || mark.stamp.length > 400) continue;
+      doubts[id] = { value: mark.value, stamp: mark.stamp, via: mark.via === 'confirmAll' ? 'confirmAll' : 'card' };
+      kept += 1;
+    }
+    if (kept > 0) marks.doubts = doubts;
+  }
   return marks;
 }
 
@@ -249,7 +263,9 @@ export interface SavedPosition {
   planStep?: PlanStepKey;
 }
 
-const STEPS: readonly Step[] = ['home', 'read', 'plan', 'questions', 'result'];
+const STEPS: readonly Step[] = ALL_STEPS;
+/** Réponses aux doutes gardées au plus (le catalogue en compte une vingtaine). */
+const MAX_DOUBT_MARKS = 60;
 
 export function savePosition(storage: StorageLike | null, position: SavedPosition): void {
   write(storage, STORAGE_KEYS.position, JSON.stringify(position));

@@ -23,6 +23,7 @@ import { AnimatedNumber, Badge, CopyButton, ProvenanceTag, useT } from './common
 import type { BadgeTone } from './common';
 import { Icon } from './icons';
 import type { IconName } from './icons';
+import { DossierSheets, OpenDoubts, StillInLuxeeb } from './DossierExtras';
 import { UnconfirmedSteps } from './UnconfirmedSteps';
 import './result.css';
 
@@ -506,8 +507,13 @@ function Downloads({ sheets, project }: { sheets: LuxeebSheets; project: Project
 
 // ───────────────────────────── Écran ─────────────────────────────
 
-export function ResultScreen() {
+/**
+ * `variant="dossier"` : le dossier du parcours automatique. Mêmes tableaux à copier et mêmes téléchargements, plus
+ * les questions encore ouvertes en tête, le dossier feuille par feuille, les hypothèses et ce qui reste à faire.
+ */
+export function ResultScreen({ variant = 'result' }: { variant?: 'result' | 'dossier' } = {}) {
   const tr = useT();
+  const dossier = variant === 'dossier';
   const store = useShellStore();
   const project = useShell(selectProject);
   const lang = useShell((s) => s.lang);
@@ -552,14 +558,17 @@ export function ResultScreen() {
   return (
     <section className="result" aria-labelledby="result-title">
       <header className="screen-head">
-        <h1 id="result-title">{tr('shell.result.title')}</h1>
+        <h1 id="result-title">{tr(dossier ? 'shell.dossier.title' : 'shell.result.title')}</h1>
+        {dossier ? <p className="lead dossier__ready">{tr('shell.dossier.ready')}</p> : null}
         <p className="lead">{tr('shell.result.lead')}</p>
         <Downloads sheets={sheets} project={project} />
       </header>
 
-      <UnconfirmedSteps />
+      {dossier ? <OpenDoubts /> : <UnconfirmedSteps />}
       <FindingsPanel findings={sheets.findings} project={project} />
       <KeyFigures sheets={sheets} sections={sections ?? []} />
+      {dossier ? <DossierSheets /> : null}
+      {dossier ? <h2 className="dossier__paste-title">{tr('shell.dossier.paste.title')}</h2> : null}
 
       {sections ? (
         <div className="result__layout">
@@ -599,8 +608,21 @@ export function ResultScreen() {
         </div>
       )}
 
+      {dossier ? <StillInLuxeeb /> : null}
       <p className="disclaimer">{guideDisclaimer(lang)}</p>
 
+      {dossier ? (
+        <footer className="actions">
+          <button type="button" className="btn btn--ghost" onClick={() => store.getState().goTo('doubts')}>
+            <Icon name="arrowLeft" size={18} />
+            <span>{tr('shell.dossier.backDoubts')}</span>
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={() => store.getState().goTo('overview')}>
+            <Icon name="arrowLeft" size={18} />
+            <span>{tr('shell.dossier.backOverview')}</span>
+          </button>
+        </footer>
+      ) : (
       <footer className="actions">
         <button type="button" className="btn btn--ghost" onClick={() => store.getState().goTo('questions')}>
           <Icon name="arrowLeft" size={18} />
@@ -611,6 +633,7 @@ export function ResultScreen() {
           <span>{tr('shell.result.backPlan')}</span>
         </button>
       </footer>
+      )}
     </section>
   );
 }

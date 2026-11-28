@@ -15,7 +15,7 @@ import type { Project, Provenance } from '../../core/types';
 import { allStoreysDone, storeySteps } from './checklist';
 import { findSheet } from './documents';
 import { isQuestionComplete, REQUIRED_QUESTIONS } from './questions';
-import type { LoadedDocument, Marks, Step } from './types';
+import type { LoadedDocument, Marks, GuidedStep } from './types';
 import { PLAN_STEP_KEYS } from './types';
 
 export interface MeterSlot {
@@ -76,7 +76,7 @@ export function computeMeters(project: Project, marks: Marks, documents: readonl
  *  - questions : la seule question indispensable (toiture et plancher bas) est répondue ;
  *  - result    : jamais — c'est la destination, pas un travail.
  */
-export function stepsDone(project: Project, marks: Marks, documents: readonly LoadedDocument[] = []): Record<Step, boolean> {
+export function stepsDone(project: Project, marks: Marks, documents: readonly LoadedDocument[] = []): Record<GuidedStep, boolean> {
   const storeys = project.model.storeys;
   return {
     home: documents.length > 0 || storeys.length > 0,
