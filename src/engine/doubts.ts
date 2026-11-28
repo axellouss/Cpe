@@ -21,7 +21,7 @@
 import { pointInPolygon, polygonArea } from '../core/geometry';
 import type { DossierSheetKey } from '../core/cpe';
 import type { Read, SheetReading } from '../core/reading';
-import type { Lang, PlanSheet, Project, ProjectAnswers, Sourced } from '../core/types';
+import type { BBox, Lang, PlanSheet, Project, ProjectAnswers, Sourced } from '../core/types';
 import { formatNumber, t } from '../i18n';
 import { deriveSheets } from './derive';
 import { constructionFromComposition, dominantInsulation, isEnvelopeComposition } from './materials';
@@ -172,6 +172,10 @@ export interface Doubt {
   effectShare: number | null;
   confidence: number;
   signals: Signal[];
+  /** Endroit de la planche qui appuie la question (page à partir de 1, boîte en uf), quand il est connu. */
+  where?: { page: number; box: BBox; sheetId?: string | null };
+  /** Où corriger sur le plan : étage (Storey.id) et outil de l'éditeur concernés. */
+  fix?: { storeyId: string | null; step: 'scale' | 'outline' | 'rooms' | 'boundary' | 'opening' | 'height' | 'north' };
 }
 
 /** « Je ne sais pas » : la proposition est gardée, étiquetée HYPOTHÈSE (jamais présentée comme lue ni confirmée). */

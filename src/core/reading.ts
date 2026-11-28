@@ -344,6 +344,27 @@ export interface ReadRoof {
   pitchDeg: Read<number> | null;
 }
 
+/** Plancher d'un étage situé au-dessus d'un local non chauffé (garage sous une chambre) ou de l'extérieur (encorbellement). */
+export interface ReadFloorOver {
+  /** Feuille de l'étage qui porte ce plancher. */
+  sheetId: string;
+  /** Feuille de l'étage du dessous, quand elle est connue. */
+  belowSheetId: string | null;
+  areaM2: number;
+  /** Contour de la surface concernée (uf de la feuille de l'étage). */
+  polygon?: Vec2[];
+  confidence: number;
+}
+
+/** Hauteur libre lue pour un niveau (chaîne de cotes d'une coupe, mention « HSP »). */
+export interface ReadClearHeight {
+  /** Indice du niveau dans ReadLevels.floors ; null si le niveau n'a pas pu être rattaché. */
+  floorIndex: number | null;
+  value: number;
+  confidence: number;
+  viewId: string | null;
+}
+
 // ───────────────────────────── Lecture complète ─────────────────────────────
 
 /** Tout ce qui a été lu sur un document, en plus des feuilles (PlanSheet) et de leur détection. */
@@ -365,6 +386,12 @@ export interface SheetReading {
    * superposables (plancher au-dessus d'un local non chauffé, encorbellement). Vide si l'alignement n'est pas sûr.
    */
   alignment: { sheetId: string; dx: number; dy: number; confidence: number }[];
+  /** Planchers d'étage au-dessus d'un local non chauffé, mesurés par le lecteur une fois les plans alignés. */
+  floorOverUnheated?: ReadFloorOver[];
+  /** Planchers d'étage au-dessus de l'extérieur (encorbellement, passage). */
+  floorOverOutside?: ReadFloorOver[];
+  /** Hauteurs libres rattachées à leur niveau, quand le lecteur sait le faire (complète ReadLevels.clearHeights). */
+  clearHeightsByFloor?: ReadClearHeight[];
   /** Journal de lecture, pour le diagnostic (jamais montré tel quel). */
   log: string[];
 }
