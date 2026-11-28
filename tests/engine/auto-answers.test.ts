@@ -20,6 +20,7 @@ import {
 } from '../../src/engine';
 import { documentFromTruth, readPlancheTruth, type DocOptions, type PlancheName, type Truth } from './auto-planche';
 import { deepFreeze } from './helpers';
+import type { OpeningHeights } from '../../src/engine/provenance';
 
 interface Scenario {
   doc: PlanDocument;
@@ -55,7 +56,13 @@ const SCENARIOS: Record<DoubtId, { make: () => Scenario; free?: string[] }> = {
   heating: { make: () => scenario('planche_A1_archicad') },
   'thermal-bridges': { make: () => scenario('planche_A1_archicad') },
   occasion: { make: () => scenario('planche_sans_titres') },
-  attached: { make: () => scenario('planche_2pages') },
+  attached: {
+    // Mur mitoyen lu comme façade ordinaire, sans baie : la façade aveugle ne prouve plus rien, il faut demander.
+    make: () =>
+      scenario('planche_A1_archicad', {}, (doc) => {
+        for (const s of doc.sheets) for (const e of s.detected.heatedEdges ?? []) if (e.boundary === 'heated') Object.assign(e, { boundary: 'outside', sources: [] });
+      }),
+  },
   scale: {
     make: () =>
       scenario('planche_A1_archicad', { guessedScale: true }, (doc) => {
@@ -288,7 +295,8 @@ describe('effet des réponses', () => {
     expect(applyDoubtAnswer(s.project, ask(s, 'ventilation'), 'balanced-hr', 'fr').answers.ventilation).toBe('balanced-hr');
     const s2 = scenario('planche_2pages');
     expect(applyDoubtAnswer(s2.project, ask(s2, 'renewables'), 'pv', 'fr').answers).toMatchObject({ photovoltaic: true, solarThermal: false });
-    expect(applyDoubtAnswer(s2.project, ask(s2, 'attached'), 'one-side', 'fr').answers.attachment).toBe('one-side');
+    const s3 = SCENARIOS.attached.make();
+    expect(applyDoubtAnswer(s3.project, ask(s3, 'attached'), 'one-side', 'fr').answers.attachment).toBe('one-side');
   });
 
   it('matériaux et menuiseries confirmés : λ et valeurs des fenêtres passent à l’utilisateur, U recalculé', () => {
@@ -305,8 +313,9 @@ describe('effet des réponses', () => {
   it('opening-heights : la hauteur saisie remplace les hauteurs d’usage seulement', () => {
     const s = SCENARIOS['opening-heights'].make();
     const next = applyDoubtAnswer(s.project, ask(s, 'opening-heights'), '1,35', 'fr');
-    const windows = next.model.storeys.flatMap((st) => st.openings.filter((o) => o.kind === 'window'));
-    expect(windows.every((o) => o.height === 1.35 && o.from === 'user')).toBe(true);
+    const windows = next.model.storeys.flatMap((st) => st.openings.filter((o) => o.kind === 'window')) as OpeningHeights[];
+    // La hauteur est celle de l'utilisateur ; la largeur, lue, garde sa provenance (proposé ≠ confirmé).
+    expect(windows.every((o) => o.height === 1.35 && o.heightFrom === 'user' && o.from === 'plan')).toBe(true);
     // La porte d'entrée, de hauteur lue, ne bouge pas.
     expect(next.model.storeys.flatMap((st) => st.openings.filter((o) => o.kind === 'door')).every((o) => o.height === 2.2)).toBe(true);
   });

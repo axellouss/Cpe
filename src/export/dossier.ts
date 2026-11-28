@@ -32,7 +32,7 @@ import {
   type LuxeebElementType,
   type PlausibilityCheck,
 } from '../core/cpe';
-import type { SheetReading } from '../core/reading';
+import { CONFIDENCE_SINGLE_SOURCE, type SheetReading } from '../core/reading';
 import type { Construction, EnvelopeRow, Lang, LuxeebSheets, PlanSheet, Project, Provenance, Sourced, WindowType } from '../core/types';
 import { collectDoubts, deriveSheets } from '../engine';
 import { computeU, meanU, precalculatedUw } from '../engine/uvalue';
@@ -108,6 +108,20 @@ const PROPOSED_LABEL_KEY: Readonly<Record<string, string>> = {
   photovoltaic: 'export.dossier.proposed.photovoltaic',
   solarThermal: 'export.dossier.proposed.solarThermal',
   attachment: 'export.dossier.proposed.attachment',
+  heatEmission: 'export.dossier.proposed.heatEmission',
+  emissionTemps: 'export.dossier.proposed.emissionTemps',
+  hotWaterStorageInside: 'export.dossier.proposed.hotWaterStorageInside',
+  thermalBridges: 'export.dossier.proposed.thermalBridges',
+  thermalMass: 'export.dossier.proposed.thermalMass',
+};
+/** Groupe de libellés (export.enum.<groupe>) de chaque réponse à choix. */
+const ENUM_GROUP: Readonly<Record<string, string>> = {
+  buildingType: 'buildingType',
+  occasion: 'occasion',
+  heatGenerator: 'generator',
+  heatEmission: 'emission',
+  hotWater: 'hotWater',
+  ventilation: 'ventilation',
 };
 const MASS_KEY = { heavy: 'export.dossier.thermalMass.heavy', other: 'export.dossier.thermalMass.other' } as const;
 
@@ -132,6 +146,21 @@ export function buildDossier(project: Project, sheets: readonly PlanSheet[], lan
     }
   };
 
+  // Réponse du questionnaire : « vous » si l'utilisateur l'a donnée ou confirmée ; « lu » (avec sa confiance) si la
+  // lecture l'a seulement proposée ; hypothèse (confiance 0) pour « je ne sais pas ».
+  const answerFrom = (...keys: string[]): { from: Provenance; confidence?: number; source?: string } => {
+    const hows = keys.map((k) => a.proposed?.[k]).filter((h): h is { confidence: number; source: string } => h !== undefined);
+    if (hows.length === 0) return { from: 'user' };
+    const weakest = hows.reduce((x, y) => (y.confidence < x.confidence ? y : x));
+    return { from: weakest.confidence > 0 ? 'plan' : 'default', confidence: weakest.confidence, source: weakest.source };
+  };
+  const answerText = (value: string | null | undefined, ...keys: string[]): DossierValue => {
+    const clean = cleanText(value ?? '');
+    if (!clean) return EMPTY;
+    const how = answerFrom(...keys);
+    return val(excelSafeText(clean), how.from, { ...(how.confidence !== undefined ? { confidence: how.confidence } : {}), ...(how.source ? { source: how.source } : {}) });
+  };
+
   const sections = new Map<DossierSheetKey, DossierSection>();
   for (const info of SHEETS_625) {
     sections.set(info.key, { key: info.key, luxeebName: info.de, title: lang === 'de' ? info.de : info.fr, fields: [], tables: [], notes: [] });
@@ -140,15 +169,15 @@ export function buildDossier(project: Project, sheets: readonly PlanSheet[], lan
 
   // ── Informations générales ──
   S('general').fields.push(
-    field('designation', L('Bezeichnung', 'Titre'), text(a.projectName)),
-    field('street', L('Straße, Nr.', 'Adresse (rue)'), text(a.street)),
-    field('postcodeLocality', L('PLZ, Ort', 'Code postal / ville'), text(`${a.postcode} ${a.locality}`.trim())),
-    field('buildingType', L('Gebäudetyp', 'Type de bâtiment'), text(enumText(lang, 'buildingType', a.buildingType))),
-    field('occasion', L('Nachweisart', 'Type de preuve'), text(enumText(lang, 'occasion', a.occasion))),
-    field('yearBuilt', L('Baujahr Gebäude', 'Année de constr. bâtiment'), text(integerText(a.yearBuilt))),
-    field('dwellings', L('Wohneinheiten', 'Unités résidentielles'), text(integerText(a.dwellings))),
+    field('designation', L('Bezeichnung', 'Titre'), answerText(a.projectName, 'projectName')),
+    field('street', L('Straße, Nr.', 'Adresse (rue)'), answerText(a.street, 'street')),
+    field('postcodeLocality', L('PLZ, Ort', 'Code postal / ville'), answerText(`${a.postcode} ${a.locality}`.trim(), ...(a.postcode ? ['postcode'] : []), ...(a.locality ? ['locality'] : []))),
+    field('buildingType', L('Gebäudetyp', 'Type de bâtiment'), answerText(enumText(lang, 'buildingType', a.buildingType), 'buildingType')),
+    field('occasion', L('Nachweisart', 'Type de preuve'), answerText(enumText(lang, 'occasion', a.occasion), 'occasion')),
+    field('yearBuilt', L('Baujahr Gebäude', 'Année de constr. bâtiment'), answerText(integerText(a.yearBuilt), 'yearBuilt')),
+    field('dwellings', L('Wohneinheiten', 'Unités résidentielles'), answerText(integerText(a.dwellings), 'dwellings')),
     field('storeys', L('Anzahl Geschosse', 'Nombre d’étages'), model.storeys.length > 0 ? num(model.storeys.length, 'calc', 0) : EMPTY),
-    field('attachment', L('Anbausituation', 'Situation d’accolement'), text(a.attachment ? t(lang, ATTACHMENT_KEY[a.attachment]) : null)),
+    field('attachment', L('Anbausituation', 'Situation d’accolement'), answerText(a.attachment ? t(lang, ATTACHMENT_KEY[a.attachment]) : null, 'attachment')),
   );
 
   // ── Éléments opaques (1..20) et valeurs propres (21..40) ──
@@ -265,7 +294,7 @@ export function buildDossier(project: Project, sheets: readonly PlanSheet[], lan
   // ── Ventilation, autres paramètres, installations ──
   const VT = LUXEEB_COLUMNS.ventilation;
   S('ventilation').fields.push(
-    field('kind', L('Lüftung', 'Ventilation'), text(enumText(lang, 'ventilation', a.ventilation))),
+    field('kind', L('Lüftung', 'Ventilation'), answerText(enumText(lang, 'ventilation', a.ventilation), 'ventilation')),
     field('unit', VT.unit, text(a.ventilationUnit ?? null)),
     field('flow', VT.flow, num(a.ventilationFlow, 'user', 1)),
     field('recovery', VT.recovery, num(a.heatRecovery, 'user', 2)),
@@ -275,21 +304,21 @@ export function buildDossier(project: Project, sheets: readonly PlanSheet[], lan
   );
   const O = LUXEEB_COLUMNS.other;
   S('other').fields.push(
-    field('thermalBridges', O.thermalBridges, text(a.thermalBridges ? t(lang, BRIDGES_KEY[a.thermalBridges]) : null)),
-    field('construction', O.construction, text(a.thermalMass ? t(lang, MASS_KEY[a.thermalMass]) : null)),
+    field('thermalBridges', O.thermalBridges, answerText(a.thermalBridges ? t(lang, BRIDGES_KEY[a.thermalBridges]) : null, 'thermalBridges')),
+    field('construction', O.construction, answerText(a.thermalMass ? t(lang, MASS_KEY[a.thermalMass]) : null, 'thermalMass')),
     field('regulation', O.regulation, val(LUXEEB_REGULATION, 'calc', { source: t(lang, 'export.dossier.regulationSource') })),
   );
   S('heating').fields.push(
-    field('generator', L('Wärmeerzeuger', 'Générateur'), text(enumText(lang, 'generator', a.heatGenerator))),
-    field('emission', L('Wärmeübergabe', 'Émission'), text(enumText(lang, 'emission', a.heatEmission))),
-    field('temps', L('Auslegungstemperaturen', 'Températures'), text(a.emissionTemps ?? null)),
+    field('generator', L('Wärmeerzeuger', 'Générateur'), answerText(enumText(lang, 'generator', a.heatGenerator), 'heatGenerator')),
+    field('emission', L('Wärmeübergabe', 'Émission'), answerText(enumText(lang, 'emission', a.heatEmission), 'heatEmission')),
+    field('temps', L('Auslegungstemperaturen', 'Températures'), answerText(a.emissionTemps ?? null, 'emissionTemps')),
   );
   S('hotWater').fields.push(
-    field('hotWater', L('Warmwassererzeugung', 'Production d’eau chaude'), text(enumText(lang, 'hotWater', a.hotWater))),
-    field('storageInside', L('Speicher im beheizten Bereich', 'Ballon dans le volume chauffé'), text(yesNoText(lang, a.hotWaterStorageInside))),
+    field('hotWater', L('Warmwassererzeugung', 'Production d’eau chaude'), answerText(enumText(lang, 'hotWater', a.hotWater), 'hotWater')),
+    field('storageInside', L('Speicher im beheizten Bereich', 'Ballon dans le volume chauffé'), answerText(yesNoText(lang, a.hotWaterStorageInside), 'hotWaterStorageInside')),
   );
   S('auxiliary').notes.push(t(lang, 'export.dossier.note.auxiliary'));
-  S('photovoltaic').fields.push(field('pv', L('Photovoltaik', 'Photovoltaïque'), text(yesNoText(lang, a.photovoltaic))));
+  S('photovoltaic').fields.push(field('pv', L('Photovoltaik', 'Photovoltaïque'), answerText(yesNoText(lang, a.photovoltaic), 'photovoltaic')));
   S('summer').notes.push(t(lang, 'export.dossier.note.summer'));
 
   // ── Hypothèses du modèle : hauteurs, nord, échelle ──
@@ -310,19 +339,35 @@ export function buildDossier(project: Project, sheets: readonly PlanSheet[], lan
   if (plausibility.find((c) => c.key === 'aOverVe')?.status === 'n/a') P.notes.push(t(lang, 'export.dossier.note.aOverVeNotComputed'));
   if (plausibility.find((c) => c.key === 'meanU')?.status === 'n/a') P.notes.push(t(lang, 'export.dossier.note.meanUNotComputed'));
 
-  // ── Réponses proposées par la lecture et jamais confirmées : des hypothèses, montrées comme telles ──
-  const PROPOSED_SHEET: Partial<Record<string, DossierSheetKey>> = { heatGenerator: 'heating', hotWater: 'heating', ventilation: 'ventilation', photovoltaic: 'photovoltaic', solarThermal: 'photovoltaic' };
+  // ── Réponses proposées et jamais confirmées : seules les VRAIES hypothèses (valeur d'usage, confiance nulle) et
+  // les lectures fragiles (sous le seuil d'une source sûre), avec leur raison. Une lecture sûre n'en est pas une :
+  // elle est montrée « lue » avec sa confiance dans sa feuille. ──
+  const PROPOSED_SHEET: Partial<Record<string, DossierSheetKey>> = {
+    heatGenerator: 'heating',
+    heatEmission: 'heating',
+    emissionTemps: 'heating',
+    hotWater: 'hotWater',
+    hotWaterStorageInside: 'hotWater',
+    ventilation: 'ventilation',
+    photovoltaic: 'photovoltaic',
+    solarThermal: 'photovoltaic',
+    thermalBridges: 'other',
+    thermalMass: 'other',
+  };
   for (const [key, how] of Object.entries(a.proposed ?? {})) {
+    if (how.confidence >= CONFIDENCE_SINGLE_SOURCE) continue;
     const value = (a as unknown as Record<string, unknown>)[key];
     if (value === null || value === undefined || value === '') continue;
     const labelKey = PROPOSED_LABEL_KEY[key];
-    const label = labelKey ? t(lang, labelKey) : key;
-    const shown = typeof value === 'boolean' ? (yesNoText(lang, value) ?? '') : String(value);
+    const label = t(lang, labelKey ?? 'export.dossier.proposed.answer');
     assumptions.push({
       key: `proposed:${key}`,
       sheet: PROPOSED_SHEET[key] ?? 'general',
-      text: `${label} : ${enumText(lang, key, shown) || shown}`,
-      source: t(lang, 'export.dossier.proposed.source', { source: how.source }),
+      text: `${label} : ${answerLabel(lang, key, value)}`,
+      source:
+        how.confidence > 0
+          ? t(lang, 'export.dossier.proposed.weak', { pct: String(Math.round(how.confidence * 100)), source: how.source })
+          : t(lang, 'export.dossier.proposed.source', { source: how.source }),
     });
   }
 
@@ -348,6 +393,17 @@ export function buildDossier(project: Project, sheets: readonly PlanSheet[], lan
     assumptions,
     ...(answeredDoubts.length > 0 ? { answeredDoubts } : {}),
   };
+}
+
+/** Libellé affiché d'une réponse du questionnaire : jamais la valeur brute d'une énumération (« one-side »). */
+function answerLabel(lang: Lang, key: string, value: unknown): string {
+  if (typeof value === 'boolean') return yesNoText(lang, value) ?? '';
+  const v = String(value);
+  if (key === 'attachment' && (v === 'one-side' || v === 'other')) return t(lang, ATTACHMENT_KEY[v]);
+  if (key === 'thermalBridges' && v in BRIDGES_KEY) return t(lang, BRIDGES_KEY[v as keyof typeof BRIDGES_KEY]);
+  if (key === 'thermalMass' && v in MASS_KEY) return t(lang, MASS_KEY[v as keyof typeof MASS_KEY]);
+  const group = ENUM_GROUP[key];
+  return group ? (enumText(lang, group, v) ?? v) : v;
 }
 
 function windowRow(

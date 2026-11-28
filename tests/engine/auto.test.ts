@@ -8,7 +8,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { EnvelopeRow, Lang, Orientation, PlanDocument, Vec2 } from '../../src/core/types';
-import { buildAutoProject, collectDoubts, confirmedAnswers, createEmptyProject, deriveSheets, MAX_AUTO_DOUBTS, modelFromDocument, type AutoBuild } from '../../src/engine';
+import { buildAutoProject, collectDoubts, confirmedAnswers, createEmptyProject, deriveSheets, isPlanDoubt, MAX_AUTO_DOUBTS, modelFromDocument, type AutoBuild } from '../../src/engine';
 import { readCadDetailed } from '../../src/readers/cad';
 import { fixtureBytes } from '../readers/cad/helpers';
 import { documentFromTruth, PLANCHES, readPlancheTruth, sheetIdOf, truthPlans, truthStoreys, type PlancheName, type Truth, type TruthView } from './auto-planche';
@@ -412,12 +412,13 @@ describe('fermetures, parois, nord, identité', () => {
 describe('questions restantes', () => {
   const expected: Record<PlancheName, { sufficient: boolean; doubts: string[] }> = {
     planche_A1_archicad: { sufficient: true, doubts: ['an-unlabelled', 'heating', 'materials', 'thermal-bridges', 'ventilation', 'windows'] },
-    planche_A2_de_titres_dessus: { sufficient: true, doubts: ['an-unlabelled', 'attached', 'heating', 'materials', 'renewables', 'thermal-bridges', 'ventilation', 'windows'] },
-    planche_2pages: { sufficient: true, doubts: ['an-unlabelled', 'attached', 'heating', 'materials', 'renewables', 'thermal-bridges', 'ventilation', 'windows'] },
-    // Ni niveaux, ni toiture, ni compositions : trop de questions, parcours guidé.
+    // Maisons isolées (baies sur toutes les façades) : la mitoyenneté n'est pas demandée.
+    planche_A2_de_titres_dessus: { sufficient: true, doubts: ['an-unlabelled', 'heating', 'materials', 'renewables', 'thermal-bridges', 'ventilation', 'windows'] },
+    planche_2pages: { sufficient: true, doubts: ['an-unlabelled', 'heating', 'materials', 'renewables', 'thermal-bridges', 'ventilation', 'windows'] },
+    // Ni toiture ni plancher bas lus : les fermetures manquent à la géométrie, parcours guidé.
     planche_sans_titres: {
       sufficient: false,
-      doubts: ['an-unlabelled', 'attached', 'bottom', 'heating', 'heights', 'materials', 'occasion', 'renewables', 'thermal-bridges', 'top', 'ventilation', 'windows'],
+      doubts: ['an-unlabelled', 'bottom', 'heating', 'heights', 'materials', 'occasion', 'renewables', 'thermal-bridges', 'top', 'ventilation', 'windows'],
     },
   };
   it.each(PLANCHES)('%s : nombre et nature des questions, parcours possible ou non', (name) => {
@@ -425,7 +426,8 @@ describe('questions restantes', () => {
     const doubts = collectDoubts(doc.reading, auto.project, doc.sheets, langOf(name));
     expect(doubts.map((d) => d.id).sort()).toEqual(expected[name].doubts);
     expect(auto.sufficient).toBe(expected[name].sufficient);
-    if (auto.sufficient) expect(doubts.length).toBeLessThanOrEqual(MAX_AUTO_DOUBTS);
+    // Le plafond ne compte que les questions sur le plan lu : les valeurs d'usage se confirment d'un geste.
+    if (auto.sufficient) expect(doubts.filter(isPlanDoubt).length).toBeLessThanOrEqual(MAX_AUTO_DOUBTS);
     else expect(auto.notes.length).toBeGreaterThan(0);
   });
 

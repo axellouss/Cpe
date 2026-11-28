@@ -36,6 +36,7 @@ import type {
   Vec2,
   WindowType,
 } from '../core/types';
+import type { OpeningHeights } from '../engine/provenance';
 import { t } from '../i18n';
 import './messages';
 
@@ -268,6 +269,14 @@ const readOpening: Reader<Opening> = (value, path) => {
   if (constructionId !== undefined) opening.constructionId = constructionId;
   const sill = optional(o, 'sill', path, asNumber);
   if (sill !== undefined) opening.sill = sill;
+  // Champs du moteur (engine/provenance OpeningHeights) : provenance de la hauteur, hauteurs plan et façade.
+  const extra = opening as OpeningHeights;
+  const heightFrom = optional(o, 'heightFrom', path, PROVENANCE);
+  if (heightFrom !== undefined) extra.heightFrom = heightFrom;
+  const heightPlan = optional(o, 'heightPlan', path, asNumber);
+  if (heightPlan !== undefined) extra.heightPlan = heightPlan;
+  const heightElevation = optional(o, 'heightElevation', path, asNumber);
+  if (heightElevation !== undefined) extra.heightElevation = heightElevation;
   return opening;
 };
 

@@ -26,6 +26,8 @@ import { formatNumber, t } from '../i18n';
 import { deriveSheets } from './derive';
 import { constructionFromComposition, dominantInsulation, isEnvelopeComposition } from './materials';
 import './messages';
+import { partyEvidence, readsDetached } from './party';
+import { heightFromOf, type OpeningHeights } from './provenance';
 import { computeU } from './uvalue';
 
 // ───────────────────────────── Signaux et confiance ─────────────────────────────
@@ -145,6 +147,19 @@ export const DOUBT_CATALOG: readonly DoubtSpec[] = [
 ];
 
 
+/**
+ * Questions « hors plan » : elles portent sur ce qu'AUCUN plan ne porte (λ, menuiseries, ventilation, chauffage,
+ * ponts thermiques, installations renouvelables). L'interface les confirme d'un geste ; elles ne décident pas du
+ * parcours automatique, qui dépend de la géométrie lue (engine/auto, MAX_AUTO_DOUBTS).
+ */
+export const OFF_PLAN_DOUBTS: ReadonlySet<DoubtId> = new Set<DoubtId>([
+  ...DOUBT_CATALOG.filter((s) => s.grouped).map((s) => s.id),
+  'renewables',
+]);
+
+/** Vrai si la question porte sur le plan lu (et compte dans le plafond du parcours automatique). */
+export const isPlanDoubt = (d: Pick<Doubt, 'id'>): boolean => !OFF_PLAN_DOUBTS.has(d.id);
+
 // ───────────────────────────── Doute produit ─────────────────────────────
 
 export interface DoubtChoice {
@@ -176,6 +191,21 @@ export interface Doubt {
   where?: { page: number; box: BBox; sheetId?: string | null };
   /** Où corriger sur le plan : étage (Storey.id) et outil de l'éditeur concernés. */
   fix?: { storeyId: string | null; step: 'scale' | 'outline' | 'rooms' | 'boundary' | 'opening' | 'height' | 'north' };
+  /**
+   * Question regroupée sur plusieurs niveaux : une ligne par niveau, à laquelle on peut répondre à part. Réponse
+   * niveau par niveau : `<key>=<choix>` séparés par « ; » (ex. « st1=include;st2=exclude »).
+   */
+  parts?: DoubtPart[];
+}
+
+export interface DoubtPart {
+  /** Identifiant du niveau (Storey.id). */
+  key: string;
+  label: string;
+  /** Valeur en jeu pour ce niveau (m² pour les surfaces sans étiquette). */
+  amount: number;
+  /** Effet chiffré de « compter » pour ce niveau. */
+  effect: string | null;
 }
 
 /** « Je ne sais pas » : la proposition est gardée, étiquetée HYPOTHÈSE (jamais présentée comme lue ni confirmée). */
@@ -198,6 +228,11 @@ interface Draft {
   proposal?: string | null;
   details?: string[];
   effect?: { text: string; share: number | null } | null;
+  /** Choix propres à cette question quand ils diffèrent du catalogue (question de convention, choix par niveau). */
+  options?: readonly string[];
+  /** Libellés de ces choix propres (sinon `doubt.<id>.option.<valeur>`). */
+  optionLabels?: Readonly<Record<string, string>>;
+  parts?: DoubtPart[];
 }
 
 const NOT_APPLICABLE: Draft = { signals: [], applicable: false, answered: false };
@@ -208,6 +243,9 @@ const fromRead = <T>(r: Read<T> | null | undefined, group: SignalGroup, source: 
   r ? [sig(group, strengthOf(r.confidence), map(r.value), source)] : [];
 
 const pct = (share: number): string => formatNumber(share * 100, 0);
+
+/** Écart (m) entre hauteur écrite sur le plan et hauteur vue en façade au-delà duquel la convention est demandée. */
+export const HEIGHT_CONVENTION_GAP = 0.05;
 
 /**
  * Questions à poser, triées par impact puis par effet. Les signaux viennent du contrat de lecture (`reading`), des
@@ -237,8 +275,9 @@ export function collectDoubts(reading: SheetReading | undefined, project: Projec
       datum: t(lang, `doubt.${spec.id}.datum`),
       question: t(lang, d.questionKey ?? `doubt.${spec.id}.question`, d.params ?? {}),
       proposal: proposal ? { value: proposal, label: choiceLabel(spec.id, proposal, lang) } : null,
-      options: spec.options.map((v) => ({ value: v, label: choiceLabel(spec.id, v, lang) })),
+      options: (d.options ?? spec.options).map((v) => ({ value: v, label: d.optionLabels?.[v] ?? choiceLabel(spec.id, v, lang) })),
       details: d.details ?? [],
+      ...(d.parts && d.parts.length > 0 ? { parts: d.parts } : {}),
       effect: d.effect?.text ?? null,
       effectShare: d.effect?.share ?? null,
       confidence: Math.round(e.confidence * 100) / 100,
@@ -476,26 +515,13 @@ const COLLECTORS: Record<DoubtId, Collector> = {
   attached: (ctx, lang) => {
     if (ctx.project.answers.attachment) return ANSWERED;
     const signals: Signal[] = [];
-    // Géométrie : côtés du contour chauffé lus comme mitoyens (directions distinctes dans le repère de la feuille).
-    const dirs = new Set<number>();
-    let sawEdges = false;
-    let partyLength = 0;
-    for (const s of ctx.plans) {
-      const poly = s.detected.heatedOutline;
-      const edges = s.detected.heatedEdges;
-      if (!poly || !edges || edges.length !== poly.length) continue;
-      sawEdges = true;
-      const mpu = s.metresPerUnit?.value ?? 0;
-      edges.forEach((e, i) => {
-        if (e.boundary !== 'heated' || e.confidence < 0.5) return;
-        const a = poly[i]!;
-        const b = poly[(i + 1) % poly.length]!;
-        dirs.add(Math.round(((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI + 360) / 90) % 4);
-        partyLength += Math.hypot(b.x - a.x, b.y - a.y) * mpu;
-      });
-    }
-    if (sawEdges) {
-      const v = dirs.size === 1 ? 'one-side' : 'other';
+    // Géométrie : côtés mitoyens comptés par la normale EXTÉRIEURE de leur arête (indépendante du sens du contour).
+    const party = partyEvidence(ctx.plans);
+    // Aucun mur mitoyen lu et chaque façade porte une baie ou un isolant : bâtiment isolé, rien à demander.
+    if (readsDetached(party)) return NOT_APPLICABLE;
+    const partyLength = party.length;
+    if (party.sawEdges) {
+      const v = party.sides.size === 1 ? 'one-side' : 'other';
       signals.push(sig('plan-geometry', 'strong', v, 'edges.heated'));
     }
     // Façades dessinées : un côté de plan sans façade = mitoyen probable.
@@ -614,12 +640,18 @@ const COLLECTORS: Record<DoubtId, Collector> = {
     let labelled = 0;
     let gross = 0;
     const perLevel: string[] = [];
+    const parts: DoubtPart[] = [];
+    const anBase = ctx.derived.totals.an;
     for (const s of ctx.plans) {
       const here = (s.detected.unlabelledAreas ?? []).filter((u) => u.area >= 1).reduce((a, u) => a + u.area, 0);
       unlabelled += here;
       if (here >= 1) {
         const storey = storeys.find((st) => st.sheetId === s.id);
-        perLevel.push(t(lang, 'doubt.an-unlabelled.detail', { level: storey?.name ?? s.name, area: formatNumber(here, 1) }));
+        const level = storey?.name ?? s.name;
+        const effect = anBase > 0 ? t(lang, 'doubt.an-unlabelled.effect', { area: formatNumber(here, 1), pct: pct(here / anBase) }) : null;
+        perLevel.push(t(lang, 'doubt.an-unlabelled.detail', { level, area: formatNumber(here, 1) }) + (effect ? ` (${effect})` : ''));
+        // Réponse niveau par niveau : seulement pour un niveau du modèle qui porte ces surfaces.
+        if (storey && storey.rooms.some((r) => r.unlabelled)) parts.push({ key: storey.id, label: level, amount: here, effect });
       }
       labelled += s.detected.rooms.filter((r) => r.heatedGuess === 'yes' && !r.exterior).reduce((a, r) => a + (r.statedArea ?? r.measuredArea ?? 0), 0);
       const mpu = s.metresPerUnit?.value ?? 0;
@@ -638,8 +670,16 @@ const COLLECTORS: Record<DoubtId, Collector> = {
       // Repli sans surface identifiée : on ne parle ni d'escalier ni de dégagement, seulement de l'écart constaté.
       ...(unlabelled >= 1 ? {} : { questionKey: 'doubt.an-unlabelled.questionEstimate' }),
       proposal: 'include',
-      // Une seule question pour tout le bâtiment : le détail par niveau dès qu'il y en a plusieurs.
+      // Une seule question pour tout le bâtiment : le détail par niveau dès qu'il y en a plusieurs, avec un choix
+      // « compter seulement ce niveau » en plus du choix global (et la réponse niveau par niveau, `parts`).
       details: perLevel.length > 1 ? perLevel : [],
+      ...(parts.length > 1
+        ? {
+            parts,
+            options: ['include', 'exclude', ...parts.map((p) => `only:${p.key}`)],
+            optionLabels: Object.fromEntries(parts.map((p) => [`only:${p.key}`, t(lang, 'doubt.an-unlabelled.option.only', { level: p.label, area: formatNumber(p.amount, 1) })])),
+          }
+        : {}),
       effect: share !== null ? { text: t(lang, 'doubt.an-unlabelled.effect', { area: formatNumber(unlabelled, 1), pct: pct(share) }), share } : null,
     };
   },
@@ -832,17 +872,38 @@ const COLLECTORS: Record<DoubtId, Collector> = {
     return { signals: [], applicable: true, answered: false, params: { names: ambiguous.join(', ') }, proposal: 'heated' };
   },
 
-  'opening-heights': (ctx) => {
+  'opening-heights': (ctx, lang) => {
     const detected = ctx.plans.flatMap((s) => s.detected.openings);
-    const modelOpenings = ctx.project.model.storeys.flatMap((s) => s.openings);
+    const modelOpenings = ctx.project.model.storeys.flatMap((s) => s.openings) as OpeningHeights[];
     if (detected.length === 0 && modelOpenings.length === 0) return NOT_APPLICABLE;
-    if (modelOpenings.length > 0 && modelOpenings.every((o) => o.from === 'user')) return ANSWERED;
-    const guessedList = detected.filter((o) => o.exterior !== false || o.toUnheated === true).filter((o) => o.heightFrom === 'default' || o.height === undefined);
-    const guessed = guessedList.length;
+    // Hauteur écrite sur le plan et hauteur vue en façade qui diffèrent de plus de 5 cm : UNE question de convention
+    // pour tout le projet, appliquée à toutes les baies concernées.
+    const split = modelOpenings.filter((o) => o.heightPlan !== undefined && o.heightElevation !== undefined && Math.abs(o.heightPlan - o.heightElevation) > HEIGHT_CONVENTION_GAP + 1e-9 && heightFromOf(o) !== 'user');
+    if (split.length > 0) {
+      const n = split.reduce((a, o) => a + o.count, 0);
+      const gaps = split.map((o) => Math.abs(o.heightPlan! - o.heightElevation!) * 100);
+      return {
+        signals: [sig('plan-text', 'strong', 'plan', 'openings.height-plan'), sig('facade-drawing', 'strong', 'elevation', 'openings.height-elevation')],
+        applicable: true,
+        answered: false,
+        params: { count: n, gap: formatNumber(Math.max(...gaps), 0) },
+        questionKey: 'doubt.opening-heights.questionConvention',
+        options: ['plan', 'plan+5', 'elevation'],
+        proposal: 'plan',
+        details: [t(lang, 'doubt.opening-heights.detail.convention', { count: n, gap: formatNumber(Math.max(...gaps), 0) })],
+      };
+    }
+    // Fenêtres dont la hauteur est une valeur d'usage (les portes gardent leur hauteur de porte, étiquetée hypothèse).
+    const windows = modelOpenings.filter((o) => o.kind === 'window');
+    if (windows.length > 0 && windows.every((o) => heightFromOf(o) === 'user')) return ANSWERED;
+    const guessedModel = windows.filter((o) => heightFromOf(o) === 'default');
+    const guessedDetected = modelOpenings.length > 0 ? [] : detected.filter((o) => o.kind !== 'door' && (o.exterior !== false || o.toUnheated === true) && (o.heightFrom === 'default' || o.height === undefined));
+    const guessed = guessedModel.reduce((a, o) => a + o.count, 0) + guessedDetected.length;
     // Des hauteurs d'usage : rien ne les soutient, la question est posée — sauf si ces baies pèsent moins de 1 %
-    // de l'enveloppe (une porte de service à la hauteur d'usage) : la valeur reste étiquetée hypothèse dans le relevé.
+    // de l'enveloppe : la valeur reste étiquetée hypothèse dans le relevé.
     const env = ctx.derived.totals.envelopeArea;
-    const guessedArea = guessedList.reduce((a, o) => a + (o.width ?? 1) * (o.height ?? (o.kind === 'door' ? 2.1 : 1.25)), 0);
+    const guessedArea =
+      guessedModel.reduce((a, o) => a + o.width * o.height * o.count, 0) + guessedDetected.reduce((a, o) => a + (o.width ?? 1) * (o.height ?? 1.25), 0);
     const minor = env > 0 && guessedArea / env < 0.01;
     if (guessed > 0 && !minor) return { signals: [], applicable: true, answered: false, params: { count: guessed } };
     if (guessed > 0) return NOT_APPLICABLE;

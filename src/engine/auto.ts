@@ -57,7 +57,7 @@ import { formatNumber, t } from '../i18n';
 import { guessStorey, isRoofLevelName } from '../semantics/labels';
 import { DEFAULT_CONSTRUCTION_IDS, DEFAULT_DOOR_HEIGHT, DEFAULT_WINDOW_HEIGHT, defaultBottom, defaultTop, emptyModel } from './defaults';
 import { envelopeHeights, facadeViewsFromReading, withExpertWindowTypes } from './derive';
-import { collectDoubts, type Doubt } from './doubts';
+import { collectDoubts, isPlanDoubt, type Doubt } from './doubts';
 import {
   constructionFromComposition,
   doorHypothesis,
@@ -67,9 +67,10 @@ import {
   officeLibraryFromConstructions,
 } from './materials';
 import './messages';
-import { isUnconfirmed } from './provenance';
+import { isUnconfirmed, type OpeningHeights } from './provenance';
 import { basementSheetIds, createStorey, modelFromDocument, orderSheetsBottomUp, pickRoomArea } from './storey';
 import { proposeHeatedOutline } from './heatedOutline';
+import { partyEvidence, readsDetached } from './party';
 
 export { applyDoubtAnswer, DOUBT_CONFIRM, DOUBT_UNKNOWN } from './doubtAnswer';
 
@@ -86,7 +87,7 @@ export interface AutoBuild {
   notes: string[];
 }
 
-/** Au-delà, les cartes de doute ne sont plus « quelques questions » : parcours guidé. */
+/** Au-delà de ce nombre de questions SUR LE PLAN (hors valeurs d'usage), parcours guidé. */
 export const MAX_AUTO_DOUBTS = 8;
 
 /** Identifiant du type « porte vers un local non chauffé » (la porte d'entrée garde le type de porte par défaut). */
@@ -167,6 +168,7 @@ export function buildAutoProject(doc: PlanDocument, base: Project, lang: Lang): 
   if (!doc.storeysAligned) assignOffsets(model.storeys, doc.sheets, reading);
   applyFloorOverUnheated(model.storeys, reading, lang);
   applyHeights(model, built, reading, base.model.heightConvention ?? 'external', lang);
+  keepConfirmedStoreys(model.storeys, base.model.storeys);
 
   model.top = proposeTop(model, reading, built) ?? defaultTop();
   model.bottom = proposeBottom(reading, built, doc);
@@ -197,7 +199,7 @@ export function buildAutoProject(doc: PlanDocument, base: Project, lang: Lang): 
   }
 
   const answers = proposeAnswers(base.answers, reading, doc.sheets, lang);
-  const resolved = keptResolutions(base);
+  const resolved = keptResolutions(base, model.storeys);
   if (resolved) answers.resolvedDoubts = resolved;
   else delete answers.resolvedDoubts;
   const project: Project = { version: 2, model: withTypes, answers };
@@ -216,7 +218,9 @@ export function buildAutoProject(doc: PlanDocument, base: Project, lang: Lang): 
   else if (!scaleOk || scaleDoubt) reasons.push(t(lang, 'auto.note.scale'));
   if (project.model.top.from === 'default') reasons.push(t(lang, 'auto.note.top'));
   if (project.model.bottom.from === 'default') reasons.push(t(lang, 'auto.note.bottom'));
-  if (doubts.length > MAX_AUTO_DOUBTS) reasons.push(t(lang, 'auto.note.tooManyDoubts', { count: doubts.length }));
+  // Seules comptent les questions sur le plan lu : les valeurs d'usage (hors plan) se confirment d'un geste.
+  const planDoubts = doubts.filter(isPlanDoubt);
+  if (planDoubts.length > MAX_AUTO_DOUBTS) reasons.push(t(lang, 'auto.note.tooManyDoubts', { count: planDoubts.length }));
   return {
     project,
     sufficient: reasons.length === 0,
@@ -234,11 +238,15 @@ const ANSWER_DOUBTS: ReadonlySet<string> = new Set(['occasion', 'attached', 'ven
  * que la nouvelle lecture remplace (étages, pièces, baies, parois) : elles redeviennent des questions si le doute
  * revient. null = aucune.
  */
-function keptResolutions(base: Project): Record<string, 'user' | 'unknown'> | null {
+function keptResolutions(base: Project, storeys: readonly Storey[]): Record<string, 'user' | 'unknown'> | null {
   const out: Record<string, 'user' | 'unknown'> = {};
+  const unlabelled = storeys.flatMap((s) => s.rooms.filter((r) => r.unlabelled));
   for (const [id, how] of Object.entries(base.answers.resolvedDoubts ?? {})) {
     const kept =
       ANSWER_DOUBTS.has(id) ||
+      // Valeurs d'étage confirmées et reprises sur la nouvelle lecture (keepConfirmedStoreys) : la question reste tranchée.
+      (id === 'heights' && storeys.length > 0 && storeys.every((s) => s.grossHeight.from === 'user')) ||
+      (id === 'an-unlabelled' && unlabelled.length > 0 && unlabelled.every((r) => r.area.from === 'user')) ||
       (id === 'top' && base.model.top.from === 'user') ||
       (id === 'bottom' && base.model.bottom.from === 'user') ||
       (id === 'north' && base.model.northAngle.from === 'user');
@@ -248,6 +256,26 @@ function keptResolutions(base: Project): Record<string, 'user' | 'unknown'> | nu
 }
 
 // ───────────────────────────── Étages ─────────────────────────────
+
+/**
+ * Ce que l'utilisateur a confirmé sur un étage de `base` (hauteur brute, hauteur libre, surface nette saisie, choix
+ * de compter ou non les surfaces sans étiquette) est repris sur l'étage de la nouvelle lecture qui lit la même
+ * feuille (même PlanSheet.id, sinon même nom). Rien d'autre n'est repris : la lecture remplace le reste.
+ */
+function keepConfirmedStoreys(storeys: Storey[], previous: readonly Storey[]): void {
+  for (const s of storeys) {
+    const old = previous.find((p) => p.sheetId !== null && p.sheetId === s.sheetId) ?? previous.find((p) => p.sheetId === null && p.name === s.name);
+    if (!old) continue;
+    if (old.grossHeight.from === 'user') s.grossHeight = { ...old.grossHeight };
+    if (old.clearHeight.from === 'user') s.clearHeight = { ...old.clearHeight };
+    if (old.netAreaOverride?.from === 'user') s.netAreaOverride = { ...old.netAreaOverride };
+    const decided = old.rooms.filter((r) => r.unlabelled && r.area.from === 'user');
+    if (decided.length > 0 && decided.every((r) => r.heated === decided[0]!.heated)) {
+      const heated = decided[0]!.heated;
+      s.rooms = s.rooms.map((r) => (r.unlabelled ? { ...r, heated, needsReview: false, area: { ...r.area, from: 'user' } } : r));
+    }
+  }
+}
 
 interface BuiltStoreys {
   storeys: Storey[];
@@ -319,14 +347,19 @@ function buildStoreys(doc: PlanDocument, lang: Lang, notes: string[]): BuiltStor
     // Un plan de toiture mal rangé, ou une feuille minuscule à côté des autres, n'est pas un étage.
     if (!basement && heated.length < 3 && !guessStorey(sheet.name) && isRoofLevelName(sheet.name)) continue;
     const area = footprintArea(sheet);
-    if (area !== null && !(area >= Math.min(MIN_STOREY_AREA, largest) && area >= MIN_STOREY_SHARE * largest)) continue;
+    if (area !== null && !(area >= Math.min(MIN_STOREY_AREA, largest) && area >= MIN_STOREY_SHARE * largest)) {
+      // Jamais écarté en silence : la note le dit (l'expert peut le reprendre sur le plan).
+      notes.push(t(lang, 'auto.note.smallStorey', { name: sheet.name, area: formatNumber(area, 1) }));
+      continue;
+    }
     ordered.push(sheet);
     const storey = storeyFromSheet(sheet, storeyName(sheet, lang), idModel, lang, notes);
     idModel.storeys.push(storey);
     // Sous-sol entièrement non chauffé (aucun contour chauffé, aucune pièce chauffée) : hors du volume chauffé.
     if (basement && !(heated.length >= 3 && heatedRooms.length > 0)) {
       basements.push({ ...storey, name: uniqueName(storey.name, taken) });
-      notes.push(t(lang, 'auto.note.basement', { name: sheet.name }));
+      // Des pièces chauffées lues sans contour chauffé : laissé hors du volume, mais la note ne dit pas « non chauffé ».
+      notes.push(t(lang, heatedRooms.length > 0 ? 'auto.note.basementRooms' : 'auto.note.basement', { name: sheet.name, count: heatedRooms.length }));
       continue;
     }
     storey.name = uniqueName(storey.name, taken);
@@ -488,14 +521,17 @@ function placeOpenings(detected: readonly DetectedOpening[], outline: readonly V
     const from: Provenance = widthIsGuess ? 'estimate' : heightKnown ? 'plan' : 'default';
     const constructionId = kind === 'door' ? (toUnheated ? DOOR_UNHEATED_ID : DEFAULT_CONSTRUCTION_IDS.door) : null;
     const sill = d.sill !== undefined && Number.isFinite(d.sill) && d.sill >= 0 ? d.sill : undefined;
-    const key = `${best.index}|${kind}|${Math.round(width * 100)}|${Math.round(height * 100)}|${constructionId ?? ''}|${from}|${sill ?? ''}`;
+    // Hauteurs lues sur le plan et sur la façade, gardées toutes les deux (question de convention si elles diffèrent).
+    const hPlan = d.heightPlan !== undefined && Number.isFinite(d.heightPlan) && d.heightPlan > 0 ? round(d.heightPlan, 3) : undefined;
+    const hElev = d.heightElevation !== undefined && Number.isFinite(d.heightElevation) && d.heightElevation > 0 ? round(d.heightElevation, 3) : undefined;
+    const key = `${best.index}|${kind}|${Math.round(width * 100)}|${Math.round(height * 100)}|${constructionId ?? ''}|${from}|${heightKnown ? 'h' : ''}|${sill ?? ''}|${hPlan ?? ''}|${hElev ?? ''}`;
     const g = groups.get(key);
     if (g) {
       g.o.count += 1;
       g.positions.push(best.t);
       continue;
     }
-    const o: Opening = {
+    const o: OpeningHeights = {
       id: '',
       edgeIndex: best.index,
       kind,
@@ -505,7 +541,11 @@ function placeOpenings(detected: readonly DetectedOpening[], outline: readonly V
       position: best.t,
       windowTypeId: null,
       from,
+      // Provenance de la HAUTEUR, distincte de celle de la largeur (proposé ≠ confirmé).
+      heightFrom: heightKnown ? 'plan' : 'default',
     };
+    if (hPlan !== undefined) o.heightPlan = hPlan;
+    if (hElev !== undefined) o.heightElevation = hElev;
     if (constructionId !== null) o.constructionId = constructionId;
     if (sill !== undefined) o.sill = sill;
     // Largeur mesurée sur le dessin (pas lue dans un texte) : elle suit une correction d'échelle.
@@ -780,24 +820,14 @@ function proposeAnswers(base: ProjectAnswers, reading: SheetReading | undefined,
     if (!sys?.photovoltaic) put('photovoltaic', false, CONFIDENCE_SINGLE_SOURCE, src);
     if (!sys?.solarThermal) put('solarThermal', false, CONFIDENCE_SINGLE_SOURCE, src);
   }
-  // Mitoyenneté : côtés du contour chauffé lus comme mitoyens (directions distinctes dans le repère de la feuille).
-  const dirs = new Set<number>();
-  let sawEdges = false;
-  let conf = 1;
-  for (const s of sheets) {
-    if (!isFloorPlan(s)) continue;
-    const poly = cleanPoly(s.detected.heatedOutline);
-    const edges = s.detected.heatedEdges;
-    if (poly.length < 3 || !edges || edges.length !== poly.length) continue;
-    sawEdges = true;
-    edges.forEach((e, i) => {
-      if (e.boundary !== 'heated' || e.confidence < 0.5) return;
-      const [a, b] = edgeEnds(poly, i);
-      dirs.add(Math.round(((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI + 360) / 90) % 4);
-      conf = Math.min(conf, e.confidence);
-    });
+  // Mitoyenneté : côtés mitoyens comptés par la normale EXTÉRIEURE de leur arête (indépendante du sens du contour).
+  // Aucun mur mitoyen et toutes les façades percées ou isolées : bâtiment isolé.
+  const party = partyEvidence(sheets);
+  if (party.sides.size > 0) {
+    put('attachment', party.sides.size === 1 ? 'one-side' : 'other', party.sides.size === 1 ? Math.min(party.confidence, CONFIDENCE_SINGLE_SOURCE) : 0.4, t(lang, 'auto.source.party'));
+  } else if (readsDetached(party)) {
+    put('attachment', 'other', CONFIDENCE_SINGLE_SOURCE, t(lang, 'auto.source.detached'));
   }
-  if (sawEdges && dirs.size > 0) put('attachment', dirs.size === 1 ? 'one-side' : 'other', dirs.size === 1 ? Math.min(conf, CONFIDENCE_SINGLE_SOURCE) : 0.4, t(lang, 'auto.source.party'));
   if (Object.keys(proposed).length > 0) answers.proposed = proposed;
   return answers;
 }

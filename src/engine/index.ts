@@ -102,7 +102,7 @@ export {
   windowTypeHypothesis,
   type OfficeLibrary,
 } from './materials';
-export { DOUBT_CATALOG, answerUnknown, collectDoubts, confirmedAnswers, evaluate, type Doubt, type DoubtId, type Signal } from './doubts';
+export { DOUBT_CATALOG, OFF_PLAN_DOUBTS, answerUnknown, collectDoubts, confirmedAnswers, evaluate, isPlanDoubt, type Doubt, type DoubtId, type DoubtPart, type Signal } from './doubts';
 export {
   carryOverFromPrevious,
   excludeRoomFromOutline,

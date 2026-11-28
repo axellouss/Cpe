@@ -17,20 +17,24 @@ import type {
   Construction,
   HeatGenerator,
   Lang,
+  Opening,
   PlanSheet,
   Project,
   ProjectAnswers,
+  Provenance,
   Room,
   Sourced,
   Storey,
   TopKind,
   WindowType,
 } from '../core/types';
+import { CONFIDENCE_SINGLE_SOURCE } from '../core/reading';
 import { t } from '../i18n';
 import { DEFAULT_WINDOW_TYPE_ID } from './defaults';
 import { withExpertWindowTypes } from './derive';
 import type { Doubt, DoubtId } from './doubts';
 import './messages';
+import { heightFromOf, weakest, type OpeningHeights } from './provenance';
 import { precalculatedU, precalculatedUw } from './uvalue';
 import { rescaleStorey, restoreFootprint } from './storey';
 
@@ -103,6 +107,19 @@ function setAnswer<K extends keyof ProjectAnswers>(s: Step, key: K, value: Proje
   else proposed[key] = { confidence: 0, source: hypothesisSource(s.lang) };
   if (Object.keys(proposed).length > 0) a.proposed = proposed;
   else delete a.proposed;
+}
+
+/**
+ * Valeur SUGGÉRÉE par la carte (et non donnée par l'utilisateur) : posée comme proposition, avec sa confiance et sa
+ * source, jamais en provenance utilisateur ; une réponse déjà donnée par l'utilisateur n'est pas écrasée.
+ */
+function suggestAnswer<K extends keyof ProjectAnswers>(s: Step, key: K, value: ProjectAnswers[K], confidence: number, source: string): void {
+  const a = s.project.answers;
+  const current = a[key];
+  // Déjà renseignée (par l'utilisateur, ou proposée par la lecture avec sa propre confiance) : gardée telle quelle.
+  if (current !== null && current !== undefined && current !== '') return;
+  a[key] = value;
+  a.proposed = { ...(a.proposed ?? {}), [key]: { confidence: s.mode === 'user' ? confidence : 0, source } };
 }
 
 /** Provenance d'une valeur touchée : 'user', ou hypothèse étiquetée pour « je ne sais pas ». */
@@ -223,12 +240,32 @@ const HANDLERS: Record<DoubtId, Handler> = {
     const m = s.project.model;
     const unlabelled = m.storeys.flatMap((st) => st.rooms.filter((r) => r.unlabelled));
     const total = unlabelled.reduce((a, r) => a + (r.area.value > 0 ? r.area.value : 0), 0);
+    const count = (st: Storey, heated: boolean): Storey => ({
+      ...st,
+      rooms: st.rooms.map((r) => (r.unlabelled ? { ...r, heated, needsReview: false, area: touched(s, r.area.value, r.area) } : r)),
+    });
     if (v === 'include' || v === 'exclude') {
-      const heated = v === 'include';
-      m.storeys = m.storeys.map((st) => ({
-        ...st,
-        rooms: st.rooms.map((r) => (r.unlabelled ? { ...r, heated, needsReview: false, area: touched(s, r.area.value, r.area) } : r)),
-      }));
+      m.storeys = m.storeys.map((st) => count(st, v === 'include'));
+      return true;
+    }
+    // Niveau par niveau : « only:<niveau> » (ce niveau seulement) ou « <niveau>=include;<niveau>=exclude ».
+    const levels = new Set(m.storeys.filter((st) => st.rooms.some((r) => r.unlabelled)).map((st) => st.id));
+    let choice: Map<string, boolean> | null = null;
+    if (v.startsWith('only:')) {
+      const id = v.slice(5);
+      if (levels.has(id)) choice = new Map([...levels].map((x) => [x, x === id]));
+    } else if (v.includes('=')) {
+      const map = new Map<string, boolean>();
+      for (const part of v.split(/\s*;\s*/).filter(Boolean)) {
+        const [id, how] = part.split('=').map((x) => x.trim());
+        if (!id || !levels.has(id) || (how !== 'include' && how !== 'exclude')) return false;
+        map.set(id, how === 'include');
+      }
+      if (map.size > 0) choice = map;
+    }
+    if (choice) {
+      const c = choice;
+      m.storeys = m.storeys.map((st) => (c.has(st.id) ? count(st, c.get(st.id)!) : st));
       return true;
     }
     // Saisie libre : surface (m²) à compter en plus des pièces étiquetées, répartie comme les surfaces mesurées.
@@ -299,14 +336,16 @@ const HANDLERS: Record<DoubtId, Handler> = {
     const g = OPTION(generators, v);
     if (!g) return false;
     setAnswer(s, 'heatGenerator', g);
-    // La carte propose aussi l'émission et l'eau chaude : plancher chauffant basse température pour une pompe à
-    // chaleur, eau chaude par le même générateur, ballon dans le volume chauffé.
+    // La carte SUGGÈRE aussi l'émission et l'eau chaude (plancher chauffant basse température pour une pompe à
+    // chaleur, eau chaude par le même générateur, ballon dans le volume chauffé) : l'utilisateur ne les a pas
+    // données, elles restent des hypothèses (confiance 0) à confirmer dans le dossier.
+    const usual = t(s.lang, 'doubt.suggested.source');
     if (g === 'heat-pump-air' || g === 'heat-pump-ground') {
-      setAnswer(s, 'heatEmission', 'floor-heating');
-      setAnswer(s, 'emissionTemps', '35/28');
+      suggestAnswer(s, 'heatEmission', 'floor-heating', 0, usual);
+      suggestAnswer(s, 'emissionTemps', '35/28', 0, usual);
     }
-    setAnswer(s, 'hotWater', 'with-heating');
-    setAnswer(s, 'hotWaterStorageInside', true);
+    suggestAnswer(s, 'hotWater', 'with-heating', 0, usual);
+    suggestAnswer(s, 'hotWaterStorageInside', true, 0, usual);
     return true;
   },
 
@@ -316,7 +355,8 @@ const HANDLERS: Record<DoubtId, Handler> = {
     setAnswer(s, 'thermalBridges', o);
     // Construction lourde : béton ou maçonnerie lus dans les compositions.
     const heavy = s.project.model.constructions.some((c) => (c.layers ?? []).some((l) => ['beton', 'beton-arme', 'bloc-beton', 'brique', 'silico-calcaire'].includes(l.material ?? '')));
-    if (heavy) setAnswer(s, 'thermalMass', 'heavy');
+    // Lue dans les compositions, pas donnée par l'utilisateur : une proposition, avec la confiance d'une source.
+    if (heavy) suggestAnswer(s, 'thermalMass', 'heavy', CONFIDENCE_SINGLE_SOURCE, t(s.lang, 'doubt.suggested.compositions'));
     return true;
   },
 
@@ -358,19 +398,45 @@ const HANDLERS: Record<DoubtId, Handler> = {
     return true;
   },
 
-  'opening-heights': (s, v) => {
+  'opening-heights': (s, v, doubt) => {
     const m = s.project.model;
+    // Hauteur donnée par l'utilisateur (ou hypothèse étiquetée) : la largeur garde sa provenance ; la baie entière
+    // prend la plus faible des deux (une largeur supposée reste « estimate », jamais confirmée par ricochet).
+    const heightMark: Provenance = s.mode === 'user' ? 'user' : 'default';
+    const setHeight = (o: OpeningHeights, height: number): OpeningHeights => {
+      const widthFrom: Provenance = o.from === 'default' ? 'plan' : o.from;
+      return { ...o, height, heightFrom: heightMark, from: s.mode === 'user' ? weakest(widthFrom, 'user') : o.from };
+    };
+    // Convention de hauteur pour tout le projet : cote du plan, cote du plan + 5 cm, ou hauteur vue en façade.
+    if (doubt.options.some((o) => o.value === 'elevation')) {
+      if (v !== 'plan' && v !== 'plan+5' && v !== 'elevation') return false;
+      const pick = (o: OpeningHeights): number | null => {
+        if (o.heightPlan === undefined || o.heightElevation === undefined) return null;
+        if (v === 'plan') return o.heightPlan;
+        if (v === 'plan+5') return Math.round((o.heightPlan + 0.05) * 1000) / 1000;
+        return o.heightElevation;
+      };
+      m.storeys = m.storeys.map((st) => ({
+        ...st,
+        openings: st.openings.map((o) => {
+          const h = pick(o as OpeningHeights);
+          return h === null ? o : setHeight(o as OpeningHeights, h);
+        }),
+      }));
+      return true;
+    }
+    // Seules les FENÊTRES dont la hauteur est une valeur d'usage sont visées : une hauteur lue n'est jamais remplacée,
+    // une porte garde sa hauteur de porte.
+    const target = (o: Opening): boolean => o.kind === 'window' && heightFromOf(o) === 'default';
     if (isConfirm(v)) {
       if (s.mode === 'unknown') return true;
-      m.storeys = m.storeys.map((st) => ({ ...st, openings: st.openings.map((o) => ({ ...o, from: 'user' as const })) }));
+      m.storeys = m.storeys.map((st) => ({ ...st, openings: st.openings.map((o) => (target(o) ? setHeight(o as OpeningHeights, o.height) : o)) }));
       return true;
     }
     const h = parseNumber(v);
     if (h === null || !(h > 0.2 && h < 6)) return false;
-    m.storeys = m.storeys.map((st) => ({
-      ...st,
-      openings: st.openings.map((o) => (o.from === 'default' || o.from === 'estimate' ? { ...o, height: h, from: 'user' as const } : o)),
-    }));
+    if (!m.storeys.some((st) => st.openings.some(target))) return false;
+    m.storeys = m.storeys.map((st) => ({ ...st, openings: st.openings.map((o) => (target(o) ? setHeight(o as OpeningHeights, h) : o)) }));
     return true;
   },
 
