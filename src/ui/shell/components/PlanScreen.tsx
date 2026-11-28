@@ -293,6 +293,7 @@ const WHY_BY_STATUS: Record<string, string> = {
 function Checklist({ project, storey, steps, sheet }: { project: Project; storey: Storey; steps: PlanStepInfo[]; sheet: PlanSheet | null }) {
   const tr = useT();
   const store = useShellStore();
+  const fixing = useShell((s) => s.fixReturn !== null);
   const announce = useAnnounce();
   const planStep = useShell((s) => s.planStep);
   const celebrate = useShell((s) => s.celebrate);
@@ -468,16 +469,24 @@ function Checklist({ project, storey, steps, sheet }: { project: Project; storey
               <Icon name="arrowRight" size={18} />
             </button>
           ) : null}
-          {/* Toiture et plancher bas déjà confirmés : plus aucune question indispensable, le résultat est prêt. */}
-          <button
-            type="button"
-            className={`btn ${everything || (storeyDone && !nextStorey) ? 'btn--primary' : 'btn--ghost'}`}
-            onClick={() => store.getState().goTo(closureDone ? 'result' : 'questions')}
-            data-testid="to-questions"
-          >
-            <span>{tr(closureDone ? 'shell.plan.toResult' : everything ? 'shell.plan.toQuestions' : 'shell.plan.toQuestions.early')}</span>
-            <Icon name="arrowRight" size={18} />
-          </button>
+          {/* En mode correction (ouvert depuis une question ou une donnée lue), « continuer » ramène à l'écran d'origine. */}
+          {fixing ? (
+            <button type="button" className="btn btn--primary" onClick={() => store.getState().closeFix()} data-testid="to-questions">
+              <Icon name="check" size={18} />
+              <span>{tr('shell.fix.done')}</span>
+            </button>
+          ) : (
+            /* Toiture et plancher bas déjà confirmés : plus aucune question indispensable, le résultat est prêt. */
+            <button
+              type="button"
+              className={`btn ${everything || (storeyDone && !nextStorey) ? 'btn--primary' : 'btn--ghost'}`}
+              onClick={() => store.getState().goTo(closureDone ? 'result' : 'questions')}
+              data-testid="to-questions"
+            >
+              <span>{tr(closureDone ? 'shell.plan.toResult' : everything ? 'shell.plan.toQuestions' : 'shell.plan.toQuestions.early')}</span>
+              <Icon name="arrowRight" size={18} />
+            </button>
+          )}
         </footer>
       </div>
     </nav>
@@ -548,6 +557,7 @@ function Metric({ label, value, unit, digits = 1, title, children }: { label: st
 function SidePanel({ project, storey }: { project: Project; storey: Storey }) {
   const tr = useT();
   const store = useShellStore();
+  const fixing = useShell((s) => s.fixReturn !== null);
   const lang = useShell((s) => s.lang);
   const focus = useShell((s) => s.planFocus);
   const heights = useRef<HTMLDivElement>(null);
@@ -661,7 +671,7 @@ function SidePanel({ project, storey }: { project: Project; storey: Storey }) {
           </p>
         )}
         {findings.length > 0 ? (
-          <button type="button" className="panel__findings" onClick={() => store.getState().goTo('result')} data-testid="panel-findings">
+          <button type="button" className="panel__findings" onClick={() => (fixing ? store.getState().closeFix() : store.getState().goTo('result'))} data-testid="panel-findings">
             {blocking > 0 ? <Badge tone="bad">{tr('shell.findings.count.block', { count: blocking })}</Badge> : null}
             {warnings > 0 ? <Badge tone="warn">{tr('shell.findings.count.warn', { count: warnings })}</Badge> : null}
             <span>{tr('shell.plan.totals.findings')}</span>

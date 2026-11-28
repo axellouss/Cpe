@@ -365,6 +365,8 @@ const readStorey: Reader<Storey> = (value, path) => {
   if (offset !== undefined) storey.offset = offset;
   const footprint = optional(o, 'footprint', path, readFootprint);
   if (footprint !== undefined) storey.footprint = footprint;
+  const overUnheated = optional(o, 'floorOverUnheated', path, readSourcedNumber);
+  if (overUnheated !== undefined) storey.floorOverUnheated = overUnheated;
   return storey;
 };
 

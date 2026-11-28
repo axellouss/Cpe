@@ -16,7 +16,7 @@ import { SHEETS_625 } from '../../core/cpe';
 import type { DossierSheetKey, LuxeebElementType } from '../../core/cpe';
 import type { ElementType, Read, ReadView, SheetReading, ViewKind } from '../../core/reading';
 import type { BBox, Lang, LuxeebSheets, PlanSheet, Project, Provenance, Sourced, Vec2 } from '../../core/types';
-import { evaluate } from '../../engine';
+import { DOUBT_CONFIRM, evaluate } from '../../engine';
 import type { Doubt, DoubtId } from '../../engine';
 import { formatNumber, t } from '../../i18n';
 import type { Marks, PlanStepKey, ReadingStage, ReadingStageKey } from './types';
@@ -153,7 +153,19 @@ function compositionAnchor(reading: SheetReading | undefined, elements: readonly
   return null;
 }
 
-/** Endroit de la planche qui appuie une question de doute ; null si aucun endroit précis n'est connu. */
+/**
+ * Endroit de la planche qui appuie une question : celui que le moteur donne (`Doubt.where`), sinon une déduction de
+ * l'interface (repli) ; null si aucun endroit précis n'est connu.
+ */
+export function anchorOfDoubt(d: Pick<Doubt, 'id' | 'where'>, reading: SheetReading | undefined, sheets: readonly PlanSheet[]): Anchor | null {
+  if (d.where) {
+    const a = anchor(reading, d.where.page, d.where.box);
+    if (a) return a;
+  }
+  return doubtAnchor(d.id, reading, sheets);
+}
+
+/** Repli : endroit déduit par l'interface quand le moteur n'en donne pas. */
 export function doubtAnchor(id: DoubtId, reading: SheetReading | undefined, sheets: readonly PlanSheet[]): Anchor | null {
   const r = reading;
   const plans = sheets.filter((s) => !s.role || s.role === 'floor-plan');
@@ -218,19 +230,23 @@ export function doubtAnchor(id: DoubtId, reading: SheetReading | undefined, shee
 
 // ───────────────────────────── Questions de doute → cartes ─────────────────────────────
 
-/** Empreinte d'une question : si la relecture ou une correction change ce qui est proposé, la question revient. */
+/** Empreinte d'une question (mémoire de la dernière réponse montrée sur la carte, jamais une décision). */
 export function doubtStamp(d: Pick<Doubt, 'id' | 'proposal' | 'options'>): string {
   return `${d.id}|${d.proposal?.value ?? ''}|${d.options.map((o) => o.value).join(',')}`;
 }
 
-/** Vrai si la question a reçu une réponse qui vaut encore (même empreinte). */
-export function isAnswered(d: Doubt, marks: Pick<Marks, 'doubts'>): boolean {
-  return marks.doubts?.[d.id]?.stamp === doubtStamp(d);
+/**
+ * Vrai si la question est tranchée. UNE seule vérité : `answers.resolvedDoubts` du projet, écrite par le moteur
+ * (applyDoubtAnswer) et défaite par « annuler », gardée par l'enregistrement et par la relecture de la planche.
+ * Ce que l'interface mémorise à part (marks.doubts : la dernière valeur choisie) ne décide rien.
+ */
+export function isAnswered(d: Pick<Doubt, 'id'>, project: Pick<Project, 'answers'>): boolean {
+  return Object.prototype.hasOwnProperty.call(project.answers.resolvedDoubts ?? {}, d.id);
 }
 
 /** Questions encore ouvertes, dans l'ordre du moteur. */
-export function openDoubts(all: readonly Doubt[], marks: Pick<Marks, 'doubts'>): Doubt[] {
-  return all.filter((d) => !isAnswered(d, marks));
+export function openDoubts(all: readonly Doubt[], project: Pick<Project, 'answers'>): Doubt[] {
+  return all.filter((d) => !isAnswered(d, project));
 }
 
 /** Choix proposés : ceux du moteur, et la proposition en tête si elle n'en fait pas partie (année lue, valeur d'usage). */
@@ -248,7 +264,14 @@ export function inputKindOf(d: Doubt): 'number' | 'text' | null {
   return null;
 }
 
-/** Étape de l'éditeur de plan où la donnée se corrige ; null si elle ne se corrige pas sur le plan. */
+/** Où corriger une question sur le plan : l'outil et l'étage donnés par le moteur (`Doubt.fix`), sinon le repli. */
+export function fixOf(d: Pick<Doubt, 'id' | 'fix'>): { planStep: PlanStepKey; storeyId: string | null } | null {
+  if (d.fix) return { planStep: d.fix.step, storeyId: d.fix.storeyId };
+  const step = fixStepOf(d.id);
+  return step ? { planStep: step, storeyId: null } : null;
+}
+
+/** Repli : étape de l'éditeur de plan où la donnée se corrige ; null si elle ne se corrige pas sur le plan. */
 export function fixStepOf(id: DoubtId): PlanStepKey | null {
   switch (id) {
     case 'scale':
@@ -277,6 +300,8 @@ export const isUsual = (d: Pick<Doubt, 'grouped'>): boolean => d.grouped;
 /** « Pourquoi je demande », d'après les signaux du moteur. */
 export function whyOf(d: Doubt): string {
   if (d.grouped) return 'shell.doubt.why.notOnPlan';
+  // Surfaces sans étiquette : la géométrie les voit, les étiquettes non ; ce n'est pas une contradiction de la planche.
+  if (d.id === 'an-unlabelled') return 'shell.doubt.why.unlabelled';
   const real = d.signals.filter((s) => s.strength !== 'hypothesis');
   if (real.length === 0) return d.signals.length > 0 ? 'shell.doubt.why.assumption' : 'shell.doubt.why.nothing';
   const e = evaluate(d.signals);
@@ -292,7 +317,7 @@ export function secondsOf(d: Doubt): number {
   if (d.grouped) return 10 + 6 * Math.max(1, d.details.length);
   if (choicesOf(d).length > 0) return 15;
   if (inputKindOf(d)) return 20;
-  return fixStepOf(d.id) ? 45 : 15;
+  return fixOf(d) ? 45 : 15;
 }
 
 export function budget(list: readonly Doubt[]): { count: number; seconds: number; minutes: number } {
@@ -307,12 +332,14 @@ export function sheetOf(key: DossierSheetKey, lang: Lang): { title: string; luxe
 }
 
 /**
- * Valeur à envoyer pour « confirmer » une question : la proposition, sinon (question regroupée sans proposition,
- * données de bibliothèque) le mot « confirm ». Voir le rapport : le contrat n'a pas de valeur dédiée.
+ * Valeur à envoyer pour « confirmer » une question : la proposition quand elle fait partie des choix, sinon
+ * DOUBT_CONFIRM, la valeur que le moteur attend pour « accepter la proposition telle qu'elle est » (questions
+ * regroupées, valeurs d'usage).
  */
-export const CONFIRM_VALUE = 'confirm';
-export function confirmValueOf(d: Doubt): string {
-  return d.proposal?.value ?? CONFIRM_VALUE;
+export const CONFIRM_VALUE = DOUBT_CONFIRM;
+export function confirmValueOf(d: Pick<Doubt, 'proposal' | 'options'>): string {
+  if (d.proposal && d.options.some((o) => o.value === d.proposal!.value)) return d.proposal.value;
+  return DOUBT_CONFIRM;
 }
 
 /**
@@ -389,7 +416,8 @@ export interface OverviewInput {
   sheets: readonly PlanSheet[];
   /** Questions encore ouvertes. */
   open: readonly Doubt[];
-  marks: Pick<Marks, 'doubts'>;
+  /** Gardé pour compatibilité : la décision « tranchée » vient du projet (answers.resolvedDoubts). */
+  marks?: Pick<Marks, 'doubts'>;
   lang: Lang;
 }
 
@@ -397,13 +425,13 @@ const m2 = (v: number): string => `${formatNumber(v, 2)} m²`;
 
 /** Les données lues, groupées comme les feuilles de LuxEeB-Tool. */
 export function overviewFields(input: OverviewInput): OverviewField[] {
-  const { project, derived, reading: r, sheets, open, marks, lang } = input;
+  const { project, derived, reading: r, sheets, open, lang } = input;
   const tr = (key: string, params?: Record<string, string | number>): string => t(lang, key, params);
   const a = project.answers;
   const model = project.model;
   const out: OverviewField[] = [];
   const openIds = new Set(open.map((d) => d.id));
-  const answered = (id: DoubtId | null): boolean => id !== null && marks.doubts?.[id] !== undefined && !openIds.has(id);
+  const answered = (id: DoubtId | null): boolean => id !== null && isAnswered({ id }, project) && !openIds.has(id);
   const proposalOf = (id: DoubtId): Doubt | undefined => open.find((d) => d.id === id && d.proposal);
   const tb = r?.titleBlock ?? null;
   const tbAnchor = tb ? anchor(r, tb.page, tb.box) : null;

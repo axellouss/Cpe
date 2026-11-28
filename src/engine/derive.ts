@@ -720,6 +720,14 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
       overUnheated = Math.min(overhang, overUnheated);
       if (overhang - overUnheated <= STEP_MIN_AREA) overUnheated = overhang;
     }
+    // Mesure du lecteur (plans superposés) : elle remplace la différence de contours, même si celle-ci ne voit rien.
+    const readOver = upper.storey.floorOverUnheated;
+    let overFrom = exact ? from : weakest(from, 'estimate');
+    if (readOver && Number.isFinite(readOver.value) && readOver.value > STEP_MIN_AREA) {
+      overUnheated = readOver.value;
+      overhang = Math.max(0, overhang - readOver.value);
+      overFrom = readOver.from;
+    }
     if (overUnheated > STEP_MIN_AREA) {
       const host = draft({
         id: `floor:overUnheated:${upper.storey.id}`,
@@ -732,11 +740,13 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
         orientation: 'H',
         boundary: 'unheated',
         deduct: false,
-        from: exact ? from : weakest(from, 'estimate'),
+        from: overFrom,
         storeyId: upper.storey.id,
         manual: false,
         label: () =>
-          t(lang, 'engine.row.floorOverUnheated', { storey: upper.storey.name, rooms: below.map((r) => r.name || '?').join(', ') }),
+          below.some((r) => r.name.trim())
+            ? t(lang, 'engine.row.floorOverUnheated', { storey: upper.storey.name, rooms: below.map((r) => r.name.trim()).filter(Boolean).join(', ') })
+            : t(lang, 'engine.row.floorOverUnheatedPlain', { storey: upper.storey.name }),
       });
       floorBlocks.push({ host, deductions: [] });
       overhang -= overUnheated;

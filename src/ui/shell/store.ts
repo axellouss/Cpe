@@ -20,7 +20,7 @@ import { t } from '../../i18n';
 import { readPlanFile, UnsupportedFormatError } from '../../readers';
 import type { FileLike } from '../../readers';
 import type { PlanTool } from '../plan';
-import { confirmValueOf, doubtStamp, mergeDeck, openDoubts, pendingStages, setStage, stageDetails } from './auto';
+import { confirmValueOf, doubtStamp, isAnswered, mergeDeck, openDoubts, pendingStages, setStage, stageDetails } from './auto';
 import type { Anchor } from './auto';
 import { browserStorage, clearWorkspace, dropLegacyEntered, initialLang, loadPosition, loadWorkspace, parseWorkspace, saveLang, savePosition, saveWorkspace } from './autosave';
 import type { StorageLike, StoredWorkspace } from './autosave';
@@ -186,7 +186,8 @@ export interface ShellState {
   /** Document dont la lecture a construit le projet ; null après un rechargement sans la planche. */
   autoDocId: string | null;
   /** Pourquoi la lecture d'une planche ne suffisait pas : le parcours guidé l'explique en tête. */
-  guidedReason: string | null;
+  /** Pourquoi la planche part dans le parcours guidé, dans chaque langue (la raison du moteur, `AutoBuild.notes`). */
+  guidedReason: Partial<Record<Lang, string>> | null;
   /** Questions de doute vues pendant la session, dans l'ordre (pour « précédent ») ; jamais enregistrées. */
   doubtSeen: Doubt[];
   /** Question affichée. */
@@ -301,8 +302,13 @@ export function selectAllDoubts(s: ShellState): Doubt[] {
   if (lastDoubts && lastDoubts.project === project && lastDoubts.documents === s.documents && lastDoubts.lang === s.lang && lastDoubts.autoDocId === s.autoDocId) return lastDoubts.result;
   let result: Doubt[];
   try {
+    // La lecture complète et TOUTES les feuilles de tous les documents (textes compris) : mêmes signaux qu'à la lecture.
     const sheets: PlanSheet[] = s.documents.flatMap((d) => d.doc.sheets);
-    result = collectDoubts(selectReading(s).reading, project, sheets, s.lang);
+    const reading = selectReading(s).reading;
+    result = collectDoubts(reading, project, sheets, s.lang);
+    // Projet automatique repris sans sa planche : seules les questions posées avec la planche restent posées.
+    const asked = s.history.present.marks.asked;
+    if (!reading && s.history.present.marks.flow === 'auto' && asked) result = result.filter((d) => asked.includes(d.id));
   } catch {
     // Moteur en échec : aucune question plutôt qu'un écran cassé (le dossier le dira).
     result = [];
@@ -312,14 +318,15 @@ export function selectAllDoubts(s: ShellState): Doubt[] {
 }
 
 /** Questions encore ouvertes (celles qui ont une réponse valable sont retirées). */
-let lastOpen: { all: Doubt[]; doubts: Marks['doubts']; result: Doubt[] } | null = null;
+let lastOpen: { all: Doubt[]; project: Project; result: Doubt[] } | null = null;
 
 export function selectOpenDoubts(s: ShellState): Doubt[] {
   const all = selectAllDoubts(s);
-  const doubts = selectMarks(s).doubts;
-  if (lastOpen && lastOpen.all === all && lastOpen.doubts === doubts) return lastOpen.result;
-  const result = openDoubts(all, { doubts });
-  lastOpen = { all, doubts, result };
+  const project = selectProject(s);
+  if (lastOpen && lastOpen.all === all && lastOpen.project === project) return lastOpen.result;
+  // Le moteur ne pose déjà plus les questions tranchées ; le filtre garde la même vérité si un repli en renvoie.
+  const result = openDoubts(all, project);
+  lastOpen = { all, project, result };
   return result;
 }
 
@@ -567,11 +574,31 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
         build = null;
       }
       if (!build || !build.sufficient || build.project.model.storeys.length === 0) {
-        set({ guidedReason: build?.notes.find((n) => n.trim().length > 0) ?? tr('shell.auto.guided.generic') });
+        // La raison est gardée dans les deux langues : elle suit l'utilisateur s'il change de langue ensuite.
+        const reason: Partial<Record<Lang, string>> = {};
+        const first = (b: AutoBuild | null): string | undefined => b?.notes.find((n) => n.trim().length > 0);
+        const here = first(build);
+        if (here) reason[lang] = here;
+        const other: Lang = lang === 'fr' ? 'de' : 'fr';
+        if (here) {
+          try {
+            const there = first(buildAutoProject(loaded.doc, base, other));
+            if (there) reason[other] = there;
+          } catch {
+            // Sans traduction, le bandeau donne la raison générique dans l'autre langue.
+          }
+        }
+        set({ guidedReason: reason });
         return false;
       }
       const built = build.project;
-      replaceWorkspace({ project: built, marks: { ...emptyMarks(), flow: 'auto' } }, 'shell.undo.autoRead');
+      let asked: string[] = [];
+      try {
+        asked = collectDoubts(loaded.doc.reading, built, state.documents.flatMap((d) => d.doc.sheets), lang).map((d) => d.id);
+      } catch {
+        asked = [];
+      }
+      replaceWorkspace({ project: built, marks: { ...emptyMarks(), flow: 'auto', asked } }, 'shell.undo.autoRead');
       set({ autoDocId: loaded.id, doubtSeen: [], doubtId: null, fixReturn: null, locate: null, proposal: null });
       const count = selectOpenDoubts(get()).length;
       stage('doubts', 'done', { key: 'shell.reading.detail.doubts', params: { count } });
@@ -1250,12 +1277,20 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
             } catch {
               failed = true;
             }
+            // Réponse refusée par le moteur (saisie incomprise) : la question reste ouverte, rien n'est noté.
+            if (failed || !isAnswered(doubt, project)) {
+              failed = true;
+              return ws;
+            }
             const doubts = { ...(ws.marks.doubts ?? {}), [doubt.id]: { value, stamp: doubtStamp(doubt), via: 'card' as const } };
             return { project, marks: { ...ws.marks, doubts } };
           },
           { label: 'shell.undo.doubt' },
         );
-        if (failed) toast(tr('shell.doubt.applyFailed'), 'warn');
+        if (failed) {
+          toast(tr('shell.doubt.applyFailed'), 'warn');
+          return;
+        }
         advanceDoubt(doubt.id);
       },
 
@@ -1275,7 +1310,8 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
               } catch {
                 failed = true;
               }
-              doubts[d.id] = { value, stamp: doubtStamp(d), via: 'confirmAll' };
+              if (isAnswered(d, project)) doubts[d.id] = { value, stamp: doubtStamp(d), via: 'confirmAll' };
+              else failed = true;
             }
             return { project, marks: { ...ws.marks, doubts } };
           },
@@ -1308,8 +1344,19 @@ export function createShellStore(overrides: Partial<ShellDeps> = {}): ShellStore
 
       closeFix() {
         const back = get().fixReturn;
-        // Les questions se recalculent d'elles-mêmes sur le projet corrigé (sélecteurs mémorisés).
-        set({ fixReturn: null, step: back?.step ?? 'overview' });
+        // Au retour, les questions sont TOUJOURS recalculées (lecture complète, toutes les feuilles), même si le projet
+        // a changé par une autre voie que l'éditeur, ou pas du tout.
+        lastDoubts = null;
+        lastOpen = null;
+        lastDeck = null;
+        const step = back?.step ?? 'overview';
+        set({ fixReturn: null, step });
+        const state = get();
+        const open = selectOpenDoubts(state);
+        const deck = selectDeck(state);
+        // La question corrigée n'est plus posée : la carte suivante encore ouverte prend sa place.
+        const current = open.some((d) => d.id === state.doubtId) ? state.doubtId : (open[0]?.id ?? state.doubtId);
+        set({ doubtSeen: deck, doubtId: current, ...(step === 'doubts' && open.length === 0 ? { step: 'dossier' as const } : {}) });
       },
 
       setLocate(anchor) {

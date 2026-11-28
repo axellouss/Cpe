@@ -64,12 +64,16 @@ vi.mock('../../../src/engine', async (importOriginal) => {
     collectDoubts: (_r: unknown, project: Project) => {
       engine.collected += 1;
       // L'échelle corrigée sur le plan ne fait plus doute : la question disparaît au recalcul.
-      return (engine.doubts as Doubt[]).filter((d) => !(d.id === 'scale' && project.model.storeys[0]?.metresPerUnit.from === 'user'));
+      // Comme le vrai moteur : une question tranchée (answers.resolvedDoubts) n'est plus posée.
+      const resolved = project.answers.resolvedDoubts ?? {};
+      return (engine.doubts as Doubt[]).filter((d) => !(d.id in resolved) && !(d.id === 'scale' && project.model.storeys[0]?.metresPerUnit.from === 'user'));
     },
     applyDoubtAnswer: (project: Project, d: Doubt, value: string) => {
       engine.answers.push({ id: d.id, value });
-      if (d.id === 'occasion' && value !== real.DOUBT_UNKNOWN) return { ...project, answers: { ...project.answers, occasion: value as 'new' | 'existing' } };
-      return { ...project };
+      const how: 'user' | 'unknown' = value === real.DOUBT_UNKNOWN ? 'unknown' : 'user';
+      const answers = { ...project.answers, resolvedDoubts: { ...(project.answers.resolvedDoubts ?? {}), [d.id]: how } };
+      if (d.id === 'occasion' && value !== real.DOUBT_UNKNOWN) return { ...project, answers: { ...answers, occasion: value as 'new' | 'existing' } };
+      return { ...project, answers };
     },
   };
 });

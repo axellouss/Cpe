@@ -364,6 +364,11 @@ export interface Storey {
    * chauffé (porte de garage) : de quoi remettre l'annexe dans l'enveloppe si l'utilisateur la dit chauffée.
    */
   footprint?: { outline: Vec2[]; openings: { kind: 'window' | 'door'; a: Vec2; b: Vec2; width: number; height: number }[] };
+  /**
+   * Surface (m²) du plancher de cet étage au-dessus d'un local non chauffé, mesurée par le lecteur une fois les plans
+   * alignés (SheetReading.floorOverUnheated). Présente, elle remplace la différence de contours du moteur.
+   */
+  floorOverUnheated?: Sourced<number>;
 }
 
 /** Fermeture haute du dernier étage chauffé. */

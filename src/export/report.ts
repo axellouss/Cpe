@@ -232,6 +232,16 @@ function dossierAssumptionsBlock(dossier: Dossier, lang: Lang): string {
 }
 
 /** Pré-contrôles avec les plages du « Plausibilitätscheck » de l'outil. */
+/** Questions de doute tranchées : la donnée et la réponse (confirmée, ou hypothèse « je ne sais pas »). */
+function answeredDoubtsBlock(dossier: Dossier, lang: Lang): string {
+  const list = dossier.answeredDoubts ?? [];
+  if (list.length === 0) return '';
+  return (
+    `<h3>${e(t(lang, 'export.dossier.doubts.title'))}</h3>` +
+    tableHtml([t(lang, 'export.dossier.doubts.col.datum'), t(lang, 'export.dossier.doubts.col.status')], list.map((d) => `<tr>${td(d.label)}${td(d.status)}</tr>`), '')
+  );
+}
+
 function plausibilityBlock(dossier: Dossier, lang: Lang): string {
   const rows = dossier.plausibility
     .filter((c) => c.status !== 'n/a')
@@ -332,7 +342,7 @@ export function buildReportHtml(sheets: LuxeebSheets, project: Project, lang: La
     section(t(lang, 'export.report.responsibility.title'), `<p>${e(t(lang, 'export.report.responsibility.text'))}</p>`, 'resp'),
     section(t(lang, 'export.report.section.project'), projectBlock(project, lang)),
     section(t(lang, 'export.report.section.totals'), totalsBlock(sheets, project, lang)),
-    section(t(lang, 'export.report.section.assumptions'), assumptionsBlock(project, lang) + dossierAssumptionsBlock(dossier, lang)),
+    section(t(lang, 'export.report.section.assumptions'), assumptionsBlock(project, lang) + dossierAssumptionsBlock(dossier, lang) + answeredDoubtsBlock(dossier, lang)),
     section(t(lang, 'export.report.section.rooms'), roomsBlock(project, lang) || `<p class="empty">${e(t(lang, 'export.report.empty'))}</p>`),
     section(titled(LUXEEB_SHEET.opaque, 'export.report.section.constructions'), guideTable('constructions')),
     section(titled(LUXEEB_SHEET.windows, 'export.report.section.windows'), guideTable('windowTypes')),

@@ -471,6 +471,17 @@ export interface Dossier {
   sections: DossierSection[];
   plausibility: PlausibilityCheck[];
   assumptions: DossierAssumption[];
+  /** Questions de doute déjà tranchées : par l'utilisateur, ou « je ne sais pas » (hypothèse gardée). */
+  answeredDoubts?: DossierDoubtAnswer[];
+}
+
+export interface DossierDoubtAnswer {
+  id: string;
+  /** La donnée concernée, dans la langue du dossier. */
+  label: string;
+  how: 'user' | 'unknown';
+  /** Libellé de l'état, dans la langue du dossier (« Confirmé par vous », « Hypothèse : je ne sais pas »). */
+  status: string;
 }
 
 /** Libellé d'une colonne ou d'une feuille dans la langue demandée, l'allemand de l'outil restant affiché à côté. */

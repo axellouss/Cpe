@@ -165,6 +165,7 @@ export function buildAutoProject(doc: PlanDocument, base: Project, lang: Lang): 
   model.storeys = built.storeys;
   if (built.basements.length > 0) model.unheatedStoreys = built.basements;
   if (!doc.storeysAligned) assignOffsets(model.storeys, doc.sheets, reading);
+  applyFloorOverUnheated(model.storeys, reading, lang);
   applyHeights(model, built, reading, base.model.heightConvention ?? 'external', lang);
 
   model.top = proposeTop(model, reading, built) ?? defaultTop();
@@ -556,6 +557,20 @@ function assignOffsets(storeys: Storey[], sheets: readonly PlanSheet[], reading:
   });
 }
 
+/**
+ * Plancher au-dessus d'un local non chauffé mesuré par le lecteur (plans alignés) : il l'emporte sur la différence de
+ * contours du moteur. Une mesure peu sûre reste étiquetée à confirmer.
+ */
+function applyFloorOverUnheated(storeys: Storey[], reading: SheetReading | undefined, lang: Lang): void {
+  for (const s of storeys) {
+    const list = (reading?.floorOverUnheated ?? []).filter((f) => f.sheetId === s.sheetId && Number.isFinite(f.areaM2) && f.areaM2 > 0);
+    if (list.length === 0) continue;
+    const area = list.reduce((a, f) => a + f.areaM2, 0);
+    const confidence = Math.min(...list.map((f) => f.confidence));
+    s.floorOverUnheated = { value: round(area, 2), from: confidence >= CONFIDENCE_SINGLE_SOURCE ? 'plan' : 'estimate', confidence, note: t(lang, 'auto.source.floorOverUnheated') };
+  }
+}
+
 function outlineBox(s: Storey): { minX: number; minY: number; maxX: number; maxY: number } {
   return bboxOf(s.outline);
 }
@@ -603,9 +618,22 @@ function applyHeights(model: BuildingModel, built: BuiltStoreys, reading: SheetR
       top.grossHeight = { value: round(levels.eaves - last.rel, 3), from: 'plan', note: t(lang, 'auto.height.eaves'), confidence: last.confidence };
     }
   }
-  // Hauteurs libres écrites : une par étage, ou une seule pour tous.
+  // Hauteurs libres rattachées à leur niveau par le lecteur : prioritaires, étage par étage.
+  const byFloor = (reading?.clearHeightsByFloor ?? []).filter((h) => h.floorIndex !== null && Number.isFinite(h.value) && h.value > 1 && h.value < 6);
+  let placed = 0;
+  if (lv && byFloor.length > 0) {
+    model.storeys.forEach((s, i) => {
+      const index = levels.floors.indexOf(lv.floors[i]!);
+      const hit = index >= 0 ? byFloor.filter((h) => h.floorIndex === index).sort((a, b) => b.confidence - a.confidence)[0] : undefined;
+      if (!hit) return;
+      s.clearHeight = { value: hit.value, from: 'plan', note: t(lang, 'auto.clear.levels'), confidence: hit.confidence };
+      placed++;
+    });
+  }
+  if (placed === n) return;
+  // Repli : hauteurs libres écrites sans niveau, une par étage, ou une seule pour tous.
   const clear = levels.clearHeights.filter((h) => Number.isFinite(h) && h > 1 && h < 6);
-  if (clear.length === n || clear.length === 1) {
+  if (placed === 0 && (clear.length === n || clear.length === 1)) {
     model.storeys.forEach((s, i) => {
       s.clearHeight = { value: clear.length === n ? clear[i]! : clear[0]!, from: 'plan', note: t(lang, 'auto.clear.levels') };
     });
@@ -743,6 +771,14 @@ function proposeAnswers(base: ProjectAnswers, reading: SheetReading | undefined,
     if (sys.ventilation) put('ventilation', sys.ventilation.value, sys.ventilation.confidence, src);
     if (sys.photovoltaic) put('photovoltaic', sys.photovoltaic.value, sys.photovoltaic.confidence, src);
     if (sys.solarThermal) put('solarThermal', sys.solarThermal.value, sys.solarThermal.confidence, src);
+  }
+  // Plan de toiture lu sans panneau ni mention : ni photovoltaïque ni solaire thermique (proposé, pas confirmé).
+  const roofPlan = (reading?.views ?? []).some((v) => v.kind === 'roof-plan');
+  const panels = (reading?.equipment ?? []).some((e) => e.kind === 'photovoltaic' || e.kind === 'solar-thermal');
+  if (roofPlan && !panels) {
+    const src = t(lang, 'auto.source.roofPlanEmpty');
+    if (!sys?.photovoltaic) put('photovoltaic', false, CONFIDENCE_SINGLE_SOURCE, src);
+    if (!sys?.solarThermal) put('solarThermal', false, CONFIDENCE_SINGLE_SOURCE, src);
   }
   // Mitoyenneté : côtés du contour chauffé lus comme mitoyens (directions distinctes dans le repère de la feuille).
   const dirs = new Set<number>();

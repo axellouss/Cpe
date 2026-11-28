@@ -92,6 +92,23 @@ const L = (de: string, fr: string): { de: string; fr: string } => ({ de, fr });
 const ATTACHMENT_KEY = { 'one-side': 'export.dossier.attachment.oneSide', other: 'export.dossier.attachment.other' } as const;
 const AIRTIGHTNESS_KEY = { 'class-a-with-ventilation': 'export.dossier.airtightness.classA', measured: 'export.dossier.airtightness.measured' } as const;
 const BRIDGES_KEY = { '0.10': 'export.dossier.thermalBridges.flat010', '0.05': 'export.dossier.thermalBridges.flat005', '0.03': 'export.dossier.thermalBridges.din003', detailed: 'export.dossier.thermalBridges.detailed' } as const;
+// Libellés des réponses proposées (clés écrites en toutes lettres pour le test du dictionnaire).
+const PROPOSED_LABEL_KEY: Readonly<Record<string, string>> = {
+  projectName: 'export.dossier.proposed.projectName',
+  street: 'export.dossier.proposed.street',
+  postcode: 'export.dossier.proposed.postcode',
+  locality: 'export.dossier.proposed.locality',
+  buildingType: 'export.dossier.proposed.buildingType',
+  dwellings: 'export.dossier.proposed.dwellings',
+  occasion: 'export.dossier.proposed.occasion',
+  yearBuilt: 'export.dossier.proposed.yearBuilt',
+  heatGenerator: 'export.dossier.proposed.heatGenerator',
+  hotWater: 'export.dossier.proposed.hotWater',
+  ventilation: 'export.dossier.proposed.ventilation',
+  photovoltaic: 'export.dossier.proposed.photovoltaic',
+  solarThermal: 'export.dossier.proposed.solarThermal',
+  attachment: 'export.dossier.proposed.attachment',
+};
 const MASS_KEY = { heavy: 'export.dossier.thermalMass.heavy', other: 'export.dossier.thermalMass.other' } as const;
 
 // ───────────────────────────── Dossier ─────────────────────────────
@@ -293,6 +310,28 @@ export function buildDossier(project: Project, sheets: readonly PlanSheet[], lan
   if (plausibility.find((c) => c.key === 'aOverVe')?.status === 'n/a') P.notes.push(t(lang, 'export.dossier.note.aOverVeNotComputed'));
   if (plausibility.find((c) => c.key === 'meanU')?.status === 'n/a') P.notes.push(t(lang, 'export.dossier.note.meanUNotComputed'));
 
+  // ── Réponses proposées par la lecture et jamais confirmées : des hypothèses, montrées comme telles ──
+  const PROPOSED_SHEET: Partial<Record<string, DossierSheetKey>> = { heatGenerator: 'heating', hotWater: 'heating', ventilation: 'ventilation', photovoltaic: 'photovoltaic', solarThermal: 'photovoltaic' };
+  for (const [key, how] of Object.entries(a.proposed ?? {})) {
+    const value = (a as unknown as Record<string, unknown>)[key];
+    if (value === null || value === undefined || value === '') continue;
+    const labelKey = PROPOSED_LABEL_KEY[key];
+    const label = labelKey ? t(lang, labelKey) : key;
+    const shown = typeof value === 'boolean' ? (yesNoText(lang, value) ?? '') : String(value);
+    assumptions.push({
+      key: `proposed:${key}`,
+      sheet: PROPOSED_SHEET[key] ?? 'general',
+      text: `${label} : ${enumText(lang, key, shown) || shown}`,
+      source: t(lang, 'export.dossier.proposed.source', { source: how.source }),
+    });
+  }
+
+  // ── Questions déjà tranchées (réponse ou « je ne sais pas ») ──
+  const answeredDoubts = Object.entries(a.resolvedDoubts ?? {}).map(([id, how]) => {
+    const datum = t(lang, `doubt.${id}.datum`);
+    return { id, label: datum.startsWith('doubt.') ? id : datum, how, status: t(lang, how === 'unknown' ? 'export.dossier.doubt.unknown' : 'export.dossier.doubt.user') };
+  });
+
   // ── Questions encore ouvertes ──
   if (options.reading !== undefined || sheets.length > 0) {
     for (const d of collectDoubts(options.reading, project, sheets, lang)) {
@@ -307,6 +346,7 @@ export function buildDossier(project: Project, sheets: readonly PlanSheet[], lan
     sections: SHEETS_625.map((s) => S(s.key)),
     plausibility,
     assumptions,
+    ...(answeredDoubts.length > 0 ? { answeredDoubts } : {}),
   };
 }
 

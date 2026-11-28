@@ -243,6 +243,7 @@ export function collectDoubts(reading: SheetReading | undefined, project: Projec
       effectShare: d.effect?.share ?? null,
       confidence: Math.round(e.confidence * 100) / 100,
       signals: d.signals,
+      ...placeOf(spec.id, ctx),
     });
   }
   const rank: Record<Impact, number> = { high: 0, medium: 1, low: 2 };
@@ -275,6 +276,158 @@ function choiceLabel(id: DoubtId, value: string, lang: Lang): string {
   if (!specific.startsWith('doubt.')) return specific;
   const generic = t(lang, `doubt.option.${value}`);
   return generic.startsWith('doubt.') ? value : generic;
+}
+
+// ───────────────────────────── Endroit de la planche et outil de correction ─────────────────────────────
+
+type Where = NonNullable<Doubt['where']>;
+type FixStep = NonNullable<Doubt['fix']>['step'];
+
+const validBox = (b: BBox | null | undefined): b is BBox =>
+  !!b && [b.minX, b.minY, b.maxX, b.maxY].every(Number.isFinite) && b.maxX > b.minX && b.maxY > b.minY;
+
+function boxAround(points: readonly { x: number; y: number }[], pad: number): BBox | null {
+  const ok = points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (ok.length === 0) return null;
+  return {
+    minX: Math.min(...ok.map((p) => p.x)) - pad,
+    minY: Math.min(...ok.map((p) => p.y)) - pad,
+    maxX: Math.max(...ok.map((p) => p.x)) + pad,
+    maxY: Math.max(...ok.map((p) => p.y)) + pad,
+  };
+}
+
+/** Outil de l'éditeur de plan où chaque question se corrige ; absent : elle ne se corrige pas sur le plan. */
+const FIX_STEP: Partial<Record<DoubtId, FixStep>> = {
+  scale: 'scale',
+  heights: 'height',
+  openings: 'opening',
+  'opening-heights': 'opening',
+  north: 'north',
+  'unheated-zone': 'boundary',
+  attached: 'boundary',
+  'an-unlabelled': 'rooms',
+  'room-heated': 'rooms',
+};
+
+/**
+ * Endroit de la planche qui appuie la question (boîte de la pièce, de la zone, du bloc de composition, de
+ * l'équipement, du cartouche, de la vue) et étage à ouvrir pour la corriger : celui de la feuille où le doute a été
+ * vu, sinon le premier étage. Rien d'inventé : sans endroit connu, `where` est absent.
+ */
+function placeOf(id: DoubtId, ctx: Ctx): Pick<Doubt, 'where' | 'fix'> {
+  const r = ctx.reading;
+  const found: Where[] = [];
+  const put = (page: number | null | undefined, box: BBox | null | undefined, sheetId: string | null = null): void => {
+    if (found.length === 0 && validBox(box)) found.push({ page: page ?? 1, box, sheetId });
+  };
+  const onSheet = (sheet: PlanSheet, box: BBox | null): void =>
+    put(sheet.page ?? (r?.views ?? []).find((v) => v.sheetId === sheet.id)?.page ?? 1, box, sheet.id);
+  const view = (kinds: readonly string[]): void => {
+    const v = (r?.views ?? []).find((x) => kinds.includes(x.kind));
+    if (v) put(v.page, v.buildingBox ?? v.box, v.sheetId);
+  };
+  const composition = (elements: readonly string[]): void => {
+    for (const c of r?.compositions ?? []) {
+      if (!elements.includes(c.element)) continue;
+      for (const o of c.occurrences) put(o.page, o.box);
+    }
+  };
+  const equipment = (kinds: readonly string[]): void => {
+    const e = (r?.equipment ?? []).find((x) => kinds.includes(x.kind));
+    if (e) put(e.page, { minX: e.at.x - 24, minY: e.at.y - 24, maxX: e.at.x + 24, maxY: e.at.y + 24 });
+  };
+  switch (id) {
+    case 'occasion':
+    case 'building-type':
+    case 'year':
+    case 'identity':
+    case 'scale':
+      if (r?.titleBlock) put(r.titleBlock.page, r.titleBlock.box);
+      break;
+    case 'north':
+      if (r?.north) put(r.north.page, r.north.box);
+      break;
+    case 'materials':
+      composition(['external-wall', 'wall-to-unheated', 'roof', 'floor-on-ground', 'floor-to-unheated', 'floor-to-outside', 'ceiling-to-unheated', 'wall-to-ground']);
+      break;
+    case 'bottom':
+      composition(['floor-on-ground', 'floor-to-unheated']);
+      view(['section']);
+      break;
+    case 'top':
+    case 'renewables':
+      view(['roof-plan']);
+      view(['section']);
+      break;
+    case 'heights':
+      view(['section']);
+      break;
+    case 'openings':
+    case 'opening-heights':
+    case 'windows':
+      view(['elevation']);
+      break;
+    case 'heating':
+      equipment(['heat-pump']);
+      equipment(['hot-water-tank', 'boiler']);
+      break;
+    case 'ventilation':
+      equipment(['ventilation-unit']);
+      break;
+    case 'an-unlabelled':
+      for (const s of ctx.plans) {
+        const u = (s.detected.unlabelledAreas ?? []).find((x) => x.area >= 1 && (x.polygon?.length ?? 0) >= 3);
+        if (u?.polygon) onSheet(s, boxAround(u.polygon, 12));
+      }
+      break;
+    case 'unheated-zone':
+      for (const s of ctx.heatedPlans) {
+        const z = (s.detected.unheatedZones ?? []).find((x) => x.polygon.length >= 3);
+        if (z) onSheet(s, boxAround(z.polygon, 12));
+        const room = s.detected.rooms.find((x) => x.heatedGuess === 'no' && !x.exterior && (x.polygon || x.at));
+        if (room) onSheet(s, room.polygon ? boxAround(room.polygon, 12) : boxAround([room.at!], 40));
+      }
+      break;
+    case 'room-heated':
+      for (const s of ctx.heatedPlans) {
+        const room = s.detected.rooms.find((x) => x.heatedGuess === 'ask' && !x.exterior && isRoomName(x.name) && (x.polygon || x.at));
+        if (room) onSheet(s, room.polygon ? boxAround(room.polygon, 12) : boxAround([room.at!], 40));
+      }
+      break;
+    case 'attached': {
+      // Le plan d'un étage du volume chauffé (pas celui d'un sous-sol laissé hors du volume).
+      const heated = new Set(ctx.heatedPlans.map((s) => s.id));
+      const v = (r?.views ?? []).find((x) => x.kind === 'floor-plan' && x.sheetId !== null && heated.has(x.sheetId));
+      if (v) put(v.page, v.buildingBox ?? v.box, v.sheetId);
+      view(['floor-plan']);
+      break;
+    }
+    case 'thermal-bridges':
+      break;
+  }
+  const out: Pick<Doubt, 'where' | 'fix'> = {};
+  const where = found[0];
+  if (where) out.where = where;
+  const step = FIX_STEP[id];
+  const storeys = ctx.project.model.storeys;
+  if (step && storeys.length > 0) {
+    const sheetId = where?.sheetId ?? null;
+    const storey = (sheetId !== null ? storeys.find((s) => s.sheetId === sheetId) : undefined) ?? storeys[0]!;
+    out.fix = { storeyId: storey.id, step };
+  }
+  return out;
+}
+
+/**
+ * Vrai si un texte lu comme nom de pièce en est un : non vide, court, sans cote ni phrase d'annotation (« Surface
+ * séjour », « Composition mur garage » sont des annotations du plan, pas des pièces).
+ */
+export function isRoomName(name: string | null | undefined): boolean {
+  const n = norm((name ?? '').trim());
+  if (n.length < 2 || n.length > 32) return false;
+  if (/^(surface|flache|composition|aufbau|coupe|schnitt|facade|ansicht|mur|wand|dalle|platte|toiture|dach|plancher|boden|niveau|echelle|massstab)\b/.test(n)) return false;
+  return /[a-z]/.test(n);
 }
 
 // ───────────────────────────── Contexte commun ─────────────────────────────
@@ -441,8 +594,17 @@ const COLLECTORS: Record<DoubtId, Collector> = {
     const insulated = ctx.heatedPlans.some((s) => (s.detected.heatedEdges ?? []).some((e) => e.boundary === 'unheated' && (e.sources ?? []).includes('insulation') && e.confidence >= 0.5));
     if (insulated) signals.push(sig('plan-geometry', 'strong', 'unheated', 'edges.insulation'));
     else if (zones.length > 0) signals.push(sig('plan-geometry', 'weak', 'unheated', 'zone.outline'));
-    const names = [...new Set([...zones.flatMap((z) => z.names), ...named.map((r) => r.name)])].filter(Boolean);
-    return { signals, applicable: true, answered: false, params: { names: names.join(', ') || '?' }, details: [], proposal: 'unheated' };
+    const names = [...new Set([...zones.flatMap((z) => z.names), ...named.map((r) => r.name)].map((x) => x.trim()))].filter(isRoomName);
+    return {
+      signals,
+      applicable: true,
+      answered: false,
+      params: { names: names.join(', ') },
+      // Aucun nom lisible : on parle de « la zone » sans inventer de nom.
+      ...(names.length === 0 ? { questionKey: 'doubt.unheated-zone.questionUnnamed' } : {}),
+      details: [],
+      proposal: 'unheated',
+    };
   },
 
   'an-unlabelled': (ctx, lang) => {
@@ -451,8 +613,14 @@ const COLLECTORS: Record<DoubtId, Collector> = {
     let unlabelled = 0;
     let labelled = 0;
     let gross = 0;
+    const perLevel: string[] = [];
     for (const s of ctx.plans) {
-      unlabelled += (s.detected.unlabelledAreas ?? []).filter((u) => u.area >= 1).reduce((a, u) => a + u.area, 0);
+      const here = (s.detected.unlabelledAreas ?? []).filter((u) => u.area >= 1).reduce((a, u) => a + u.area, 0);
+      unlabelled += here;
+      if (here >= 1) {
+        const storey = storeys.find((st) => st.sheetId === s.id);
+        perLevel.push(t(lang, 'doubt.an-unlabelled.detail', { level: storey?.name ?? s.name, area: formatNumber(here, 1) }));
+      }
       labelled += s.detected.rooms.filter((r) => r.heatedGuess === 'yes' && !r.exterior).reduce((a, r) => a + (r.statedArea ?? r.measuredArea ?? 0), 0);
       const mpu = s.metresPerUnit?.value ?? 0;
       if (s.detected.heatedOutline && mpu > 0) gross += polygonArea(s.detected.heatedOutline.map((p) => ({ x: p.x * mpu, y: p.y * mpu })));
@@ -470,6 +638,8 @@ const COLLECTORS: Record<DoubtId, Collector> = {
       // Repli sans surface identifiée : on ne parle ni d'escalier ni de dégagement, seulement de l'écart constaté.
       ...(unlabelled >= 1 ? {} : { questionKey: 'doubt.an-unlabelled.questionEstimate' }),
       proposal: 'include',
+      // Une seule question pour tout le bâtiment : le détail par niveau dès qu'il y en a plusieurs.
+      details: perLevel.length > 1 ? perLevel : [],
       effect: share !== null ? { text: t(lang, 'doubt.an-unlabelled.effect', { area: formatNumber(unlabelled, 1), pct: pct(share) }), share } : null,
     };
   },
@@ -576,13 +746,15 @@ const COLLECTORS: Record<DoubtId, Collector> = {
     const e = evaluate(signals);
     const tank = (r?.equipment ?? []).some((x) => x.kind === 'hot-water-tank');
     const details = [t(lang, 'doubt.heating.detail.emission'), t(lang, tank ? 'doubt.heating.detail.tankRead' : 'doubt.heating.detail.tank')];
+    const named = e.value ? t(lang, `doubt.generator.${e.value}`) : '';
+    const generatorLabel = named && !named.startsWith('doubt.') ? named : '';
     return {
       signals: signals.length > 0 ? signals : [sig('tool-hypothesis', 'hypothesis', 'unknown', 'heating.none')],
       applicable: true,
       answered: false,
-      params: { generator: e.value ? t(lang, `doubt.generator.${e.value}`) : '?' },
-      // Rien d'écrit sur le plan : on demande le générateur, sans en proposer un.
-      ...(e.value ? {} : { questionKey: 'doubt.heating.questionNone' }),
+      params: { generator: generatorLabel },
+      // Rien d'écrit sur le plan (ou un mot que l'outil ne sait pas nommer) : on demande le générateur, sans en proposer un.
+      ...(generatorLabel ? {} : { questionKey: 'doubt.heating.questionNone' }),
       proposal: e.value,
       details,
     };
@@ -649,13 +821,13 @@ const COLLECTORS: Record<DoubtId, Collector> = {
     const ambiguous: string[] = [];
     for (const s of ctx.heatedPlans) {
       for (const r of s.detected.rooms) {
-        if (r.heatedGuess !== 'ask' || r.exterior) continue;
+        if (r.heatedGuess !== 'ask' || r.exterior || !isRoomName(r.name)) continue;
         const inside = r.at && s.detected.heatedOutline && pointInPolygon(r.at, s.detected.heatedOutline);
         if (!inside) ambiguous.push(r.name);
       }
     }
     // Pièces que le modèle signale encore à trancher (relecture de l'expert pas faite).
-    for (const st of ctx.project.model.storeys) for (const r of st.rooms) if (r.needsReview && !ambiguous.includes(r.name)) ambiguous.push(r.name);
+    for (const st of ctx.project.model.storeys) for (const r of st.rooms) if (r.needsReview && !r.unlabelled && isRoomName(r.name) && !ambiguous.includes(r.name)) ambiguous.push(r.name);
     if (ambiguous.length === 0) return NOT_APPLICABLE;
     return { signals: [], applicable: true, answered: false, params: { names: ambiguous.join(', ') }, proposal: 'heated' };
   },

@@ -147,6 +147,10 @@ export function sanitizeMarks(raw: unknown): Marks {
     }
     if (kept > 0) marks.doubts = doubts;
   }
+  if (Array.isArray(raw.asked)) {
+    const asked = raw.asked.filter((x): x is string => typeof x === 'string' && /^[a-z][a-z-]{1,40}$/.test(x)).slice(0, MAX_DOUBT_MARKS);
+    if (asked.length > 0) marks.asked = [...new Set(asked)];
+  }
   return marks;
 }
 

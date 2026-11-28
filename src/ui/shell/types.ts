@@ -67,6 +67,11 @@ export interface Marks {
    * la question au moment de la réponse : si la relecture ou une correction la change, la question revient.
    */
   doubts?: Record<string, DoubtMark>;
+  /**
+   * Questions que le moteur a posées tant que la planche était là (identifiants). Projet repris SANS sa planche : la
+   * lecture manque, et le moteur demanderait ce que la planche lui avait appris ; seules ces questions restent posées.
+   */
+  asked?: string[];
 }
 
 export interface DoubtMark {

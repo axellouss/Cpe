@@ -12,6 +12,7 @@ import type { Dossier, DossierColumn, DossierSection, DossierValue } from '../..
 import type { Lang } from '../../../core/types';
 import { buildDossier } from '../../../export/dossier';
 import { sheetOf, trustOfProvenance } from '../auto';
+import type { Doubt } from '../../../engine';
 import { selectOpenDoubts, selectProject, selectReading, useShell, useShellStore } from '../store';
 import { useT } from './common';
 import { Icon } from './icons';
@@ -40,12 +41,14 @@ function useDossier(): Dossier | null {
 }
 
 /** Les questions encore ouvertes, rappelées en tête du dossier. */
+/** Au-delà, la liste des questions ouvertes est repliée (le titre dit combien il en reste). */
+const OPEN_FOLD = 4;
+
 export function OpenDoubts() {
   const tr = useT();
-  const store = useShellStore();
-  const lang = useShell((s) => s.lang);
   const open = useShell(selectOpenDoubts);
   if (open.length === 0) return null;
+  const list = <OpenDoubtList open={open} />;
   return (
     <section className="card unconfirmed open-doubts" aria-labelledby="open-doubts-title" data-testid="open-doubts">
       <h2 id="open-doubts-title" className="card__title unconfirmed__title">
@@ -53,6 +56,23 @@ export function OpenDoubts() {
         <span>{tr('shell.dossier.open.title', { count: open.length })}</span>
       </h2>
       <p className="unconfirmed__text">{tr('shell.dossier.open.text')}</p>
+      {open.length > OPEN_FOLD ? (
+        <details className="open-doubts__fold" data-testid="open-doubts-fold">
+          <summary className="open-doubts__summary">{tr('shell.dossier.open.fold', { count: open.length })}</summary>
+          {list}
+        </details>
+      ) : (
+        list
+      )}
+    </section>
+  );
+}
+
+function OpenDoubtList({ open }: { open: readonly Doubt[] }) {
+  const tr = useT();
+  const store = useShellStore();
+  const lang = useShell((s) => s.lang);
+  return (
       <ul className="unconfirmed__list">
         {open.map((d) => (
           <li key={d.id} className="unconfirmed__row" data-testid="open-doubt">
@@ -69,7 +89,6 @@ export function OpenDoubts() {
           </li>
         ))}
       </ul>
-    </section>
   );
 }
 

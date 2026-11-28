@@ -29,8 +29,11 @@ export function FixBanner() {
 
 export function GuidedReason() {
   const tr = useT();
-  const reason = useShell((s) => s.guidedReason);
-  if (!reason) return null;
+  const reasons = useShell((s) => s.guidedReason);
+  const lang = useShell((s) => s.lang);
+  if (!reasons) return null;
+  // La raison du moteur dans la langue de l'utilisateur ; à défaut, la raison générique (jamais l'autre langue).
+  const reason = reasons[lang] ?? tr('shell.auto.guided.generic');
   return (
     <div className="notice notice--info guided-reason" role="status" data-testid="guided-reason">
       <Icon name="info" />

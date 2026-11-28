@@ -10,11 +10,11 @@
  * Chaque réponse est UN pas d'annulation ; les questions se recalculent après chaque changement du projet.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DOUBT_UNKNOWN } from '../../../engine';
+import { DOUBT_CONFIRM, DOUBT_UNKNOWN } from '../../../engine';
 import type { Doubt } from '../../../engine';
-import { budget, choicesOf, doubtAnchor, fixStepOf, inputKindOf, isAnswered, isUsual, pageThumbs, sheetOf, whyOf } from '../auto';
+import { anchorOfDoubt, budget, choicesOf, fixOf, inputKindOf, isAnswered, isUsual, pageThumbs, sheetOf, whyOf } from '../auto';
 import { parseNumber } from '../numbers';
-import { selectDeck, selectMarks, selectOpenDoubts, selectReading, useShell, useShellStore } from '../store';
+import { selectDeck, selectMarks, selectOpenDoubts, selectProject, selectReading, useShell, useShellStore } from '../store';
 import { useT } from './common';
 import { Icon } from './icons';
 import { Snippet } from './SheetThumb';
@@ -47,7 +47,8 @@ function DoubtCard({ doubt, index, total, usualOnly, openUsual }: { doubt: Doubt
   const choices = choicesOf(doubt);
   const input = inputKindOf(doubt);
   const previous = marks.doubts?.[doubt.id];
-  const answered = isAnswered(doubt, marks);
+  const project = useShell(selectProject);
+  const answered = isAnswered(doubt, project);
   const initial = answered && previous && previous.value !== DOUBT_UNKNOWN ? previous.value : (doubt.proposal?.value ?? choices[0]?.value ?? '');
   const [choice, setChoice] = useState(initial);
   const [text, setText] = useState(input && answered && previous ? previous.value : (doubt.proposal?.value ?? ''));
@@ -56,12 +57,13 @@ function DoubtCard({ doubt, index, total, usualOnly, openUsual }: { doubt: Doubt
     head.current?.focus({ preventScroll: true });
   }, [doubt.id]);
 
-  const anchor = useMemo(() => doubtAnchor(doubt.id, reading, sheets), [doubt.id, reading, sheets]);
+  const anchor = useMemo(() => anchorOfDoubt(doubt, reading, sheets), [doubt, reading, sheets]);
   const page = useMemo(() => (anchor ? pageThumbs(reading, sheets).find((p) => p.page === anchor.page) : undefined), [anchor, reading, sheets]);
   const sheet = sheetOf(doubt.sheet, lang);
-  const fix = fixStepOf(doubt.id);
+  const fix = fixOf(doubt);
   const numberOk = input !== 'number' || parseNumber(text) !== null;
-  const value = input ? text.trim() : choice;
+  // Rien à choisir ni à saisir (valeurs d'usage regroupées) : « Confirmer » envoie la valeur que le moteur attend.
+  const value = input ? text.trim() : choices.length === 0 ? DOUBT_CONFIRM : choice;
   const canSend = value !== '' && numberOk;
   const send = (): void => {
     if (!canSend) return;
@@ -146,7 +148,7 @@ function DoubtCard({ doubt, index, total, usualOnly, openUsual }: { doubt: Doubt
           {tr('shell.doubt.unknown')}
         </button>
         {fix ? (
-          <button type="button" className="btn btn--ghost" onClick={() => store.getState().openFix({ planStep: fix, what: `doubt.${doubt.id}.datum` })} data-testid="doubt-fix">
+          <button type="button" className="btn btn--ghost" onClick={() => store.getState().openFix({ planStep: fix.planStep, storeyId: fix.storeyId, what: `doubt.${doubt.id}.datum` })} data-testid="doubt-fix">
             <Icon name="edit" size={16} />
             <span>{tr('shell.doubt.fix')}</span>
           </button>

@@ -158,6 +158,12 @@ export function sheetsToCsv(sheets: LuxeebSheets, project: Project, lang: Lang):
   lines.push(line([t(lang, 'export.csv.section.dossierAssumptions')]));
   lines.push(line([t(lang, 'export.common.value'), t(lang, 'export.dossier.col.source')]));
   for (const a of dossier.assumptions) lines.push(line([a.text, a.source]));
+  if ((dossier.answeredDoubts ?? []).length > 0) {
+    blank();
+    lines.push(line([t(lang, 'export.dossier.doubts.title')]));
+    lines.push(line([t(lang, 'export.dossier.doubts.col.datum'), t(lang, 'export.dossier.doubts.col.status')]));
+    for (const d of dossier.answeredDoubts ?? []) lines.push(line([d.label, d.status]));
+  }
 
   return BOM + lines.join(EOL) + EOL;
 }
