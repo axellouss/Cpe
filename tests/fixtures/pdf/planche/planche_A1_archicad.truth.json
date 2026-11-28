@@ -1,0 +1,2331 @@
+{
+ "file": "planche_A1_archicad.pdf",
+ "synthetic": true,
+ "generator": "tests/fixtures/pdf/planche/make_planches.py",
+ "style": "archicad",
+ "language": "fr",
+ "scale_den": 100,
+ "north_azimuth_deg": 250.0,
+ "north_cw_from_up_deg": 110.0,
+ "facade_azimuth_deg": {
+  "front": 70.0,
+  "rear": 250.0,
+  "side": 160.0,
+  "party": 340.0
+ },
+ "building": {
+  "name": "Maison Exemple",
+  "footprint_m": [
+   9.2,
+   12.4
+  ],
+  "footprint_area_m2": 114.08,
+  "attachment": "semi-detached",
+  "party_side": "right",
+  "storeys_heated": 2,
+  "basement": false,
+  "roof": "flat",
+  "garage": {
+   "level": 0,
+   "heated": false,
+   "area_m2": 15.876,
+   "inside_footprint": true,
+   "envelope": "isolant entre garage et logement, pas autour du garage ; dalle d'étage isolée en sous-face"
+  },
+  "heated_area_by_level_m2": {
+   "0": 75.9168,
+   "1": 92.9376
+  },
+  "labelled_heated_area_by_level_m2": {
+   "0": 70.82,
+   "1": 87.84
+  },
+  "escalier_non_etiquete_m2": 5.096
+ },
+ "pages": [
+  {
+   "number": 1,
+   "width_pt": 2383.94,
+   "height_pt": 1683.78,
+   "format": "A1",
+   "orientation": "landscape",
+   "scale_den": 100,
+   "views": [
+    {
+     "kind": "plan",
+     "title": "PLAN REZ-DE-CHAUSSÉE",
+     "level": 0,
+     "outline_pt": [
+      [
+       200.0,
+       300.0
+      ],
+      [
+       460.787,
+       300.0
+      ],
+      [
+       460.787,
+       651.496
+      ],
+      [
+       200.0,
+       651.496
+      ]
+     ],
+     "outline_area_m2": 114.08,
+     "heated_outline_pt": [
+      [
+       200.0,
+       300.0
+      ],
+      [
+       460.787,
+       300.0
+      ],
+      [
+       460.787,
+       485.953
+      ],
+      [
+       368.945,
+       485.953
+      ],
+      [
+       368.945,
+       651.496
+      ],
+      [
+       200.0,
+       651.496
+      ]
+     ],
+     "heated_outline_area_m2": 95.1584,
+     "rooms": [
+      {
+       "name": "Séjour / Cuisine",
+       "area_true_m2": 48.7296,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         212.472,
+         312.472
+        ],
+        [
+         452.283,
+         312.472
+        ],
+        [
+         452.283,
+         475.748
+        ],
+        [
+         212.472,
+         475.748
+        ]
+       ],
+       "area_label": "S: 48,73 m²",
+       "label_pt": [
+        290.71,
+        435.8
+       ]
+      },
+      {
+       "name": "Escalier",
+       "area_true_m2": 5.096,
+       "heated_true": true,
+       "kind": "stair",
+       "poly_pt": [
+        [
+         212.472,
+         481.417
+        ],
+        [
+         268.031,
+         481.417
+        ],
+        [
+         268.031,
+         555.118
+        ],
+        [
+         212.472,
+         555.118
+        ]
+       ],
+       "area_label": null,
+       "label_pt": null
+      },
+      {
+       "name": "Buanderie",
+       "area_true_m2": 2.5088,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         212.472,
+         558.52
+        ],
+        [
+         268.031,
+         558.52
+        ],
+        [
+         268.031,
+         594.803
+        ],
+        [
+         212.472,
+         594.803
+        ]
+       ],
+       "area_label": "S: 2,51 m²",
+       "label_pt": [
+        242.52,
+        574.13
+       ]
+      },
+      {
+       "name": "WC",
+       "area_true_m2": 2.8224,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         212.472,
+         598.205
+        ],
+        [
+         268.031,
+         598.205
+        ],
+        [
+         268.031,
+         639.024
+        ],
+        [
+         212.472,
+         639.024
+        ]
+       ],
+       "area_label": "S: 2,82 m²",
+       "label_pt": [
+        232.6,
+        620.05
+       ]
+      },
+      {
+       "name": "Hall",
+       "area_true_m2": 14.6288,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         271.433,
+         481.417
+        ],
+        [
+         358.74,
+         481.417
+        ],
+        [
+         358.74,
+         594.803
+        ],
+        [
+         313.386,
+         594.803
+        ],
+        [
+         313.386,
+         639.024
+        ],
+        [
+         271.433,
+         639.024
+        ]
+       ],
+       "area_label": "S: 14,63 m²",
+       "label_pt": [
+        320.47,
+        539.26
+       ]
+      },
+      {
+       "name": "Vestiaire",
+       "area_true_m2": 2.1312,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         316.787,
+         598.205
+        ],
+        [
+         358.74,
+         598.205
+        ],
+        [
+         358.74,
+         639.024
+        ],
+        [
+         316.787,
+         639.024
+        ]
+       ],
+       "area_label": "S: 2,13 m²",
+       "label_pt": [
+        337.76,
+        615.8
+       ]
+      },
+      {
+       "name": "Garage",
+       "area_true_m2": 15.876,
+       "heated_true": false,
+       "kind": "garage",
+       "poly_pt": [
+        [
+         368.945,
+         485.953
+        ],
+        [
+         452.283,
+         485.953
+        ],
+        [
+         452.283,
+         639.024
+        ],
+        [
+         368.945,
+         639.024
+        ]
+       ],
+       "area_label": "S: 15,88 m²",
+       "label_pt": [
+        410.61,
+        560.52
+       ]
+      },
+      {
+       "name": "Terrasse",
+       "area_true_m2": 19.2,
+       "heated_true": false,
+       "kind": "exterior",
+       "poly_pt": [
+        [
+         212.472,
+         209.291
+        ],
+        [
+         382.551,
+         209.291
+        ],
+        [
+         382.551,
+         300.0
+        ],
+        [
+         212.472,
+         300.0
+        ]
+       ],
+       "area_label": "S: 19,20 m²",
+       "label_pt": [
+        302.05,
+        247.29
+       ]
+      }
+     ],
+     "openings": [
+      {
+       "kind": "window",
+       "side": "rear",
+       "a_pt": [
+        228.346,
+        300.0
+       ],
+       "b_pt": [
+        341.732,
+        300.0
+       ],
+       "width_m": 4.0,
+       "height_m": 2.15,
+       "sill_m": 0.0,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F1",
+       "azimuth_deg": 250.0
+      },
+      {
+       "kind": "window",
+       "side": "rear",
+       "a_pt": [
+        363.984,
+        300.0
+       ],
+       "b_pt": [
+        398.0,
+        300.0
+       ],
+       "width_m": 1.2,
+       "height_m": 2.15,
+       "sill_m": 0.0,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F2",
+       "azimuth_deg": 250.0
+      },
+      {
+       "kind": "window",
+       "side": "left",
+       "a_pt": [
+        200.0,
+        351.024
+       ],
+       "b_pt": [
+        200.0,
+        385.039
+       ],
+       "width_m": 1.2,
+       "height_m": 1.25,
+       "sill_m": 0.9,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F3",
+       "azimuth_deg": 160.0
+      },
+      {
+       "kind": "window",
+       "side": "left",
+       "a_pt": [
+        200.0,
+        568.299
+       ],
+       "b_pt": [
+        200.0,
+        585.307
+       ],
+       "width_m": 0.6,
+       "height_m": 0.6,
+       "sill_m": 1.6,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F4",
+       "azimuth_deg": 160.0
+      },
+      {
+       "kind": "window",
+       "side": "left",
+       "a_pt": [
+        200.0,
+        608.976
+       ],
+       "b_pt": [
+        200.0,
+        625.984
+       ],
+       "width_m": 0.6,
+       "height_m": 0.8,
+       "sill_m": 1.4,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F5",
+       "azimuth_deg": 160.0
+      },
+      {
+       "kind": "door",
+       "side": "front",
+       "a_pt": [
+        281.78,
+        651.496
+       ],
+       "b_pt": [
+        310.126,
+        651.496
+       ],
+       "width_m": 1.0,
+       "height_m": 2.2,
+       "sill_m": 0.0,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "Porte d'entrée",
+       "azimuth_deg": 70.0
+      },
+      {
+       "kind": "door",
+       "side": "front",
+       "a_pt": [
+        376.882,
+        651.496
+       ],
+       "b_pt": [
+        444.913,
+        651.496
+       ],
+       "width_m": 2.4,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": false,
+       "name": "Porte de garage",
+       "azimuth_deg": 70.0
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        363.843,
+        498.425
+       ],
+       "b_pt": [
+        363.843,
+        524.787
+       ],
+       "width_m": 0.93,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": true,
+       "in_envelope": true,
+       "name": "Porte garage / logement"
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        269.732,
+        566.457
+       ],
+       "b_pt": [
+        269.732,
+        589.134
+       ],
+       "width_m": 0.8,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        269.732,
+        607.559
+       ],
+       "b_pt": [
+        269.732,
+        627.402
+       ],
+       "width_m": 0.7,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        324.724,
+        596.504
+       ],
+       "b_pt": [
+        347.402,
+        596.504
+       ],
+       "width_m": 0.8,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      }
+     ],
+     "party_edges_pt": [
+      [
+       [
+        460.787,
+        300.0
+       ],
+       [
+        460.787,
+        651.496
+       ]
+      ]
+     ],
+     "party_wall_length_m": 12.4,
+     "unheated_edges_pt": [
+      [
+       [
+        460.787,
+        485.953
+       ],
+       [
+        368.945,
+        485.953
+       ]
+      ],
+      [
+       [
+        368.945,
+        485.953
+       ],
+       [
+        368.945,
+        651.496
+       ]
+      ]
+     ],
+     "wall_to_unheated_length_m": 9.08,
+     "dims": [
+      {
+       "text": "1,00",
+       "sup": "",
+       "chain": "rear-openings"
+      },
+      {
+       "width_text": "4,00",
+       "height_text": "2,15",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "78",
+       "sup": "5",
+       "chain": "rear-openings"
+      },
+      {
+       "width_text": "1,20",
+       "height_text": "2,15",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "2,21",
+       "sup": "5",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "44",
+       "sup": "",
+       "chain": "rear-walls"
+      },
+      {
+       "text": "8,46",
+       "sup": "",
+       "chain": "rear-walls"
+      },
+      {
+       "text": "30",
+       "sup": "",
+       "chain": "rear-walls"
+      },
+      {
+       "text": "9,20",
+       "sup": "",
+       "chain": "rear-overall"
+      },
+      {
+       "text": "1,80",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "width_text": "1,20",
+       "height_text": "1,25",
+       "chain": "left-openings"
+      },
+      {
+       "text": "6,46",
+       "sup": "5",
+       "chain": "left-openings"
+      },
+      {
+       "width_text": "60",
+       "height_text": "60",
+       "chain": "left-openings"
+      },
+      {
+       "text": "83",
+       "sup": "5",
+       "chain": "left-openings"
+      },
+      {
+       "width_text": "60",
+       "height_text": "80",
+       "chain": "left-openings"
+      },
+      {
+       "text": "90",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "text": "44",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "5,76",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "20",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "5,56",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "44",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "12,40",
+       "sup": "",
+       "chain": "left-overall"
+      }
+     ],
+     "daylight_boxes": [
+      {
+       "texts": [
+        "Surface vitrée : 12,68m²",
+        "Surface séjour : 48,73m²",
+        "Coefficient selon règlement",
+        "1/8 surface du plancher : 6,09m²"
+       ],
+       "bbox_pt": [
+        333.23,
+        329.76,
+        432.44,
+        359.8
+       ],
+       "glazed_m2": 12.68,
+       "floor_m2": 48.73,
+       "required_m2": 6.09
+      }
+     ],
+     "title_parts": [
+      "PLAN REZ-DE-CHAUSSÉE"
+     ],
+     "title_bbox_pt": [
+      60,
+      898,
+      271.58,
+      918.74
+     ],
+     "bbox_pt": [
+      60,
+      40,
+      500,
+      880
+     ],
+     "clip_pt": [
+      60,
+      40,
+      500,
+      880
+     ],
+     "building_bbox_pt": [
+      200.0,
+      300.0,
+      460.787,
+      651.496
+     ],
+     "scale_den": 100
+    },
+    {
+     "kind": "plan",
+     "title": "PLAN 1ER ÉTAGE",
+     "level": 1,
+     "outline_pt": [
+      [
+       685.0,
+       300.0
+      ],
+      [
+       945.787,
+       300.0
+      ],
+      [
+       945.787,
+       651.496
+      ],
+      [
+       685.0,
+       651.496
+      ]
+     ],
+     "outline_area_m2": 114.08,
+     "heated_outline_pt": [
+      [
+       685.0,
+       300.0
+      ],
+      [
+       945.787,
+       300.0
+      ],
+      [
+       945.787,
+       651.496
+      ],
+      [
+       685.0,
+       651.496
+      ]
+     ],
+     "heated_outline_area_m2": 114.08,
+     "rooms": [
+      {
+       "name": "Chambre 1",
+       "area_true_m2": 14.8896,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         697.472,
+         312.472
+        ],
+        [
+         809.724,
+         312.472
+        ],
+        [
+         809.724,
+         419.055
+        ],
+        [
+         697.472,
+         419.055
+        ]
+       ],
+       "area_label": "S: 14,89 m²",
+       "label_pt": [
+        726.1,
+        391.86
+       ]
+      },
+      {
+       "name": "Chambre 2",
+       "area_true_m2": 16.4688,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         813.126,
+         312.472
+        ],
+        [
+         937.283,
+         312.472
+        ],
+        [
+         937.283,
+         419.055
+        ],
+        [
+         813.126,
+         419.055
+        ]
+       ],
+       "area_label": "S: 16,47 m²",
+       "label_pt": [
+        875.21,
+        381.94
+       ]
+      },
+      {
+       "name": "Salle de bains",
+       "area_true_m2": 3.8416,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         697.472,
+         422.457
+        ],
+        [
+         753.031,
+         422.457
+        ],
+        [
+         753.031,
+         478.016
+        ],
+        [
+         697.472,
+         478.016
+        ]
+       ],
+       "area_label": "S: 3,84 m²",
+       "label_pt": [
+        725.25,
+        444.3
+       ]
+      },
+      {
+       "name": "Escalier",
+       "area_true_m2": 5.096,
+       "heated_true": true,
+       "kind": "stair",
+       "poly_pt": [
+        [
+         697.472,
+         481.417
+        ],
+        [
+         753.031,
+         481.417
+        ],
+        [
+         753.031,
+         555.118
+        ],
+        [
+         697.472,
+         555.118
+        ]
+       ],
+       "area_label": null,
+       "label_pt": null
+      },
+      {
+       "name": "Hall",
+       "area_true_m2": 13.4784,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         756.433,
+         422.457
+        ],
+        [
+         838.071,
+         422.457
+        ],
+        [
+         838.071,
+         555.118
+        ],
+        [
+         756.433,
+         555.118
+        ]
+       ],
+       "area_label": "S: 13,48 m²",
+       "label_pt": [
+        797.25,
+        520.84
+       ]
+      },
+      {
+       "name": "Dressing",
+       "area_true_m2": 8.6528,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         841.472,
+         422.457
+        ],
+        [
+         937.283,
+         422.457
+        ],
+        [
+         937.283,
+         495.024
+        ],
+        [
+         841.472,
+         495.024
+        ]
+       ],
+       "area_label": "S: 8,65 m²",
+       "label_pt": [
+        889.38,
+        458.47
+       ]
+      },
+      {
+       "name": "Chambre 3",
+       "area_true_m2": 16.7648,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         841.472,
+         498.425
+        ],
+        [
+         937.283,
+         498.425
+        ],
+        [
+         937.283,
+         639.024
+        ],
+        [
+         841.472,
+         639.024
+        ]
+       ],
+       "area_label": "S: 16,76 m²",
+       "label_pt": [
+        889.38,
+        569.03
+       ]
+      },
+      {
+       "name": "Salle d'eau",
+       "area_true_m2": 7.8384,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         697.472,
+         558.52
+        ],
+        [
+         775.709,
+         558.52
+        ],
+        [
+         775.709,
+         639.024
+        ],
+        [
+         697.472,
+         639.024
+        ]
+       ],
+       "area_label": "S: 7,84 m²",
+       "label_pt": [
+        736.59,
+        601.62
+       ]
+      },
+      {
+       "name": "Local technique",
+       "area_true_m2": 5.9072,
+       "heated_true": true,
+       "kind": "room",
+       "poly_pt": [
+        [
+         779.11,
+         558.52
+        ],
+        [
+         838.071,
+         558.52
+        ],
+        [
+         838.071,
+         639.024
+        ],
+        [
+         779.11,
+         639.024
+        ]
+       ],
+       "area_label": "S: 5,91 m²",
+       "label_pt": [
+        808.59,
+        587.45
+       ]
+      }
+     ],
+     "openings": [
+      {
+       "kind": "window",
+       "side": "rear",
+       "a_pt": [
+        724.685,
+        300.0
+       ],
+       "b_pt": [
+        781.378,
+        300.0
+       ],
+       "width_m": 2.0,
+       "height_m": 1.25,
+       "sill_m": 0.9,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F6",
+       "azimuth_deg": 250.0
+      },
+      {
+       "kind": "window",
+       "side": "rear",
+       "a_pt": [
+        843.598,
+        300.0
+       ],
+       "b_pt": [
+        905.961,
+        300.0
+       ],
+       "width_m": 2.2,
+       "height_m": 1.25,
+       "sill_m": 0.9,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F7",
+       "azimuth_deg": 250.0
+      },
+      {
+       "kind": "window",
+       "side": "left",
+       "a_pt": [
+        685.0,
+        345.354
+       ],
+       "b_pt": [
+        685.0,
+        373.701
+       ],
+       "width_m": 1.0,
+       "height_m": 1.25,
+       "sill_m": 0.9,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F8",
+       "azimuth_deg": 160.0
+      },
+      {
+       "kind": "window",
+       "side": "left",
+       "a_pt": [
+        685.0,
+        438.898
+       ],
+       "b_pt": [
+        685.0,
+        461.575
+       ],
+       "width_m": 0.8,
+       "height_m": 1.0,
+       "sill_m": 1.2,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F9",
+       "azimuth_deg": 160.0
+      },
+      {
+       "kind": "window",
+       "side": "left",
+       "a_pt": [
+        685.0,
+        583.465
+       ],
+       "b_pt": [
+        685.0,
+        611.811
+       ],
+       "width_m": 1.0,
+       "height_m": 1.0,
+       "sill_m": 1.2,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F10",
+       "azimuth_deg": 160.0
+      },
+      {
+       "kind": "window",
+       "side": "front",
+       "a_pt": [
+        795.551,
+        651.496
+       ],
+       "b_pt": [
+        812.559,
+        651.496
+       ],
+       "width_m": 0.6,
+       "height_m": 0.6,
+       "sill_m": 1.6,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F11",
+       "azimuth_deg": 70.0
+      },
+      {
+       "kind": "window",
+       "side": "front",
+       "a_pt": [
+        860.748,
+        651.496
+       ],
+       "b_pt": [
+        917.441,
+        651.496
+       ],
+       "width_m": 2.0,
+       "height_m": 1.25,
+       "sill_m": 0.9,
+       "exterior": true,
+       "to_unheated": false,
+       "in_envelope": true,
+       "name": "F12",
+       "azimuth_deg": 70.0
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        759.268,
+        420.756
+       ],
+       "b_pt": [
+        781.945,
+        420.756
+       ],
+       "width_m": 0.8,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        813.976,
+        420.756
+       ],
+       "b_pt": [
+        836.654,
+        420.756
+       ],
+       "width_m": 0.8,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        754.732,
+        430.394
+       ],
+       "b_pt": [
+        754.732,
+        453.071
+       ],
+       "width_m": 0.8,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        839.772,
+        441.732
+       ],
+       "b_pt": [
+        839.772,
+        464.409
+       ],
+       "width_m": 0.8,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        839.772,
+        515.433
+       ],
+       "b_pt": [
+        839.772,
+        538.11
+       ],
+       "width_m": 0.8,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        757.567,
+        556.819
+       ],
+       "b_pt": [
+        774.575,
+        556.819
+       ],
+       "width_m": 0.6,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      },
+      {
+       "kind": "door",
+       "side": "interior",
+       "a_pt": [
+        792.717,
+        556.819
+       ],
+       "b_pt": [
+        815.394,
+        556.819
+       ],
+       "width_m": 0.8,
+       "height_m": 2.1,
+       "sill_m": 0.0,
+       "exterior": false,
+       "to_unheated": false,
+       "in_envelope": false
+      }
+     ],
+     "party_edges_pt": [
+      [
+       [
+        945.787,
+        300.0
+       ],
+       [
+        945.787,
+        651.496
+       ]
+      ]
+     ],
+     "party_wall_length_m": 12.4,
+     "unheated_edges_pt": [],
+     "wall_to_unheated_length_m": 0,
+     "dims": [
+      {
+       "text": "1,40",
+       "sup": "",
+       "chain": "rear-openings"
+      },
+      {
+       "width_text": "2,00",
+       "height_text": "1,25",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "2,19",
+       "sup": "5",
+       "chain": "rear-openings"
+      },
+      {
+       "width_text": "2,20",
+       "height_text": "1,25",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "1,40",
+       "sup": "5",
+       "chain": "rear-openings"
+      },
+      {
+       "text": "44",
+       "sup": "",
+       "chain": "rear-walls"
+      },
+      {
+       "text": "3,96",
+       "sup": "",
+       "chain": "rear-walls"
+      },
+      {
+       "text": "12",
+       "sup": "",
+       "chain": "rear-walls"
+      },
+      {
+       "text": "4,38",
+       "sup": "",
+       "chain": "rear-walls"
+      },
+      {
+       "text": "30",
+       "sup": "",
+       "chain": "rear-walls"
+      },
+      {
+       "text": "9,20",
+       "sup": "",
+       "chain": "rear-overall"
+      },
+      {
+       "text": "1,60",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "width_text": "1,00",
+       "height_text": "1,25",
+       "chain": "left-openings"
+      },
+      {
+       "text": "2,30",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "width_text": "80",
+       "height_text": "1,00",
+       "chain": "left-openings"
+      },
+      {
+       "text": "4,30",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "width_text": "1,00",
+       "height_text": "1,00",
+       "chain": "left-openings"
+      },
+      {
+       "text": "1,40",
+       "sup": "",
+       "chain": "left-openings"
+      },
+      {
+       "text": "44",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "3,76",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "12",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "4,68",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "12",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "2,84",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "44",
+       "sup": "",
+       "chain": "left-walls"
+      },
+      {
+       "text": "12,40",
+       "sup": "",
+       "chain": "left-overall"
+      }
+     ],
+     "daylight_boxes": [
+      {
+       "texts": [
+        "Surface vitrée : 3,75m²",
+        "Surface chambre : 14,89m²",
+        "Coefficient selon règlement",
+        "1/8 surface du plancher : 1,86m²"
+       ],
+       "bbox_pt": [
+        709.09,
+        326.93,
+        796.97,
+        356.97
+       ],
+       "glazed_m2": 3.75,
+       "floor_m2": 14.89,
+       "required_m2": 1.86
+      },
+      {
+       "texts": [
+        "Surface vitrée : 2,75m²",
+        "Surface chambre : 16,47m²",
+        "Coefficient selon règlement",
+        "1/8 surface du plancher : 2,06m²"
+       ],
+       "bbox_pt": [
+        822.48,
+        326.93,
+        910.35,
+        356.97
+       ],
+       "glazed_m2": 2.75,
+       "floor_m2": 16.47,
+       "required_m2": 2.06
+      }
+     ],
+     "title_parts": [
+      "PLAN 1",
+      "ER",
+      " ÉTAGE"
+     ],
+     "title_bbox_pt": [
+      545,
+      898,
+      680.11,
+      918.74
+     ],
+     "bbox_pt": [
+      545,
+      40,
+      985,
+      880
+     ],
+     "clip_pt": [
+      545,
+      40,
+      985,
+      880
+     ],
+     "building_bbox_pt": [
+      685.0,
+      300.0,
+      945.787,
+      651.496
+     ],
+     "scale_den": 100
+    },
+    {
+     "kind": "roof-plan",
+     "title": "PLAN TOITURE",
+     "level": 2,
+     "outline_pt": [
+      [
+       1170.0,
+       300.0
+      ],
+      [
+       1430.787,
+       300.0
+      ],
+      [
+       1430.787,
+       651.496
+      ],
+      [
+       1170.0,
+       651.496
+      ]
+     ],
+     "outline_area_m2": 114.08,
+     "roof_fill_bbox_pt": [
+      1170.0,
+      300.0,
+      1430.787,
+      651.496
+     ],
+     "roof": "flat",
+     "parapet_thickness_m": 0.3,
+     "title_parts": [
+      "PLAN TOITURE"
+     ],
+     "title_bbox_pt": [
+      1030,
+      898,
+      1153.74,
+      918.74
+     ],
+     "bbox_pt": [
+      1030,
+      40,
+      1470,
+      880
+     ],
+     "clip_pt": [
+      1030,
+      40,
+      1470,
+      880
+     ],
+     "building_bbox_pt": [
+      1170.0,
+      300.0,
+      1430.787,
+      651.496
+     ],
+     "scale_den": 100
+    },
+    {
+     "kind": "elevation",
+     "title": "FAÇADE AVANT",
+     "name": "front",
+     "azimuth_deg": 70.0,
+     "bbox_pt": [
+      1540,
+      140,
+      1960,
+      370
+     ],
+     "building_bbox_pt": [
+      1620.0,
+      162.165,
+      1880.787,
+      346.417
+     ],
+     "title_bbox_pt": [
+      1560,
+      393,
+      1690.36,
+      413.74
+     ],
+     "openings": [
+      {
+       "kind": "door",
+       "name": "Porte d'entrée",
+       "rect_pt": [
+        1701.78,
+        276.97,
+        1730.13,
+        339.33
+       ],
+       "width_m": 1.0,
+       "height_m": 2.2
+      },
+      {
+       "kind": "door",
+       "name": "Porte de garage",
+       "rect_pt": [
+        1796.88,
+        284.06,
+        1864.91,
+        343.58
+       ],
+       "width_m": 2.4,
+       "height_m": 2.1
+      },
+      {
+       "kind": "window",
+       "name": "F11",
+       "rect_pt": [
+        1730.55,
+        194.76,
+        1747.56,
+        211.77
+       ],
+       "width_m": 0.6,
+       "height_m": 0.6
+      },
+      {
+       "kind": "window",
+       "name": "F12",
+       "rect_pt": [
+        1795.75,
+        196.18,
+        1852.44,
+        231.61
+       ],
+       "width_m": 2.0,
+       "height_m": 1.25
+      }
+     ],
+     "scale_den": 100
+    },
+    {
+     "kind": "elevation",
+     "title": "FAÇADE ARRIÈRE",
+     "name": "rear",
+     "azimuth_deg": 250.0,
+     "bbox_pt": [
+      1940,
+      140,
+      2340,
+      370
+     ],
+     "building_bbox_pt": [
+      2000.0,
+      162.165,
+      2260.787,
+      346.417
+     ],
+     "title_bbox_pt": [
+      1985,
+      393,
+      2134.24,
+      413.74
+     ],
+     "openings": [
+      {
+       "kind": "window",
+       "name": "F1",
+       "rect_pt": [
+        2119.05,
+        278.39,
+        2232.44,
+        339.33
+       ],
+       "width_m": 4.0,
+       "height_m": 2.15
+      },
+      {
+       "kind": "window",
+       "name": "F2",
+       "rect_pt": [
+        2062.79,
+        278.39,
+        2096.8,
+        339.33
+       ],
+       "width_m": 1.2,
+       "height_m": 2.15
+      },
+      {
+       "kind": "window",
+       "name": "F6",
+       "rect_pt": [
+        2164.41,
+        196.18,
+        2221.1,
+        231.61
+       ],
+       "width_m": 2.0,
+       "height_m": 1.25
+      },
+      {
+       "kind": "window",
+       "name": "F7",
+       "rect_pt": [
+        2039.83,
+        196.18,
+        2102.19,
+        231.61
+       ],
+       "width_m": 2.2,
+       "height_m": 1.25
+      }
+     ],
+     "scale_den": 100
+    },
+    {
+     "kind": "section",
+     "title": "COUPE BB",
+     "name": "BB",
+     "cut": {
+      "axis": "y",
+      "at_m": 2.4
+     },
+     "bbox_pt": [
+      1560,
+      530,
+      2050,
+      800
+     ],
+     "building_bbox_pt": [
+      1673.386,
+      557.165,
+      1934.173,
+      757.575
+     ],
+     "title_bbox_pt": [
+      1560,
+      823,
+      1647.86,
+      843.74
+     ],
+     "scale_den": 100,
+     "stipple_traits": 42159
+    },
+    {
+     "kind": "table",
+     "title": "CALCULS DES SURFACES",
+     "bbox_pt": [
+      2100,
+      470,
+      2340,
+      554
+     ],
+     "title_bbox_pt": [
+      2100,
+      565,
+      2315.37,
+      585.74
+     ]
+    },
+    {
+     "kind": "photo",
+     "title": "PHOTO AÉRIENNE",
+     "bbox_pt": [
+      2100,
+      620,
+      2220,
+      710
+     ],
+     "title_bbox_pt": [
+      2100,
+      723,
+      2252.08,
+      743.74
+     ]
+    },
+    {
+     "kind": "north",
+     "title": "NORD",
+     "bbox_pt": [
+      2278.6,
+      645,
+      2331.4,
+      706.4
+     ]
+    },
+    {
+     "kind": "notes",
+     "title": null,
+     "bbox_pt": [
+      1560,
+      884,
+      1820,
+      940
+     ]
+    },
+    {
+     "kind": "titleblock",
+     "title": null,
+     "bbox_pt": [
+      1860,
+      880,
+      2340,
+      1640
+     ]
+    },
+    {
+     "kind": "section",
+     "title": "COUPE AA",
+     "name": "AA",
+     "cut": {
+      "axis": "x",
+      "at_m": 7.2
+     },
+     "bbox_pt": [
+      70,
+      1270,
+      720,
+      1535
+     ],
+     "building_bbox_pt": [
+      211.732,
+      1287.165,
+      563.228,
+      1487.575
+     ],
+     "title_bbox_pt": [
+      80,
+      1573,
+      167.86,
+      1593.74
+     ],
+     "scale_den": 100,
+     "stipple_traits": 54855
+    },
+    {
+     "kind": "elevation",
+     "title": "FAÇADE LATÉRALE",
+     "name": "side",
+     "azimuth_deg": 160.0,
+     "bbox_pt": [
+      840,
+      1270,
+      1400,
+      1500
+     ],
+     "building_bbox_pt": [
+      953.386,
+      1287.165,
+      1304.882,
+      1471.417
+     ],
+     "title_bbox_pt": [
+      840,
+      1573,
+      1000.6,
+      1593.74
+     ],
+     "openings": [
+      {
+       "kind": "window",
+       "name": "F3",
+       "rect_pt": [
+        1004.41,
+        1403.39,
+        1038.42,
+        1438.82
+       ],
+       "width_m": 1.2,
+       "height_m": 1.25
+      },
+      {
+       "kind": "window",
+       "name": "F4",
+       "rect_pt": [
+        1221.68,
+        1401.97,
+        1238.69,
+        1418.98
+       ],
+       "width_m": 0.6,
+       "height_m": 0.6
+      },
+      {
+       "kind": "window",
+       "name": "F5",
+       "rect_pt": [
+        1262.36,
+        1401.97,
+        1279.37,
+        1424.65
+       ],
+       "width_m": 0.6,
+       "height_m": 0.8
+      },
+      {
+       "kind": "window",
+       "name": "F8",
+       "rect_pt": [
+        998.74,
+        1321.18,
+        1027.09,
+        1356.61
+       ],
+       "width_m": 1.0,
+       "height_m": 1.25
+      },
+      {
+       "kind": "window",
+       "name": "F9",
+       "rect_pt": [
+        1092.28,
+        1319.76,
+        1114.96,
+        1348.11
+       ],
+       "width_m": 0.8,
+       "height_m": 1.0
+      },
+      {
+       "kind": "window",
+       "name": "F10",
+       "rect_pt": [
+        1236.85,
+        1319.76,
+        1265.2,
+        1348.11
+       ],
+       "width_m": 1.0,
+       "height_m": 1.0
+      }
+     ],
+     "scale_den": 100
+    }
+   ],
+   "levels": [
+    {
+     "label": "±0,00=+312,25",
+     "value_m": 0.0,
+     "altitude_m": 312.25,
+     "what": "axe de la rue"
+    },
+    {
+     "label": "-0,05=+312,20",
+     "value_m": -0.05,
+     "altitude_m": 312.2,
+     "what": "terrain / terrasse"
+    },
+    {
+     "label": "+0,05=+312,30",
+     "value_m": 0.05,
+     "altitude_m": 312.3,
+     "what": "NF garage"
+    },
+    {
+     "label": "+0,20=+312,45",
+     "value_m": 0.2,
+     "altitude_m": 312.45,
+     "what": "NF rez-de-chaussée"
+    },
+    {
+     "label": "+3,10=+315,35",
+     "value_m": 3.1,
+     "altitude_m": 315.35,
+     "what": "NF 1er étage"
+    },
+    {
+     "label": "+6,40=+318,65",
+     "value_m": 6.4,
+     "altitude_m": 318.65,
+     "what": "acrotère"
+    }
+   ],
+   "storeys": [
+    {
+     "level": 0,
+     "floor_m": 0.2,
+     "storey_height_m": 2.9,
+     "clear_height_m": 2.58
+    },
+    {
+     "level": 1,
+     "floor_m": 3.1,
+     "storey_height_m": 3.03,
+     "clear_height_m": 2.58
+    }
+   ],
+   "compositions": [
+    {
+     "key": "mur",
+     "title": "Composition mur :",
+     "element": "wall",
+     "to_unheated": false,
+     "view": "PLAN REZ-DE-CHAUSSÉE, PLAN 1ER ÉTAGE, COUPE BB",
+     "layers": [
+      {
+       "thickness_cm": 24.0,
+       "text": "Béton",
+       "material_key": "concrete"
+      },
+      {
+       "thickness_cm": 18.0,
+       "text": "Isolation type EPS",
+       "material_key": "eps"
+      },
+      {
+       "thickness_cm": 2.0,
+       "text": "Enduit de façade",
+       "material_key": "render_exterior"
+      }
+     ]
+    },
+    {
+     "key": "mur_garage",
+     "title": "Composition mur garage :",
+     "element": "wall",
+     "to_unheated": true,
+     "view": "PLAN REZ-DE-CHAUSSÉE",
+     "layers": [
+      {
+       "thickness_cm": 24.0,
+       "text": "Béton",
+       "material_key": "concrete"
+      },
+      {
+       "thickness_cm": 12.0,
+       "text": "Isolation type EPS",
+       "material_key": "eps"
+      }
+     ]
+    },
+    {
+     "key": "dalle_sol",
+     "title": "Composition dalle :",
+     "element": "ground-floor",
+     "view": "COUPE AA",
+     "bbox_pt": [
+      231.57,
+      1399.13,
+      317.17,
+      1461.13
+     ],
+     "target_pt": [
+      342.126,
+      1465.748
+     ],
+     "layers": [
+      {
+       "thickness_cm": 2.0,
+       "text": "Revêtement de sol",
+       "material_key": "floor_finish"
+      },
+      {
+       "thickness_cm": 7.0,
+       "text": "Chape",
+       "material_key": "screed"
+      },
+      {
+       "thickness_cm": 10.0,
+       "text": "Isolation mousse PUR",
+       "material_key": "pur"
+      },
+      {
+       "thickness_cm": 25.0,
+       "text": "Radier béton",
+       "material_key": "concrete"
+      },
+      {
+       "thickness_cm": 8.0,
+       "text": "Isolation type XPS sous radier",
+       "material_key": "xps"
+      },
+      {
+       "thickness_cm": null,
+       "text": "Film PE",
+       "material_key": "pe_film"
+      },
+      {
+       "thickness_cm": 5.0,
+       "text": "Béton de propreté",
+       "material_key": "lean_concrete"
+      },
+      {
+       "thickness_cm": 25.0,
+       "text": "Empierrement",
+       "material_key": "gravel"
+      }
+     ]
+    },
+    {
+     "key": "dalle_etage",
+     "title": "Composition dalle :",
+     "element": "intermediate-floor",
+     "view": "COUPE AA",
+     "bbox_pt": [
+      231.57,
+      1315.51,
+      292.1,
+      1356.89
+     ],
+     "target_pt": [
+      313.78,
+      1383.543
+     ],
+     "layers": [
+      {
+       "thickness_cm": 2.0,
+       "text": "Revêtement de sol",
+       "material_key": "floor_finish"
+      },
+      {
+       "thickness_cm": 6.0,
+       "text": "Chape",
+       "material_key": "screed"
+      },
+      {
+       "thickness_cm": 3.0,
+       "text": "Isolation acoustique",
+       "material_key": "impact_sound_insulation"
+      },
+      {
+       "thickness_cm": 20.0,
+       "text": "Dalle béton",
+       "material_key": "concrete"
+      },
+      {
+       "thickness_cm": 1.0,
+       "text": "Enduit plâtre",
+       "material_key": "plaster"
+      }
+     ]
+    },
+    {
+     "key": "dalle_garage",
+     "title": "Composition dalle :",
+     "element": "floor-over-unheated",
+     "view": "COUPE AA",
+     "bbox_pt": [
+      412.99,
+      1401.4,
+      505.93,
+      1442.78
+     ],
+     "target_pt": [
+      520.709,
+      1392.331
+     ],
+     "layers": [
+      {
+       "thickness_cm": 2.0,
+       "text": "Revêtement de sol",
+       "material_key": "floor_finish"
+      },
+      {
+       "thickness_cm": 6.0,
+       "text": "Chape",
+       "material_key": "screed"
+      },
+      {
+       "thickness_cm": 3.0,
+       "text": "Isolation acoustique",
+       "material_key": "impact_sound_insulation"
+      },
+      {
+       "thickness_cm": 20.0,
+       "text": "Dalle béton",
+       "material_key": "concrete"
+      },
+      {
+       "thickness_cm": 10.0,
+       "text": "Isolation type EPS en sous-face",
+       "material_key": "eps"
+      }
+     ]
+    },
+    {
+     "key": "toiture",
+     "title": "Composition toiture :",
+     "element": "roof",
+     "view": "COUPE AA",
+     "bbox_pt": [
+      421.5,
+      1316.36,
+      490.58,
+      1350.86
+     ],
+     "target_pt": [
+      515.039,
+      1299.921
+     ],
+     "layers": [
+      {
+       "thickness_cm": 2.0,
+       "text": "Étanchéité bitumineuse",
+       "material_key": "waterproofing"
+      },
+      {
+       "thickness_cm": 20.0,
+       "text": "Isolation type PIR",
+       "material_key": "pir"
+      },
+      {
+       "thickness_cm": 22.0,
+       "text": "Dalle béton",
+       "material_key": "concrete"
+      },
+      {
+       "thickness_cm": 1.0,
+       "text": "Enduit plâtre",
+       "material_key": "plaster"
+      }
+     ]
+    }
+   ],
+   "surface_table": {
+    "terrain_m2": 316.23,
+    "sealed_m2": 150.78,
+    "sealed_max_m2": 190,
+    "footprint_m2": 114.08,
+    "footprint_max_m2": 120,
+    "gross_floor_m2": 228.16,
+    "gross_floor_max_m2": 240
+   },
+   "titleblock": {
+    "object": "Construction d'une maison unifamiliale",
+    "phase": "Autorisation de bâtir",
+    "project_name": "Maison Exemple",
+    "lot": "Lot 7",
+    "street": "12, rue des Essais",
+    "postcode_locality": "L-0000 Exempleville",
+    "commune": "Exempleville",
+    "date": "15.01.2026",
+    "format": "A1",
+    "scale": "1/100",
+    "index": "A",
+    "project_number": "EX-007",
+    "owner": [
+     "M. et Mme Test",
+     "3, allée du Modèle",
+     "L-0001 Fictiveville",
+     "+352 00 00 00"
+    ],
+    "administration": [
+     "Administration communale",
+     "d'Exempleville",
+     "1, place de la Mairie",
+     "L-0000 Exempleville"
+    ],
+    "architect": [
+     "Atelier Modèle",
+     "5, avenue des Plans",
+     "L-0002 Démoville",
+     "+352 00 00 01",
+     "N° OAI : 0000"
+    ],
+    "bbox_pt": [
+     1860,
+     880,
+     2340,
+     1640
+    ]
+   },
+   "equipment": [
+    {
+     "text": "PAC",
+     "level": 0,
+     "where": "extérieur, côté façade latérale",
+     "meaning": "pompe à chaleur (unité extérieure)"
+    },
+    {
+     "text": "Boiler",
+     "level": 1,
+     "where": "Local technique",
+     "meaning": "ballon d'eau chaude"
+    },
+    {
+     "text": "VMC",
+     "level": 1,
+     "where": "Local technique",
+     "meaning": "ventilation mécanique contrôlée"
+    }
+   ],
+   "notes": [
+    "Plan établi pour la demande d'autorisation de bâtir ; il ne vaut pas plan d'exécution.",
+    "Toutes les cotes sont à vérifier sur place avant toute commande ou fabrication.",
+    "Les surfaces sont des surfaces nettes au sol, mesurées entre faces finies des murs.",
+    "Niveaux rapportés au ±0,00 = +312,25 (axe de la rue des Essais).",
+    "Les épaisseurs d'isolant indiquées sont des valeurs minimales.",
+    "Chaque nouvel indice annule et remplace le précédent."
+   ],
+   "counts": {
+    "hatch_lines": 4886,
+    "stipple_traits": 97014,
+    "tile_lines": 19,
+    "clip_paths": 117
+   }
+  }
+ ]
+}
