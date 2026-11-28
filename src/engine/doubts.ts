@@ -21,7 +21,7 @@
 import { pointInPolygon, polygonArea } from '../core/geometry';
 import type { DossierSheetKey } from '../core/cpe';
 import type { Read, SheetReading } from '../core/reading';
-import type { Lang, PlanSheet, Project, Sourced } from '../core/types';
+import type { Lang, PlanSheet, Project, ProjectAnswers, Sourced } from '../core/types';
 import { formatNumber, t } from '../i18n';
 import { deriveSheets } from './derive';
 import { constructionFromComposition, dominantInsulation, isEnvelopeComposition } from './materials';
@@ -131,7 +131,7 @@ export const DOUBT_CATALOG: readonly DoubtSpec[] = [
   { id: 'materials', sheet: 'opaque', impact: 'high', grouped: true, options: [], skipWhen: 'toutes les λ confirmées par l’utilisateur, aucune couche douteuse', trigger: 'toujours sinon : la planche ne donne jamais les λ' },
   { id: 'windows', sheet: 'windows', impact: 'high', grouped: true, options: [], skipWhen: 'Ug, Uf, Ψg, g et cadre confirmés pour tous les types, portes comprises', trigger: 'toujours sinon : la planche ne les donne pas' },
   { id: 'ventilation', sheet: 'ventilation', impact: 'high', grouped: true, options: ['windows', 'exhaust', 'balanced-hr'], skipWhen: 'type, débit, rendement, puissance et étanchéité déjà répondus', trigger: 'toujours sinon : aucun plan ne donne rendement et puissance' },
-  { id: 'heating', sheet: 'heating', impact: 'high', grouped: true, options: [], skipWhen: 'générateur, émission, températures, eau chaude et ballon déjà répondus', trigger: 'toujours sinon (le plan n’écrit qu’un mot : « PAC », « Boiler ») : une confirmation' },
+  { id: 'heating', sheet: 'heating', impact: 'high', grouped: true, options: ['heat-pump-air', 'heat-pump-ground', 'gas-condensing', 'pellets', 'district-heating', 'other'], skipWhen: 'générateur, émission, températures, eau chaude et ballon déjà répondus', trigger: 'toujours sinon (le plan n’écrit qu’un mot : « PAC », « Boiler ») : une confirmation' },
   { id: 'thermal-bridges', sheet: 'other', impact: 'high', grouped: true, options: ['0.10', '0.05', '0.03', 'detailed'], skipWhen: 'choix déjà répondu', trigger: 'toujours sinon' },
   { id: 'openings', sheet: 'envelope', impact: 'high', grouped: false, options: [], skipWhen: 'cotes de baies écrites, ou baies vues sur les plans, ou sur les façades', trigger: 'aucune baie lue nulle part' },
   { id: 'building-type', sheet: 'general', impact: 'medium', grouped: false, options: ['EFH', 'MFH'], skipWhen: 'objet du cartouche (« maison unifamiliale »), ou une seule cuisine', trigger: 'cartouche muet et plusieurs cuisines, ou aucune' },
@@ -212,9 +212,13 @@ const pct = (share: number): string => formatNumber(share * 100, 0);
  */
 export function collectDoubts(reading: SheetReading | undefined, project: Project, sheets: readonly PlanSheet[], lang: Lang): Doubt[] {
   const derived = deriveSheets(project, lang);
-  const ctx = context(reading, project, sheets, derived);
+  // PROPOSÉ ≠ CONFIRMÉ : une réponse que l'outil a seulement proposée (lue ou supposée) ne tranche aucune question.
+  const ctx = context(reading, { ...project, answers: confirmedAnswers(project.answers) }, sheets, derived);
+  const resolved = project.answers.resolvedDoubts ?? {};
   const out: Doubt[] = [];
   for (const spec of DOUBT_CATALOG) {
+    // Question déjà tranchée par l'utilisateur (réponse ou « je ne sais pas ») : jamais reposée.
+    if (Object.prototype.hasOwnProperty.call(resolved, spec.id)) continue;
     const d = COLLECTORS[spec.id](ctx, lang);
     if (!d.applicable || d.answered) continue;
     const e = evaluate(d.signals);
@@ -244,6 +248,24 @@ export function collectDoubts(reading: SheetReading | undefined, project: Projec
   );
 }
 
+/** Valeur « non renseignée » de chaque réponse proposable (même forme que les réponses vides). */
+const EMPTY_ANSWER: Partial<Record<keyof ProjectAnswers, null | ''>> = { projectName: '', street: '', postcode: '', locality: '' };
+
+/**
+ * Les réponses telles que l'UTILISATEUR les a données : celles que l'outil a seulement proposées (`proposed`) sont
+ * remises à « non renseigné ». Sert à décider si une question est déjà tranchée.
+ */
+export function confirmedAnswers(answers: ProjectAnswers): ProjectAnswers {
+  const proposed = answers.proposed;
+  if (!proposed) return answers;
+  const out = { ...answers } as unknown as Record<string, unknown>;
+  for (const key of Object.keys(proposed)) {
+    if (!Object.prototype.hasOwnProperty.call(out, key) || key === 'proposed' || key === 'resolvedDoubts') continue;
+    out[key] = Object.prototype.hasOwnProperty.call(EMPTY_ANSWER, key) ? EMPTY_ANSWER[key as keyof ProjectAnswers] : null;
+  }
+  return out as unknown as ProjectAnswers;
+}
+
 function choiceLabel(id: DoubtId, value: string, lang: Lang): string {
   const specific = t(lang, `doubt.${id}.option.${value}`);
   if (!specific.startsWith('doubt.')) return specific;
@@ -258,14 +280,20 @@ interface Ctx {
   project: Project;
   sheets: readonly PlanSheet[];
   plans: readonly PlanSheet[];
+  /** Plans des niveaux du volume chauffé (sans les sous-sols laissés hors du volume). */
+  heatedPlans: readonly PlanSheet[];
   derived: ReturnType<typeof deriveSheets>;
   texts: string[];
 }
 
 function context(reading: SheetReading | undefined, project: Project, sheets: readonly PlanSheet[], derived: ReturnType<typeof deriveSheets>): Ctx {
   const plans = sheets.filter((s) => !s.role || s.role === 'floor-plan');
+  // Niveaux que le modèle laisse hors du volume chauffé (sous-sol non chauffé) : c'est la question « plancher bas »
+  // qui les tranche ; leurs locaux ne font pas de question à part.
+  const outside = new Set((project.model.unheatedStoreys ?? []).map((s) => s.sheetId).filter((id): id is string => id !== null));
+  const heatedPlans = plans.filter((s) => !outside.has(s.id));
   const texts = sheets.flatMap((s) => (s.texts ?? []).map((x) => x.text));
-  return { reading, project, sheets, plans, derived, texts };
+  return { reading, project, sheets, plans, heatedPlans, derived, texts };
 }
 
 const hasView = (ctx: Ctx, kind: string): boolean => (ctx.reading?.views ?? []).some((v) => v.kind === kind) || ctx.sheets.some((s) => s.role === kind);
@@ -279,7 +307,9 @@ const COLLECTORS: Record<DoubtId, Collector> = {
     const r = ctx.reading;
     const signals = fromRead(r?.titleBlock?.occasion, 'title-block', 'title-block.occasion');
     if (ctx.texts.length >= 20) {
-      const existing = ctx.texts.some((x) => /existant|a demolir|demoli|bestand|abbruch|renovation|transformation|umbau/.test(norm(x)));
+      // Vocabulaire d'un projet sur l'existant. « Existant » seul ne compte pas : une planche de construction neuve
+      // le porte souvent pour ce qui l'entoure (terrain, canalisation, immeuble voisin existants).
+      const existing = ctx.texts.some((x) => /a demolir|demoli|bestand(?!teil)|abbruch|renovation|transformation|umbau|sanierung/.test(norm(x)));
       signals.push(existing ? sig('plan-text', 'strong', 'existing', 'text.existing') : sig('plan-text', 'weak', 'new', 'text.no-existing'));
     }
     if ((r?.elevations ?? []).length > 0) signals.push(sig('facade-drawing', 'weak', 'new', 'elevations.whole'));
@@ -368,6 +398,19 @@ const COLLECTORS: Record<DoubtId, Collector> = {
     if (r?.roof?.pitchDeg) signals.push(sig('plan-geometry', strengthOf(r.roof.pitchDeg.confidence), 'pitched', 'roof.pitch'));
     if (r?.levels?.top) signals.push(sig('section', strengthOf(r.levels.top.confidence), r.levels.top.role === 'top' ? 'flat' : 'pitched', 'levels.top'));
     if ((r?.compositions ?? []).some((c) => c.element === 'ceiling-to-unheated')) signals.push(sig('plan-text', 'strong', 'attic', 'composition.ceiling'));
+    else {
+      // Composition de toiture : une dalle (béton) sans couverture ni lattis est une toiture plate ; tuiles, ardoises
+      // ou lattis sur chevrons font une toiture inclinée. Signal faible : la forme n'est pas écrite.
+      const roof = (r?.compositions ?? []).find((c) => c.element === 'roof');
+      if (roof) {
+        const has = (keys: readonly string[]) => roof.layers.some((l) => keys.includes(l.material));
+        if (has(['bardage', 'bois'])) signals.push(sig('plan-text', 'weak', 'pitched', 'composition.roof-covering'));
+        else if (has(['beton', 'beton-arme'])) signals.push(sig('plan-text', 'weak', 'flat', 'composition.roof-slab'));
+      }
+    }
+    // Plan de toiture dessiné sans faîtage ni égout coté : toiture plate probable (signal faible).
+    const ridge = r?.levels?.top?.role === 'ridge' || (r?.levels?.eaves ?? null) !== null || (r?.roof?.pitchDeg ?? null) !== null;
+    if (hasView(ctx, 'roof-plan') && !ridge && !r?.roof?.flat) signals.push(sig('plan-geometry', 'weak', 'flat', 'roof-plan.no-ridge'));
     return { signals, applicable: true, answered: false };
   },
 
@@ -377,18 +420,21 @@ const COLLECTORS: Record<DoubtId, Collector> = {
     const signals: Signal[] = [];
     const basementPlan = (r?.views ?? []).some((v) => v.kind === 'floor-plan' && (v.storeyRank ?? 0) < 0) || ctx.sheets.some((s) => (s.storeyRank ?? 0) < 0);
     if (basementPlan) signals.push(sig('plan-geometry', 'strong', 'basement-unheated', 'view.basement'));
-    if ((r?.compositions ?? []).some((c) => c.element === 'floor-on-ground')) signals.push(sig('plan-text', 'strong', 'ground', 'composition.floor-on-ground'));
+    const comps = r?.compositions ?? [];
+    if (comps.some((c) => c.element === 'floor-on-ground')) signals.push(sig('plan-text', 'strong', 'ground', 'composition.floor-on-ground'));
+    // Plancher bas décrit comme « sur local non chauffé », sans dalle sur sol : le sous-sol n'est pas chauffé.
+    else if (basementPlan && comps.some((c) => c.element === 'floor-to-unheated')) signals.push(sig('plan-text', 'strong', 'basement-unheated', 'composition.floor-to-unheated'));
     if (hasView(ctx, 'section') && !basementPlan && (r?.levels?.floors[0]?.rel ?? 0) > -1) signals.push(sig('section', 'strong', 'ground', 'section.no-basement'));
     return { signals, applicable: true, answered: false };
   },
 
   'unheated-zone': (ctx) => {
-    const zones = ctx.plans.flatMap((s) => s.detected.unheatedZones ?? []);
-    const named = ctx.plans.flatMap((s) => s.detected.rooms.filter((r) => r.heatedGuess === 'no' && !r.exterior));
+    const zones = ctx.heatedPlans.flatMap((s) => s.detected.unheatedZones ?? []);
+    const named = ctx.heatedPlans.flatMap((s) => s.detected.rooms.filter((r) => r.heatedGuess === 'no' && !r.exterior));
     if (zones.length === 0 && named.length === 0) return NOT_APPLICABLE;
     const signals: Signal[] = [];
     if (named.length > 0) signals.push(sig('plan-text', 'strong', 'unheated', 'room.name'));
-    const insulated = ctx.plans.some((s) => (s.detected.heatedEdges ?? []).some((e) => e.boundary === 'unheated' && (e.sources ?? []).includes('insulation') && e.confidence >= 0.5));
+    const insulated = ctx.heatedPlans.some((s) => (s.detected.heatedEdges ?? []).some((e) => e.boundary === 'unheated' && (e.sources ?? []).includes('insulation') && e.confidence >= 0.5));
     if (insulated) signals.push(sig('plan-geometry', 'strong', 'unheated', 'edges.insulation'));
     else if (zones.length > 0) signals.push(sig('plan-geometry', 'weak', 'unheated', 'zone.outline'));
     const names = [...new Set([...zones.flatMap((z) => z.names), ...named.map((r) => r.name)])].filter(Boolean);
@@ -531,6 +577,8 @@ const COLLECTORS: Record<DoubtId, Collector> = {
       applicable: true,
       answered: false,
       params: { generator: e.value ? t(lang, `doubt.generator.${e.value}`) : '?' },
+      // Rien d'écrit sur le plan : on demande le générateur, sans en proposer un.
+      ...(e.value ? {} : { questionKey: 'doubt.heating.questionNone' }),
       proposal: e.value,
       details,
     };
@@ -595,7 +643,7 @@ const COLLECTORS: Record<DoubtId, Collector> = {
   'room-heated': (ctx) => {
     // Pièce ambiguë (buanderie, local technique…) : tranchée si elle est dans le contour isolé lu.
     const ambiguous: string[] = [];
-    for (const s of ctx.plans) {
+    for (const s of ctx.heatedPlans) {
       for (const r of s.detected.rooms) {
         if (r.heatedGuess !== 'ask' || r.exterior) continue;
         const inside = r.at && s.detected.heatedOutline && pointInPolygon(r.at, s.detected.heatedOutline);
@@ -613,9 +661,15 @@ const COLLECTORS: Record<DoubtId, Collector> = {
     const modelOpenings = ctx.project.model.storeys.flatMap((s) => s.openings);
     if (detected.length === 0 && modelOpenings.length === 0) return NOT_APPLICABLE;
     if (modelOpenings.length > 0 && modelOpenings.every((o) => o.from === 'user')) return ANSWERED;
-    const guessed = detected.filter((o) => o.heightFrom === 'default' || o.height === undefined).length;
-    // Des hauteurs d'usage : rien ne les soutient, la question est posée.
-    if (guessed > 0) return { signals: [], applicable: true, answered: false, params: { count: guessed } };
+    const guessedList = detected.filter((o) => o.exterior !== false || o.toUnheated === true).filter((o) => o.heightFrom === 'default' || o.height === undefined);
+    const guessed = guessedList.length;
+    // Des hauteurs d'usage : rien ne les soutient, la question est posée — sauf si ces baies pèsent moins de 1 %
+    // de l'enveloppe (une porte de service à la hauteur d'usage) : la valeur reste étiquetée hypothèse dans le relevé.
+    const env = ctx.derived.totals.envelopeArea;
+    const guessedArea = guessedList.reduce((a, o) => a + (o.width ?? 1) * (o.height ?? (o.kind === 'door' ? 2.1 : 1.25)), 0);
+    const minor = env > 0 && guessedArea / env < 0.01;
+    if (guessed > 0 && !minor) return { signals: [], applicable: true, answered: false, params: { count: guessed } };
+    if (guessed > 0) return NOT_APPLICABLE;
     const signals: Signal[] = [];
     if ((ctx.reading?.openingPairs ?? []).length > 0) signals.push(sig('plan-text', 'strong', 'ok', 'opening-pairs'));
     if (detected.some((o) => o.heightFrom === 'plan-dim')) signals.push(sig('plan-text', 'strong', 'ok', 'openings.plan-dim'));

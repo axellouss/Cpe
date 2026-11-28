@@ -223,6 +223,11 @@ export interface FacadeView {
   title: string | null;
   /** Vue lue (ReadView.id) ; absente si inconnue. */
   viewId?: string;
+  /**
+   * Côté du plan auquel la façade correspond (degrés depuis le haut de la feuille, sens horaire) : permet de
+   * recalculer l'orientation si le nord est corrigé. Absent = inconnu.
+   */
+  planSideDeg?: number;
 }
 
 export type Airtightness = 'class-a-with-ventilation' | 'measured';

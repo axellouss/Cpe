@@ -403,6 +403,7 @@ export const DOUBT_MESSAGES: Dictionary = {
     'doubt.ventilation.detail.airtightness': 'Étanchéité : option « classe A+ ou A avec ventilation » (n50 = 0,6) ou valeur mesurée',
     'doubt.heating.datum': 'Chauffage et eau chaude',
     'doubt.heating.question': 'Chauffage : {generator} ? Émission, températures et eau chaude à confirmer.',
+    'doubt.heating.questionNone': 'Quel générateur de chaleur ? Émission, températures et eau chaude à préciser.',
     'doubt.heating.detail.emission': 'Émission : plancher chauffant 35/28 ?',
     'doubt.heating.detail.tank': 'Eau chaude : par le même générateur, ballon dans le volume chauffé ?',
     'doubt.heating.detail.tankRead': 'Eau chaude : ballon lu sur le plan ; dans le volume chauffé ?',
@@ -464,6 +465,7 @@ export const DOUBT_MESSAGES: Dictionary = {
     'doubt.option.heat-pump-ground': 'Pompe à chaleur sol/eau',
     'doubt.option.gas-condensing': 'Chaudière gaz à condensation',
     'doubt.option.pellets': 'Chaudière à granulés',
+    'doubt.option.district-heating': 'Réseau de chaleur',
   },
   de: {
     'doubt.unknown.source': 'Annahme des Werkzeugs: Antwort „weiß nicht“, vor der Unterschrift bestätigen',
@@ -511,6 +513,7 @@ export const DOUBT_MESSAGES: Dictionary = {
     'doubt.ventilation.detail.airtightness': 'Luftdichtheit: Option „Klasse A+ oder A mit Lüftung“ (n50 = 0,6) oder Messwert',
     'doubt.heating.datum': 'Heizung und Warmwasser',
     'doubt.heating.question': 'Heizung: {generator}? Übergabe, Temperaturen und Warmwasser bestätigen.',
+    'doubt.heating.questionNone': 'Welcher Wärmeerzeuger? Übergabe, Temperaturen und Warmwasser angeben.',
     'doubt.heating.detail.emission': 'Übergabe: Fußbodenheizung 35/28?',
     'doubt.heating.detail.tank': 'Warmwasser: gleicher Erzeuger, Speicher im beheizten Volumen?',
     'doubt.heating.detail.tankRead': 'Warmwasser: Speicher im Plan gelesen; im beheizten Volumen?',
@@ -572,10 +575,67 @@ export const DOUBT_MESSAGES: Dictionary = {
     'doubt.option.heat-pump-ground': 'Sole-Wasser-Wärmepumpe',
     'doubt.option.gas-condensing': 'Gas-Brennwertkessel',
     'doubt.option.pellets': 'Pelletkessel',
+    'doubt.option.district-heating': 'Fernwärme',
   },
 };
 
 registerMessages(DOUBT_MESSAGES);
+
+/** Projet construit automatiquement à partir d'une planche (engine/auto) : sources citées et remarques. */
+export const AUTO_MESSAGES: Dictionary = {
+  fr: {
+    'auto.source.titleBlock': 'Lu dans le cartouche',
+    'auto.source.systems': 'Proposé d’après les équipements écrits sur le plan',
+    'auto.source.party': 'Déduit des murs mitoyens lus sur les plans',
+    'auto.source.north': 'Flèche du nord lue sur la planche',
+    'auto.doubt.northBorderline': 'à moins de 5° d’une limite de secteur',
+    'auto.height.external': 'Cotes extérieures : niveaux et compositions lus',
+    'auto.height.levels': 'De niveau fini à niveau fini (niveaux lus)',
+    'auto.height.eaves': 'Du niveau fini à l’égout (niveaux lus)',
+    'auto.clear.levels': 'Hauteur libre lue sur la coupe',
+    'auto.room.unlabelled': 'Surface sans étiquette (escalier, dégagement)',
+    'auto.storey.rank-1': 'Sous-sol',
+    'auto.storey.rank0': 'Rez-de-chaussée',
+    'auto.storey.rank1': '1er étage',
+    'auto.storey.rankN': '{n}e étage',
+    'auto.note.legacy': 'Aucune lecture de planche : le plan se trace étape par étape.',
+    'auto.note.noFloorPlan': 'Aucun plan d’étage avec un contour chauffé lu.',
+    'auto.note.scale': 'Échelle non recoupée : posez la règle sur une cote connue.',
+    'auto.note.top': 'Toiture non lue : fermeture haute à préciser.',
+    'auto.note.bottom': 'Plancher bas non lu : fermeture basse à préciser.',
+    'auto.note.tooManyDoubts': '{count} questions : trop pour les cartes de doute.',
+    'auto.note.basement': '« {name} » : sous-sol non chauffé, hors du volume chauffé.',
+    'auto.note.skipped': '« {name} » : pas de contour lu, feuille écartée.',
+    'auto.note.edges': '« {name} » : nature des murs non lue, tous supposés en façade.',
+  },
+  de: {
+    'auto.source.titleBlock': 'Im Schriftfeld gelesen',
+    'auto.source.systems': 'Aus den im Plan genannten Anlagen vorgeschlagen',
+    'auto.source.party': 'Aus den gelesenen Trennwänden abgeleitet',
+    'auto.source.north': 'Nordpfeil auf dem Plan gelesen',
+    'auto.doubt.northBorderline': 'weniger als 5° von einer Sektorgrenze',
+    'auto.height.external': 'Außenmaße: Höhenkoten und Aufbauten gelesen',
+    'auto.height.levels': 'Von Fertigfußboden zu Fertigfußboden (Koten gelesen)',
+    'auto.height.eaves': 'Vom Fertigfußboden bis zur Traufe (Koten gelesen)',
+    'auto.clear.levels': 'Lichte Höhe im Schnitt gelesen',
+    'auto.room.unlabelled': 'Fläche ohne Beschriftung (Treppe, Flur)',
+    'auto.storey.rank-1': 'Untergeschoss',
+    'auto.storey.rank0': 'Erdgeschoss',
+    'auto.storey.rank1': 'Obergeschoss',
+    'auto.storey.rankN': '{n}. Obergeschoss',
+    'auto.note.legacy': 'Kein Plan gelesen: der Grundriss wird Schritt für Schritt erfasst.',
+    'auto.note.noFloorPlan': 'Kein Grundriss mit beheiztem Umriss gelesen.',
+    'auto.note.scale': 'Maßstab nicht abgeglichen: Lineal an ein bekanntes Maß legen.',
+    'auto.note.top': 'Dach nicht gelesen: oberen Abschluss angeben.',
+    'auto.note.bottom': 'Boden nicht gelesen: unteren Abschluss angeben.',
+    'auto.note.tooManyDoubts': '{count} Fragen: zu viele für die Zweifelskarten.',
+    'auto.note.basement': '„{name}“: unbeheizter Keller, außerhalb des beheizten Volumens.',
+    'auto.note.skipped': '„{name}“: kein Umriss gelesen, Blatt nicht verwendet.',
+    'auto.note.edges': '„{name}“: Art der Wände nicht gelesen, alle als Außenwand angenommen.',
+  },
+};
+
+registerMessages(AUTO_MESSAGES);
 
 /** Texte d'un contrôle dans la langue voulue (les variables de `params` sont déjà mises en forme : virgule décimale). */
 export function findingText(finding: Finding, lang: Lang): string {

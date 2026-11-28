@@ -102,7 +102,7 @@ export {
   windowTypeHypothesis,
   type OfficeLibrary,
 } from './materials';
-export { DOUBT_CATALOG, answerUnknown, collectDoubts, evaluate, type Doubt, type DoubtId, type Signal } from './doubts';
+export { DOUBT_CATALOG, answerUnknown, collectDoubts, confirmedAnswers, evaluate, type Doubt, type DoubtId, type Signal } from './doubts';
 export {
   carryOverFromPrevious,
   excludeRoomFromOutline,
@@ -124,4 +124,4 @@ export function roofRidgeChoices(model: BuildingModel): RidgeChoice[] {
   return ridgeChoices(poly, model.top, model.northAngle.value, poly.map((_, i) => storey.edges[i]?.boundary));
 }
 export type { RidgeChoice } from './roof';
-export { applyDoubtAnswer, buildAutoProject, DOUBT_UNKNOWN, type AutoBuild } from './auto';
+export { applyDoubtAnswer, buildAutoProject, DOUBT_CONFIRM, DOUBT_UNKNOWN, MAX_AUTO_DOUBTS, type AutoBuild } from './auto';

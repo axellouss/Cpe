@@ -264,6 +264,10 @@ const readOpening: Reader<Opening> = (value, path) => {
   };
   const sheetWidth = optional(o, 'sheetWidth', path, asNumber);
   if (sheetWidth !== undefined) opening.sheetWidth = sheetWidth;
+  const constructionId = optional(o, 'constructionId', path, nullable(asString));
+  if (constructionId !== undefined) opening.constructionId = constructionId;
+  const sill = optional(o, 'sill', path, asNumber);
+  if (sill !== undefined) opening.sill = sill;
   return opening;
 };
 
@@ -282,12 +286,58 @@ const readRoom: Reader<Room> = (value, path) => {
   if (polygon !== undefined) room.polygon = polygon;
   const at = optional(o, 'at', path, readVec2);
   if (at !== undefined) room.at = at;
+  const unlabelled = optional(o, 'unlabelled', path, asBoolean);
+  if (unlabelled === true) room.unlabelled = true;
   return room;
 };
 
 const readRoofWindow: Reader<{ width: number; height: number }> = (value, path) => {
   const o = asObject(value, path);
   return { width: field(o, 'width', path, asNumber), height: field(o, 'height', path, asNumber) };
+};
+
+const readOffset: Reader<NonNullable<Storey['offset']>> = (value, path) => {
+  const o = asObject(value, path);
+  return { dx: field(o, 'dx', path, asNumber), dy: field(o, 'dy', path, asNumber), confidence: field(o, 'confidence', path, asNumber) };
+};
+
+const readFootprintOpening: Reader<NonNullable<Storey['footprint']>['openings'][number]> = (value, path) => {
+  const o = asObject(value, path);
+  return {
+    kind: field(o, 'kind', path, OPENING_KIND),
+    a: field(o, 'a', path, readVec2),
+    b: field(o, 'b', path, readVec2),
+    width: field(o, 'width', path, asNumber),
+    height: field(o, 'height', path, asNumber),
+  };
+};
+
+const readFootprint: Reader<NonNullable<Storey['footprint']>> = (value, path) => {
+  const o = asObject(value, path);
+  return { outline: field(o, 'outline', path, listOf(readVec2)), openings: field(o, 'openings', path, listOf(readFootprintOpening)) };
+};
+
+/** Réponse à une question de doute : tranchée par l'utilisateur, ou « je ne sais pas ». */
+const RESOLUTION = oneOf(['user', 'unknown'] as const);
+
+/** Table « clé → valeur » du fichier (réponses proposées, questions tranchées). */
+function recordOf<T>(reader: Reader<T>): Reader<Record<string, T>> {
+  return (value, path) => {
+    const o = asObject(value, path);
+    const keys = Object.keys(o);
+    if (keys.length > MAX_LIST_LENGTH) return fail('export.file.tooLong', { path, found: keys.length, max: MAX_LIST_LENGTH });
+    const out: Record<string, T> = {};
+    for (const key of keys) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue; // jamais de clé spéciale
+      out[key] = reader(o[key], `${path}.${key}`);
+    }
+    return out;
+  };
+}
+
+const readProposal: Reader<{ confidence: number; source: string }> = (value, path) => {
+  const o = asObject(value, path);
+  return { confidence: field(o, 'confidence', path, asNumber), source: field(o, 'source', path, asString) };
 };
 
 const readStorey: Reader<Storey> = (value, path) => {
@@ -311,6 +361,10 @@ const readStorey: Reader<Storey> = (value, path) => {
   };
   const roofWindows = optional(o, 'roofWindows', path, listOf(readRoofWindow));
   if (roofWindows !== undefined && roofWindows.length > 0) storey.roofWindows = roofWindows;
+  const offset = optional(o, 'offset', path, readOffset);
+  if (offset !== undefined) storey.offset = offset;
+  const footprint = optional(o, 'footprint', path, readFootprint);
+  if (footprint !== undefined) storey.footprint = footprint;
   return storey;
 };
 
@@ -420,6 +474,8 @@ const readFacadeView: Reader<FacadeView> = (value, path) => {
   };
   const viewId = optional(o, 'viewId', path, asString);
   if (viewId !== undefined) view.viewId = viewId;
+  const planSideDeg = optional(o, 'planSideDeg', path, asNumber);
+  if (planSideDeg !== undefined) view.planSideDeg = planSideDeg;
   return view;
 };
 
@@ -457,6 +513,8 @@ const readModel: Reader<BuildingModel> = (value, path) => {
   if (heightConvention !== undefined) model.heightConvention = heightConvention;
   const envelopeOrder = optional(o, 'envelopeOrder', path, ENVELOPE_ORDER);
   if (envelopeOrder !== undefined) model.envelopeOrder = envelopeOrder;
+  const unheatedStoreys = optional(o, 'unheatedStoreys', path, listOf(readStorey));
+  if (unheatedStoreys !== undefined && unheatedStoreys.length > 0) model.unheatedStoreys = unheatedStoreys;
   return model;
 };
 
@@ -507,6 +565,10 @@ const readAnswers: Reader<ProjectAnswers> = (value, path) => {
   extra('emissionTemps', nullable(asString));
   extra('hotWaterStorageInside', nullable(asBoolean));
   extra('attachment', nullable(ATTACHMENT));
+  // Proposé ≠ confirmé : les réponses seulement proposées par l'outil et les questions tranchées. Absentes d'un
+  // fichier plus ancien, elles restent absentes (ses réponses étaient toutes saisies par l'utilisateur).
+  extra('proposed', recordOf(readProposal));
+  extra('resolvedDoubts', recordOf(RESOLUTION));
   return answers;
 };
 

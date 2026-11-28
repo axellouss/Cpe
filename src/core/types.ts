@@ -297,6 +297,13 @@ export interface Opening {
   /** Type de fenêtre (kind = 'window') ; null = type par défaut. */
   windowTypeId: string | null;
   from: Provenance;
+  /**
+   * Type de porte (kind = 'door') : porte d'entrée ou porte vers un local non chauffé ; absent ou null = type de
+   * porte par défaut.
+   */
+  constructionId?: string | null;
+  /** Hauteur d'allège lue (m), quand le plan l'écrit (« ALL. 0,90 »). */
+  sill?: number;
 }
 
 export interface Room {
@@ -315,6 +322,11 @@ export interface Room {
   sheetArea?: number;
   polygon?: Vec2[];
   at?: Vec2;
+  /**
+   * Surface du volume chauffé qu'aucune étiquette ne couvre (escalier, dégagement), mesurée par le lecteur : elle
+   * n'est comptée dans An que si l'utilisateur le dit (question « an-unlabelled »).
+   */
+  unlabelled?: boolean;
 }
 
 export interface Storey {
@@ -341,6 +353,17 @@ export interface Storey {
    * rappelle tant que l'expert ne les a pas ajoutées en lignes manuelles. Dimensions hors tout (m).
    */
   roofWindows?: { width: number; height: number }[];
+  /**
+   * Translation (uf) qui amène le contour dans le repère commun du bâtiment, quand les étages sont dessinés côte à
+   * côte sur une même planche : les contours deviennent superposables (plancher au-dessus d'un local non chauffé).
+   * Le contour lui-même reste dans le repère de sa feuille (affichage). Absente = repère de la feuille.
+   */
+  offset?: { dx: number; dy: number; confidence: number };
+  /**
+   * Emprise lue de tout le bâtiment sur la feuille (annexes comprises) et baies de la partie laissée hors du contour
+   * chauffé (porte de garage) : de quoi remettre l'annexe dans l'enveloppe si l'utilisateur la dit chauffée.
+   */
+  footprint?: { outline: Vec2[]; openings: { kind: 'window' | 'door'; a: Vec2; b: Vec2; width: number; height: number }[] };
 }
 
 /** Fermeture haute du dernier étage chauffé. */
@@ -420,6 +443,11 @@ export interface BuildingModel {
    * puis parois vers le non chauffé ; absent ou 'luxeeb' = ordre historique par orientation.
    */
   envelopeOrder?: 'expert' | 'luxeeb';
+  /**
+   * Niveaux lus mais laissés HORS du volume chauffé (sous-sol non chauffé), du bas vers le haut : ils reviennent
+   * dans `storeys` si l'utilisateur dit le sous-sol chauffé. Absent = aucun.
+   */
+  unheatedStoreys?: Storey[];
 }
 
 
@@ -494,6 +522,17 @@ export interface ProjectAnswers {
   hotWaterStorageInside?: boolean | null;
   /** Situation d'accolement (« Anbausituation ») : isolé, accolé d'un côté, de deux côtés. */
   attachment?: Attachment | null;
+  /**
+   * Réponses PROPOSÉES par l'outil (lues sur la planche ou supposées) et pas encore confirmées par l'utilisateur,
+   * par nom de champ (« occasion », « street »…) : confiance de la lecture (0 = hypothèse) et source citée. Une
+   * réponse listée ici n'est jamais tenue pour une réponse de l'utilisateur. Absent = aucune proposition.
+   */
+  proposed?: Record<string, { confidence: number; source: string }>;
+  /**
+   * Questions de doute tranchées, par identifiant (« an-unlabelled »…) : 'user' = réponse donnée ; 'unknown' =
+   * « je ne sais pas » (la proposition est gardée, étiquetée hypothèse). Une question tranchée n'est plus posée.
+   */
+  resolvedDoubts?: Record<string, 'user' | 'unknown'>;
 }
 
 

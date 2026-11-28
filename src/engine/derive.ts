@@ -70,7 +70,7 @@ import { unheatedRoomsBeside, unheatedRoomsInsideOutline } from './heatedOutline
 import { isUnconfirmed, weakest } from './provenance';
 import { computePitchedRoof, isEavesEdge, type PitchedRoof, type RoofSlope } from './roof';
 import { netAreaOf, type NetArea } from './storey';
-import type { ElevationSide, ReadComposition, ReadLevels, SheetReading } from '../core/reading';
+import { CONFIDENCE_SINGLE_SOURCE, type ElevationSide, type ReadComposition, type ReadLevels, type SheetReading } from '../core/reading';
 import type { FacadeView } from '../core/cpe';
 import { DEFAULT_WINDOW_TYPE_ID } from './defaults';
 import { MATERIAL_LIBRARY, windowTypeHypothesis } from './materials';
@@ -314,7 +314,10 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     const widthCm = Math.round(o.width * 100);
     const heightCm = Math.round(o.height * 100);
     const windowType = o.kind === 'window' ? resolveWindowType(model, o.windowTypeId, lang) : null;
-    const construction = o.kind === 'door' ? resolveConstruction(model, null, DEFAULT_CONSTRUCTION_IDS.door, lang) : null;
+    // Une porte peut porter son propre type (porte d'entrée, porte vers un local non chauffé) ; sinon le type par défaut.
+    const doorTypeId = o.constructionId ?? null;
+    const doorType = doorTypeId !== null && model.constructions.some((c) => c.id === doorTypeId && c.category === 'door') ? doorTypeId : null;
+    const construction = o.kind === 'door' ? resolveConstruction(model, doorType, DEFAULT_CONSTRUCTION_IDS.door, lang) : null;
     const key = `${o.kind}:${windowType?.id ?? construction?.id ?? ''}:${widthCm}x${heightCm}`;
     let group = host.openings.get(key);
     if (!group) {
@@ -658,16 +661,31 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     let exposed = Math.max(0, lower.area - upper.area);
     let overhang = Math.max(0, upper.area - lower.area);
     let exact = false;
-    if (model.storeysAligned) {
-      const e = differenceArea(lower.poly, upper.poly);
-      const o = differenceArea(upper.poly, lower.poly);
+    // Étages dessinés côte à côte : la translation d'alignement de chaque contour les rend superposables.
+    const byOffset = !model.storeysAligned && lower.storey.offset !== undefined && upper.storey.offset !== undefined;
+    const shift = (g: StoreyGeometry): Vec2 => {
+      const k = g.storey.metresPerUnit.value;
+      const o = byOffset ? g.storey.offset : undefined;
+      return o && Number.isFinite(o.dx) && Number.isFinite(o.dy) ? { x: o.dx * k, y: o.dy * k } : { x: 0, y: 0 };
+    };
+    const lowerShift = shift(lower);
+    const upperShift = shift(upper);
+    const moved = (poly: readonly Vec2[], d: Vec2): Vec2[] => poly.map((p) => ({ x: p.x + d.x, y: p.y + d.y }));
+    const lowerPoly = moved(lower.poly, lowerShift);
+    const upperPoly = moved(upper.poly, upperShift);
+    if (model.storeysAligned || byOffset) {
+      const e = differenceArea(lowerPoly, upperPoly);
+      const o = differenceArea(upperPoly, lowerPoly);
       if (e !== null && o !== null) {
         exposed = e;
         overhang = o;
         exact = true;
       }
     }
-    const from = weakest(lower.geometryFrom, upper.geometryFrom);
+    // Un alignement peu sûr ne vaut pas une lecture : ce qu'il donne reste à confirmer.
+    const alignmentDoubt: Provenance[] =
+      byOffset && Math.min(lower.storey.offset!.confidence, upper.storey.offset!.confidence) < CONFIDENCE_SINGLE_SOURCE ? ['estimate'] : [];
+    const from = weakest(lower.geometryFrom, upper.geometryFrom, ...alignmentDoubt);
     if (exposed > STEP_MIN_AREA) {
       const host = draft({
         id: `roof:terrace:${lower.storey.id}`,
@@ -695,8 +713,8 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     if (overhang > STEP_MIN_AREA && below.length > 0) {
       const scale = lower.storey.metresPerUnit.value;
       for (const room of below) {
-        const footprint = scalePolygon(room.polygon!, scale);
-        const part = exact ? differenceWithinArea(upper.poly, lower.poly, footprint, ROOM_WALL_REACH) : null;
+        const footprint = moved(scalePolygon(room.polygon!, scale), lowerShift);
+        const part = exact ? differenceWithinArea(upperPoly, lowerPoly, footprint, ROOM_WALL_REACH) : null;
         overUnheated += part ?? grownArea(footprint, ROOM_WALL_TYPICAL) ?? polygonArea(footprint);
       }
       overUnheated = Math.min(overhang, overUnheated);
