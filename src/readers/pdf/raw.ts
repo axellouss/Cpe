@@ -40,6 +40,74 @@ export interface RawSeg {
   dash: boolean;
   /** Numéro du tracé (« path ») d'origine. */
   pid: number;
+  /** Zone de découpe active quand le trait a été peint (indice dans RawPage.clips ; 0 = page entière). */
+  clip?: number;
+  /** Couleur du trait, 0xRRGGBB. */
+  color?: number;
+}
+
+/** Boîte englobante en unités de feuille. */
+export interface RawBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/** Zone de découpe (« clip ») rencontrée sur la page. */
+export interface ClipZone {
+  id: number;
+  /** Zone englobante (−1 pour la page). */
+  parent: number;
+  bbox: RawBox;
+  /** Vrai si la zone est un simple rectangle (cadre de vue). */
+  rect: boolean;
+  /** Nombre de tracés peints sous cette zone. */
+  ops: number;
+}
+
+/** Remplissage : anneaux du polygone, couleur. Les murs pochés, les zones de pièces, la toiture en sont. */
+export interface FillArea {
+  rings: [number, number][][];
+  bbox: RawBox;
+  /** 0xRRGGBB. */
+  color: number;
+  alpha: number;
+  clip: number;
+  /** Vrai si le contour est aussi tracé. */
+  stroked: boolean;
+  /** Aire de l'anneau extérieur (uf²). */
+  area: number;
+}
+
+/** Hachure : des traits parallèles réguliers remplissant une zone ; les traits eux-mêmes sont retirés de `segs`. */
+export interface HatchZone {
+  clip: number;
+  bbox: RawBox;
+  /** Contour de la zone hachurée. */
+  rings: [number, number][][];
+  /** Directions des traits, 0..180° ; une seule = hachure simple, deux = hachure croisée. */
+  angles: number[];
+  /** Écart moyen entre deux traits (uf). */
+  spacing: number;
+  color: number;
+  width: number;
+  /** Nombre de traits regroupés. */
+  count: number;
+  source: 'clip' | 'path';
+}
+
+/** Trame de micro-traits (pointillé de terrain d'une coupe) : retirée de `segs`, seule son emprise est gardée. */
+export interface StippleZone {
+  clip: number;
+  bbox: RawBox;
+  count: number;
+  color: number;
+}
+
+export interface ImageArea {
+  bbox: RawBox;
+  pixelsPerPoint: number;
 }
 
 export interface RawPage {
@@ -61,6 +129,18 @@ export interface RawPage {
   imagePixelsPerPoint: number;
   /** Vrai si la page dépassait la limite de traits et a été lue en partie. */
   truncated: boolean;
+  /** Remplissages (polygones colorés). */
+  fills: FillArea[];
+  /** Zones hachurées (traits parallèles regroupés). */
+  hatches: HatchZone[];
+  /** Trames de micro-traits retirées. */
+  stipples: StippleZone[];
+  /** Zones de découpe utilisées. */
+  clips: ClipZone[];
+  /** Emprise de chaque image matricielle. */
+  imageAreas: ImageArea[];
+  /** Bilan de l'allègement : traits rencontrés, et retirés comme trame ou regroupés en hachure. */
+  lightening: { rawStrokeSegs: number; stippleSegs: number; hatchSegs: number };
 }
 
 /** Mètres de papier par point PDF (1 pt = 1/72 pouce). */

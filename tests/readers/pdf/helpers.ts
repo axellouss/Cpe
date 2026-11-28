@@ -151,7 +151,7 @@ export function text(s: string, cx: number, cy: number, size = 8, angle = 0): Ra
 }
 
 export function page(segs: RawSeg[], texts: RawText[], width = 1190.55, height = 841.89): RawPage {
-  return { number: 1, width, height, rotation: 0, turned: 0, texts, segs, images: 0, imageCoverage: 0, imagePixelsPerPoint: 0, truncated: false };
+  return { number: 1, width, height, rotation: 0, turned: 0, texts, segs, images: 0, imageCoverage: 0, imagePixelsPerPoint: 0, truncated: false, fills: [], hatches: [], stipples: [], clips: [], imageAreas: [], lightening: { rawStrokeSegs: segs.length, stippleSegs: 0, hatchSegs: 0 } };
 }
 
 /** Rectangle fermé (4 traits). */

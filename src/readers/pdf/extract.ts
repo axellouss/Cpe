@@ -329,5 +329,11 @@ export async function extractPage(page: PDFPageProxy, ops: OpCodes, options: Ext
     imageCoverage,
     imagePixelsPerPoint,
     truncated,
+    fills: [],
+    hatches: [],
+    stipples: [],
+    clips: [],
+    imageAreas: [],
+    lightening: { rawStrokeSegs: segs.length, stippleSegs: 0, hatchSegs: 0 },
   };
 }

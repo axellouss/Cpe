@@ -13,6 +13,8 @@
  *  - L'outil est un ASSISTANT : chaque valeur porte sa provenance et l'expert reste responsable du CPE.
  */
 
+import type { SheetReading } from './reading';
+
 // ───────────────────────────── Bases ─────────────────────────────
 
 export interface Vec2 {
@@ -77,6 +79,12 @@ export interface DetectedRoom {
   at?: Vec2;
   /** Proposition : pièce comptée dans An ? 'ask' = ambigu (cave, buanderie, grenier…). */
   heatedGuess: 'yes' | 'no' | 'ask';
+  /** Confiance de l'appariement étiquette ↔ polygone et de la surface (0..1), si le lecteur la mesure. */
+  confidence?: number;
+  /** Surface vitrée écrite pour cette pièce (encadré d'éclairement naturel), en m². */
+  glazedArea?: number;
+  /** Pièce extérieure au bâtiment (terrasse, balcon) : jamais comptée, jamais dans le contour. */
+  exterior?: boolean;
 }
 
 export interface DetectedOpening {
@@ -90,6 +98,25 @@ export interface DetectedOpening {
   height?: number;
   /** Vrai si l'ouverture donne sur l'extérieur du contour détecté. */
   exterior?: boolean;
+  /** Hauteur d'allège (m), si elle est écrite (« ALL. 0,90 »). */
+  sill?: number;
+  /** D'où vient la hauteur : cote à deux nombres du plan, façade dessinée, ou valeur d'usage. */
+  heightFrom?: 'plan-dim' | 'elevation' | 'default';
+  /** Précision sur le genre d'ouverture, quand le lecteur la connaît. */
+  detail?: 'entrance-door' | 'garage-door' | 'door-to-unheated' | 'french-window';
+  /** Vrai si l'ouverture sépare le volume chauffé d'un local non chauffé (porte vers le garage). */
+  toUnheated?: boolean;
+  /** Confiance (0..1) sur l'existence et les dimensions de l'ouverture. */
+  confidence?: number;
+}
+
+/** Ce qu'il y a de l'autre côté d'une arête du contour chauffé proposé par le lecteur. */
+export interface DetectedEdge {
+  /** 'outside' façade ; 'unheated' vers un local non chauffé ; 'heated' mur mitoyen (voisin chauffé). */
+  boundary: 'outside' | 'unheated' | 'heated';
+  confidence: number;
+  /** Signaux utilisés (« insulation », « room-name », « foreign-masonry », « no-opening »…). */
+  sources?: string[];
 }
 
 export interface SheetDetection {
@@ -98,6 +125,21 @@ export interface SheetDetection {
    * C'est le moteur (`createStorey`) qui en retire les locaux hors enveloppe pour proposer le contour chauffé.
    */
   outline?: Vec2[];
+  /**
+   * Contour CHAUFFÉ proposé par le lecteur quand il sait le lire lui-même (trait d'isolant, locaux non chauffés
+   * nommés). S'il est présent, le moteur le prend tel quel au lieu de le déduire de `outline` et des pièces.
+   */
+  heatedOutline?: Vec2[];
+  /** Nature de chaque arête de `heatedOutline` (même longueur : arête i = sommet i → sommet i+1). */
+  heatedEdges?: DetectedEdge[];
+  /** Locaux non chauffés compris dans l'emprise (garage, cave…), avec leur contour. */
+  unheatedZones?: { polygon: Vec2[]; names: string[]; area?: number }[];
+  /** Surfaces du volume chauffé qu'aucune étiquette de pièce ne couvre (escalier, dégagement), en m². */
+  unlabelledAreas?: { polygon?: Vec2[]; area: number }[];
+  /** Dimensions hors tout du bâtiment sur cette vue (m), recoupées avec les cotes écrites. */
+  footprintSize?: { width: number; depth: number; confidence: number };
+  /** Confiance globale du contour (0..1), si le lecteur la mesure. */
+  outlineConfidence?: number;
   rooms: DetectedRoom[];
   openings: DetectedOpening[];
   /** Hauteur d'étage brute (m) si lisible (IFC, coupe). Dernier niveau : jusqu'au plus haut sommet de mur (faîtage). */
@@ -129,6 +171,15 @@ export interface SheetDetection {
 export interface PlanSheet {
   id: string;
   name: string;
+  /**
+   * Rôle de la vue sur la planche. Absent = plan d'étage (lecteurs qui ne produisent que des plans). Seuls
+   * 'floor-plan' (et 'roof-plan' pour la toiture) servent à tracer des étages.
+   */
+  role?: 'floor-plan' | 'roof-plan' | 'section' | 'elevation' | 'site-plan';
+  /** Rang du niveau lu dans le titre de la vue (−1 sous-sol, 0 rez-de-chaussée, 1 étage…). */
+  storeyRank?: number | null;
+  /** Page du document (à partir de 1). */
+  page?: number;
   /** Étendue du contenu (uf). */
   bbox: BBox;
   /** Fond matriciel (page PDF rendue, scan). Couvre le rectangle indiqué (uf). */
@@ -154,6 +205,8 @@ export interface PlanDocument {
   storeysAligned: boolean;
   /** Messages du lecteur destinés à l'utilisateur (français, courts). */
   warnings: string[];
+  /** Tout ce qui a été lu en plus des feuilles : vues, cartouche, niveaux, compositions, nord… (voir core/reading.ts). */
+  reading?: SheetReading;
 }
 
 // ───────────────────────────── Bâtiment confirmé par l'expert ─────────────────────────────
