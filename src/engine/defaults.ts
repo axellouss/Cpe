@@ -120,7 +120,7 @@ export function emptyModel(lang: Lang): BuildingModel {
 }
 
 export function createEmptyProject(lang: Lang): Project {
-  return { version: 1, model: emptyModel(lang), answers: emptyAnswers() };
+  return { version: 2, model: emptyModel(lang), answers: emptyAnswers() };
 }
 
 // ───────────────────────────── Choix du type par défaut ─────────────────────────────

@@ -60,7 +60,7 @@ function errorWith(path: string, replacement: Json | undefined): ProjectFileErro
 describe('serializeProject', () => {
   it('écrit un JSON indenté, marqué et versionné', () => {
     const text = serializeProject(makeProject());
-    expect(text.startsWith('{\n  "app": "Plan2CPE",\n  "version": 1,\n  "model": {')).toBe(true);
+    expect(text.startsWith('{\n  "app": "Plan2CPE",\n  "version": 2,\n  "model": {')).toBe(true);
     const file = JSON.parse(text) as Record<string, unknown>;
     expect(Object.keys(file)).toEqual(['app', 'version', 'model', 'answers']);
     expect(file['app']).toBe(PROJECT_FILE_APP);
@@ -140,7 +140,8 @@ describe('parseProject — tolérance', () => {
       ['model.futureField', { a: 1 }],
       ['model.storeys[0].color', 'red'],
       ['model.storeys[0].rooms[0].tags', ['x']],
-      ['model.storeys[0].metresPerUnit.confidence', 0.9],
+      // « confidence » fait partie du format 2 : le champ inconnu essayé ici est un autre.
+      ['model.storeys[0].metresPerUnit.precision', 0.9],
       ['answers.batteryStorage', true],
     ];
     for (const [path, value] of extras) file = mutate(file, steps(path), value);
@@ -193,10 +194,10 @@ describe('parseProject — refus avec un message clair en français', () => {
     ['"texte"', "Ce fichier n'est pas un projet Plan2CPE : un objet JSON est attendu à la racine."],
     ['{}', "Ce fichier n'est pas un projet Plan2CPE : le numéro de version est absent."],
     ['{"name": "package", "dependencies": {}}', "Ce fichier n'est pas un projet Plan2CPE : le numéro de version est absent."],
-    ['{"version": "1"}', 'Version de fichier non reconnue (1) : seul le format 1 est pris en charge.'],
-    ['{"version": 0}', 'Version de fichier non reconnue (0) : seul le format 1 est pris en charge.'],
-    ['{"version": 1.5}', 'Version de fichier non reconnue (1.5) : seul le format 1 est pris en charge.'],
-    ['{"version": 2}', "Ce projet a été enregistré avec une version plus récente de Plan2CPE (format 2). Mettez l'application à jour pour l'ouvrir."],
+    ['{"version": "1"}', 'Version de fichier non reconnue (1) : seuls les formats 1, 2 sont pris en charge.'],
+    ['{"version": 0}', 'Version de fichier non reconnue (0) : seuls les formats 1, 2 sont pris en charge.'],
+    ['{"version": 1.5}', 'Version de fichier non reconnue (1.5) : seuls les formats 1, 2 sont pris en charge.'],
+    ['{"version": 3}', "Ce projet a été enregistré avec une version plus récente de Plan2CPE (format 3). Mettez l'application à jour pour l'ouvrir."],
     ['{"app": "AutreLogiciel", "version": 1}', "Ce fichier vient d'une autre application (« AutreLogiciel ») : ce n'est pas un projet Plan2CPE."],
     ['{"version": 1}', 'Fichier de projet incomplet : « model » est absent.'],
     ['{"version": 1, "model": []}', 'Fichier de projet invalide : « model » doit être un objet (trouvé : une liste).'],

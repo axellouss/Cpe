@@ -88,6 +88,21 @@ export { basementSheetIds, isBasementSheetName, orderSheetsBottomUp, proposeTopC
 export { DEFAULT_CONSTRUCTION_IDS, DEFAULT_WINDOW_TYPE_ID } from './defaults';
 export { FINDING_CODES, findingText, type FindingCode } from './messages';
 export { weakest } from './provenance';
+// Dossier CPE : ordre « expert », hauteurs d'enveloppe, pré-calcul U / Uw, matériaux, doutes.
+export { envelopeHeights, facadeViewsFromReading, withExpertWindowTypes, type EnvelopeHeights } from './derive';
+export { computeU, computeUw, precalculatedU, precalculatedUw, proposeFensterTyp, type UResult, type UwResult } from './uvalue';
+export {
+  MATERIAL_LIBRARY,
+  constructionFromComposition,
+  confirmOfficeLambda,
+  doorHypothesis,
+  emptyOfficeLibrary,
+  lambdaFor,
+  sanitizeOfficeLibrary,
+  windowTypeHypothesis,
+  type OfficeLibrary,
+} from './materials';
+export { DOUBT_CATALOG, answerUnknown, collectDoubts, evaluate, type Doubt, type DoubtId, type Signal } from './doubts';
 export {
   carryOverFromPrevious,
   excludeRoomFromOutline,

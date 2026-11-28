@@ -6,7 +6,7 @@ import type { EnvelopeRow, LuxeebSheets, Project } from '../../src/core/types';
 
 export function makeProject(): Project {
   return {
-    version: 1,
+    version: 2,
     model: {
       storeys: [
         {

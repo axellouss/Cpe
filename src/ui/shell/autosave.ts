@@ -9,6 +9,11 @@ import { emptyMarks } from './types';
 import type { Marks, PlanStepKey, QuestionId, Step, Workspace } from './types';
 import { PLAN_STEP_KEYS } from './types';
 
+/**
+ * Clés de stockage. Le suffixe « v1 » désigne l'EMPLACEMENT, pas le format : un projet enregistré au format 1
+ * (avant le dossier CPE) se relit tel quel par `parseProject`, qui le migre au format 2 sans rien inventer ; le
+ * prochain enregistrement l'écrit au format 2 à la même place.
+ */
 export const STORAGE_KEYS = {
   project: 'plan2cpe.project.v1',
   marks: 'plan2cpe.marks.v1',

@@ -1,7 +1,11 @@
 /**
  * Fichier de projet Plan2CPE : JSON lisible, versionné.
  *
- *   { "app": "Plan2CPE", "version": 1, "model": { … }, "answers": { … } }
+ *   { "app": "Plan2CPE", "version": 2, "model": { … }, "answers": { … } }
+ *
+ * Versions : la 1 (avant le dossier CPE) et la 2 se lisent ; on écrit toujours la 2. La 2 n'ajoute que des champs
+ * FACULTATIFS (couches, géométrie des fenêtres, confiance, réponses de ventilation…) : un fichier 1 se relit tel
+ * quel, sans qu'aucune valeur soit inventée à la migration — les champs absents restent absents.
  *
  * Lecture STRICTE sur les types (un fichier abîmé ou étranger est refusé avec un message clair, en français
  * par défaut, traduisible) et TOLÉRANTE sur le reste :
@@ -14,6 +18,7 @@
  * L'écriture passe par la même validation : `serializeProject` refuse d'écrire un fichier que
  * `parseProject` ne saurait pas relire (un nombre NaN, par exemple, deviendrait « null » en JSON).
  */
+import { LUXEEB_ELEMENT_TYPES, MATERIAL_KEYS, type ConstructionLayer, type FacadeView, type GroundData, type WindowGeometry } from '../core/cpe';
 import type {
   BottomClosure,
   BuildingModel,
@@ -37,7 +42,9 @@ import './messages';
 /** Marqueur d'application écrit dans chaque fichier. */
 export const PROJECT_FILE_APP = 'Plan2CPE';
 /** Version du format de fichier écrite et relue. */
-export const PROJECT_FILE_VERSION = 1;
+export const PROJECT_FILE_VERSION = 2;
+/** Versions que la lecture accepte. */
+export const PROJECT_FILE_VERSIONS_READ: readonly number[] = [1, 2];
 
 type Params = Record<string, string | number>;
 
@@ -199,6 +206,17 @@ const EMISSION = oneOf(['radiators', 'floor-heating', 'mixed', 'air'] as const);
 const HOT_WATER = oneOf(['with-heating', 'separate-electric', 'separate-heat-pump', 'separate-other'] as const);
 const VENTILATION = oneOf(['windows', 'exhaust', 'balanced-hr'] as const);
 const WINDOW_GENERATION = oneOf(['single', 'double-old', 'double-lowe', 'triple'] as const);
+// Version 2
+const LUXEEB_TYPE = oneOf(LUXEEB_ELEMENT_TYPES);
+const MATERIAL = oneOf(MATERIAL_KEYS);
+const FENSTER_TYP = oneOf(['einfach', 'mehrfach'] as const);
+const FACADE_ORIENTATION = oneOf(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const);
+const HEIGHT_CONVENTION = oneOf(['external', 'levels'] as const);
+const ENVELOPE_ORDER = oneOf(['expert', 'luxeeb'] as const);
+const AIRTIGHTNESS = oneOf(['class-a-with-ventilation', 'measured'] as const);
+const THERMAL_BRIDGES = oneOf(['0.10', '0.05', '0.03', 'detailed'] as const);
+const THERMAL_MASS = oneOf(['heavy', 'other'] as const);
+const ATTACHMENT = oneOf(['one-side', 'other'] as const);
 
 // ───────────────────────────── Lecteurs du modèle ─────────────────────────────
 
@@ -207,13 +225,24 @@ const readVec2: Reader<Vec2> = (value, path) => {
   return { x: field(o, 'x', path, asNumber), y: field(o, 'y', path, asNumber) };
 };
 
-const readSourcedNumber: Reader<Sourced<number>> = (value, path) => {
-  const o = asObject(value, path);
-  const sourced: Sourced<number> = { value: field(o, 'value', path, asNumber), from: field(o, 'from', path, PROVENANCE) };
-  const note = optional(o, 'note', path, asString);
-  if (note !== undefined) sourced.note = note;
-  return sourced;
-};
+/** Valeur sourcée : valeur et provenance obligatoires ; note, confiance, doute et source facultatifs (v2). */
+function readSourced<T>(valueReader: Reader<T>): Reader<Sourced<T>> {
+  return (value, path) => {
+    const o = asObject(value, path);
+    const sourced: Sourced<T> = { value: field(o, 'value', path, valueReader), from: field(o, 'from', path, PROVENANCE) };
+    const note = optional(o, 'note', path, asString);
+    if (note !== undefined) sourced.note = note;
+    const confidence = optional(o, 'confidence', path, asNumber);
+    if (confidence !== undefined) sourced.confidence = confidence;
+    const doubt = optional(o, 'doubt', path, nullable(asString));
+    if (doubt !== undefined) sourced.doubt = doubt;
+    const source = optional(o, 'source', path, asString);
+    if (source !== undefined) sourced.source = source;
+    return sourced;
+  };
+}
+
+const readSourcedNumber: Reader<Sourced<number>> = readSourced(asNumber);
 
 const readEdge: Reader<StoreyEdge> = (value, path) => {
   const o = asObject(value, path);
@@ -307,24 +336,91 @@ const readBottom: Reader<BottomClosure> = (value, path) => {
   };
 };
 
+const readLayer: Reader<ConstructionLayer> = (value, path) => {
+  const o = asObject(value, path);
+  const layer: ConstructionLayer = {
+    name: field(o, 'name', path, asString),
+    material: field(o, 'material', path, nullable(MATERIAL)),
+    lambda: field(o, 'lambda', path, nullable(readSourcedNumber)),
+    thicknessCm: field(o, 'thicknessCm', path, readSourcedNumber),
+  };
+  const thicknessUnknown = optional(o, 'thicknessUnknown', path, asBoolean);
+  if (thicknessUnknown === true) layer.thicknessUnknown = true;
+  const planText = optional(o, 'planText', path, asString);
+  if (planText !== undefined) layer.planText = planText;
+  const doubt = optional(o, 'doubt', path, nullable(asString));
+  if (doubt !== undefined) layer.doubt = doubt;
+  return layer;
+};
+
+const readGround: Reader<GroundData> = (value, path) => {
+  const o = asObject(value, path);
+  const ground: GroundData = { area: field(o, 'area', path, readSourcedNumber), perimeter: field(o, 'perimeter', path, readSourcedNumber) };
+  const depth = optional(o, 'depth', path, readSourcedNumber);
+  if (depth !== undefined) ground.depth = depth;
+  return ground;
+};
+
 const readConstruction: Reader<Construction> = (value, path) => {
   const o = asObject(value, path);
-  return {
+  const construction: Construction = {
     id: field(o, 'id', path, asString),
     name: field(o, 'name', path, asString),
     category: field(o, 'category', path, CATEGORY),
     u: field(o, 'u', path, nullable(readSourcedNumber)),
   };
+  // Champs de la version 2 : recopiés seulement s'ils sont présents.
+  const luxeebType = optional(o, 'luxeebType', path, LUXEEB_TYPE);
+  if (luxeebType !== undefined) construction.luxeebType = luxeebType;
+  const layers = optional(o, 'layers', path, listOf(readLayer));
+  if (layers !== undefined) construction.layers = layers;
+  const deltaU = optional(o, 'deltaU', path, asNumber);
+  if (deltaU !== undefined) construction.deltaU = deltaU;
+  const ground = optional(o, 'ground', path, readGround);
+  if (ground !== undefined) construction.ground = ground;
+  const ownValue = optional(o, 'ownValue', path, asBoolean);
+  if (ownValue !== undefined) construction.ownValue = ownValue;
+  return construction;
+};
+
+const readWindowGeometry: Reader<WindowGeometry> = (value, path) => {
+  const o = asObject(value, path);
+  return {
+    width: field(o, 'width', path, asNumber),
+    height: field(o, 'height', path, asNumber),
+    frameWidth: field(o, 'frameWidth', path, readSourcedNumber),
+    fensterTyp: field(o, 'fensterTyp', path, readSourced(FENSTER_TYP)),
+    panes: field(o, 'panes', path, asNumber),
+  };
 };
 
 const readWindowType: Reader<WindowType> = (value, path) => {
   const o = asObject(value, path);
-  return {
+  const type: WindowType = {
     id: field(o, 'id', path, asString),
     name: field(o, 'name', path, asString),
     uw: field(o, 'uw', path, nullable(readSourcedNumber)),
     g: field(o, 'g', path, nullable(readSourcedNumber)),
   };
+  const geometry = optional(o, 'geometry', path, readWindowGeometry);
+  if (geometry !== undefined) type.geometry = geometry;
+  for (const key of ['ug', 'uf', 'psiG'] as const) {
+    const v = optional(o, key, path, nullable(readSourcedNumber));
+    if (v !== undefined) type[key] = v;
+  }
+  return type;
+};
+
+const readFacadeView: Reader<FacadeView> = (value, path) => {
+  const o = asObject(value, path);
+  const view: FacadeView = {
+    orientation: field(o, 'orientation', path, FACADE_ORIENTATION),
+    short: field(o, 'short', path, asString),
+    title: field(o, 'title', path, nullable(asString)),
+  };
+  const viewId = optional(o, 'viewId', path, asString);
+  if (viewId !== undefined) view.viewId = viewId;
+  return view;
 };
 
 const readManualRow: Reader<ManualRow> = (value, path) => {
@@ -345,7 +441,7 @@ const readManualRow: Reader<ManualRow> = (value, path) => {
 
 const readModel: Reader<BuildingModel> = (value, path) => {
   const o = asObject(value, path);
-  return {
+  const model: BuildingModel = {
     storeys: field(o, 'storeys', path, listOf(readStorey)),
     northAngle: field(o, 'northAngle', path, readSourcedNumber),
     storeysAligned: field(o, 'storeysAligned', path, asBoolean),
@@ -355,6 +451,13 @@ const readModel: Reader<BuildingModel> = (value, path) => {
     windowTypes: field(o, 'windowTypes', path, listOf(readWindowType)),
     manualRows: field(o, 'manualRows', path, listOf(readManualRow)),
   };
+  const facadeViews = optional(o, 'facadeViews', path, listOf(readFacadeView));
+  if (facadeViews !== undefined) model.facadeViews = facadeViews;
+  const heightConvention = optional(o, 'heightConvention', path, HEIGHT_CONVENTION);
+  if (heightConvention !== undefined) model.heightConvention = heightConvention;
+  const envelopeOrder = optional(o, 'envelopeOrder', path, ENVELOPE_ORDER);
+  if (envelopeOrder !== undefined) model.envelopeOrder = envelopeOrder;
+  return model;
 };
 
 // ───────────────────────────── Réponses ─────────────────────────────
@@ -367,7 +470,7 @@ function answer<T>(obj: Obj, key: string, path: string, reader: Reader<T>, missi
 
 const readAnswers: Reader<ProjectAnswers> = (value, path) => {
   const o = asObject(value, path);
-  return {
+  const answers: ProjectAnswers = {
     projectName: answer(o, 'projectName', path, asString, ''),
     street: answer(o, 'street', path, asString, ''),
     postcode: answer(o, 'postcode', path, asString, ''),
@@ -389,6 +492,22 @@ const readAnswers: Reader<ProjectAnswers> = (value, path) => {
     solarThermal: answer(o, 'solarThermal', path, nullable(asBoolean), null),
     photovoltaic: answer(o, 'photovoltaic', path, nullable(asBoolean), null),
   };
+  // Réponses de la version 2 : absentes d'un fichier 1, elles restent absentes (« non renseigné »).
+  const extra = (key: keyof ProjectAnswers, reader: Reader<unknown>): void => {
+    const v = optional(o, key, path, reader);
+    if (v !== undefined) (answers as unknown as Record<string, unknown>)[key] = v;
+  };
+  extra('ventilationUnit', nullable(asString));
+  extra('ventilationFlow', nullable(asNumber));
+  extra('heatRecovery', nullable(asNumber));
+  extra('fanPower', nullable(asNumber));
+  extra('airtightness', nullable(AIRTIGHTNESS));
+  extra('thermalBridges', nullable(THERMAL_BRIDGES));
+  extra('thermalMass', nullable(THERMAL_MASS));
+  extra('emissionTemps', nullable(asString));
+  extra('hotWaterStorageInside', nullable(asBoolean));
+  extra('attachment', nullable(ATTACHMENT));
+  return answers;
 };
 
 // ───────────────────────────── Projet ─────────────────────────────
@@ -406,10 +525,11 @@ function readProject(value: unknown): Project {
   const version = Object.prototype.hasOwnProperty.call(root, 'version') ? root['version'] : undefined;
   if (version === undefined || version === null) fail('export.file.noVersion', {});
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
-    fail('export.file.badVersion', { version: String(version).slice(0, 20), supported: PROJECT_FILE_VERSION });
+    fail('export.file.badVersion', { version: String(version).slice(0, 20), supported: PROJECT_FILE_VERSIONS_READ.join(', ') });
   }
   if (version > PROJECT_FILE_VERSION) fail('export.file.newerVersion', { version });
 
+  // Un fichier de version 1 est lu avec les mêmes lecteurs : ses champs sont un sous-ensemble de la version 2.
   return {
     version: PROJECT_FILE_VERSION,
     model: field(root, 'model', '', readModel),

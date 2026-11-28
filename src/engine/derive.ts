@@ -45,6 +45,7 @@ import {
   type Provenance,
   type Room,
   type Severity,
+  type Sourced,
   type Storey,
   type Totals,
   type Vec2,
@@ -69,6 +70,10 @@ import { unheatedRoomsBeside, unheatedRoomsInsideOutline } from './heatedOutline
 import { isUnconfirmed, weakest } from './provenance';
 import { computePitchedRoof, isEavesEdge, type PitchedRoof, type RoofSlope } from './roof';
 import { netAreaOf, type NetArea } from './storey';
+import type { ElevationSide, ReadComposition, ReadLevels, SheetReading } from '../core/reading';
+import type { FacadeView } from '../core/cpe';
+import { DEFAULT_WINDOW_TYPE_ID } from './defaults';
+import { MATERIAL_LIBRARY, windowTypeHypothesis } from './materials';
 
 // ───────────────────────────── Seuils de plausibilité (propres à l'outil, non réglementaires) ─────────────────────────────
 
@@ -129,6 +134,9 @@ interface WallGroup extends OpeningHost {
   length: number;
   sources: Provenance[];
   storeys: Storey[];
+  /** Ordre « expert » : surface cumulée (m²) et hauteurs rencontrées (cm), le mur couvrant plusieurs étages. */
+  area: number;
+  heights: Set<number>;
 }
 
 interface SlopeHost extends OpeningHost {
@@ -160,6 +168,17 @@ function fmt(value: number, digits = 2): string {
 
 export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
   const model = project.model;
+  /**
+   * Ordre de saisie de l'expert (planchers bas, toiture, façade par façade dans l'ordre des façades dessinées,
+   * portes puis fenêtres avant leur mur, puis parois vers le non chauffé). Absent : ordre historique, inchangé.
+   */
+  const expert = model.envelopeOrder === 'expert';
+  const facadeRank = (o: Orientation): number => {
+    const i = model.facadeViews?.findIndex((f) => f.orientation === o) ?? -1;
+    return i >= 0 ? i : 100 + ORIENTATIONS.indexOf(o);
+  };
+  const facadeShort = (o: Orientation): string =>
+    model.facadeViews?.find((f) => f.orientation === o)?.short || t(lang, `engine.short.${o}`);
   const northFinite = Number.isFinite(model.northAngle.value);
   const north = northFinite ? model.northAngle.value : 0;
   // Un nord illisible vaut un nord non confirmé.
@@ -241,13 +260,17 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
       construction: p.construction,
       label: p.label,
     };
+    if (p.entry === 'area') d.row.entry = 'area';
     drafts.push(d);
     return d;
   };
 
   /** Lignes « Abzug » d'une paroi, dans l'ordre de première apparition. */
   const openingDrafts = (host: OpeningHost, hostId: string, orientation: Orientation, boundary: Boundary): Draft[] =>
-    [...host.openings.entries()].map(([key, o]) => {
+    [...host.openings.entries()]
+      // Ordre « expert » : les portes d'abord, puis les fenêtres, chacune dans l'ordre de première apparition.
+      .sort(([, a], [, b]) => (expert ? Number(a.kind === 'window') - Number(b.kind === 'window') : 0))
+      .map(([key, o]) => {
       const width = o.widthCm / 100;
       const height = o.heightCm / 100;
       return draft({
@@ -265,7 +288,7 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
         storeyId: storeyIdOf(o.storeys),
         manual: false,
         label: () =>
-          t(lang, `engine.row.${o.kind}`, {
+          expert ? expertOpeningLabel(o, orientation, boundary) : t(lang, `engine.row.${o.kind}`, {
             width: fmt(width),
             height: fmt(height),
             orientation: orientationName(orientation),
@@ -273,6 +296,13 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
           }),
       });
     });
+
+  /** Nom à la manière de l'expert : « AV 94*125 X2 » (façade, largeur*hauteur en cm, nombre), « Porte d'entrée ». */
+  const expertOpeningLabel = (o: OpeningGroup, orientation: Orientation, boundary: Boundary): string => {
+    if (o.kind === 'door') return t(lang, boundary === 'unheated' ? 'engine.row.expert.doorUnheated' : 'engine.row.expert.door');
+    const prefix = boundary === 'unheated' ? '' : `${facadeShort(orientation)} `;
+    return `${prefix}${o.widthCm}*${o.heightCm}${o.count > 1 ? ` X${o.count}` : ''}`;
+  };
 
   // ── 1. Murs et ouvertures ──
   const walls = new Map<string, WallGroup>();
@@ -323,6 +353,8 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     const roof = g === topGeometry ? pitched : null;
     /** Par arête : le mur (ou le pan de toiture) qui porte ses ouvertures, 'heated' pour un mitoyen, null si aucun. */
     const hostOfEdge: Array<WallGroup | SlopeHost | 'heated' | null> = [];
+    /** Hauteur (cm) du mur porté par chaque arête : un groupe « expert » peut réunir plusieurs hauteurs. */
+    const heightOfEdge: number[] = [];
 
     for (let i = 0; i < g.poly.length; i++) {
       const edge = g.storey.edges[i];
@@ -364,13 +396,34 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
       const edgeTypeId = edge?.constructionId ?? null;
       const wallTypeId = edgeTypeId !== null && model.constructions.some((c) => c.id === edgeTypeId && c.category === 'wall') ? edgeTypeId : null;
       const construction = resolveConstruction(model, wallTypeId, defaultWallId(boundary), lang);
-      const key = `${construction.id}|${boundary}|${orientation}|${heightCm}`;
+      // Ordre « expert » : un mur par façade, tous étages et hauteurs confondus (saisi en surface s'il le faut).
+      // Vers le non chauffé ou la terre, l'orientation ne compte pas pour l'outil : une seule ligne par type.
+      const key = !expert
+        ? `${construction.id}|${boundary}|${orientation}|${heightCm}`
+        : boundary === 'outside'
+          ? `${construction.id}|${boundary}|${orientation}`
+          : `${construction.id}|${boundary}`;
       let group = walls.get(key);
       if (!group) {
-        group = { key, construction, boundary, orientation, heightCm, length: 0, sources: [], storeys: [], openings: new Map() };
+        group = {
+          key,
+          construction,
+          boundary,
+          orientation,
+          heightCm,
+          length: 0,
+          sources: [],
+          storeys: [],
+          openings: new Map(),
+          area: 0,
+          heights: new Set(),
+        };
         walls.set(key, group);
       }
       group.length += length;
+      group.area += length * (heightCm / 100);
+      group.heights.add(heightCm);
+      heightOfEdge[i] = heightCm;
       group.sources.push(...sources);
       pushUnique(group.storeys, g.storey);
       hostOfEdge.push(group);
@@ -390,7 +443,7 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
         if ('slope' in host) inRoof.push(o);
         else {
           widthOnEdge.set(o.edgeIndex, (widthOnEdge.get(o.edgeIndex) ?? 0) + o.width * o.count);
-          if (o.height * 100 > host.heightCm + 1) tooTall += o.count;
+          if (o.height * 100 > (heightOfEdge[o.edgeIndex] ?? host.heightCm) + 1) tooTall += o.count;
         }
         addOpening(host, o, g);
       }
@@ -419,25 +472,33 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
     const i = model.constructions.findIndex((x) => x.id === c.id);
     return i < 0 ? model.constructions.length : i;
   };
+  const byOrientation = (a: WallGroup, b: WallGroup): number =>
+    ORIENTATIONS.indexOf(a.orientation) - ORIENTATIONS.indexOf(b.orientation) ||
+    BOUNDARY_ORDER[a.boundary] - BOUNDARY_ORDER[b.boundary] ||
+    constructionRank(a.construction) - constructionRank(b.construction) ||
+    b.heightCm - a.heightCm;
+  // Ordre « expert » : les façades (contre extérieur) dans l'ordre des façades dessinées, puis contre terre, puis
+  // vers le non chauffé ; repli par orientation quand la façade n'est pas dessinée.
+  const byFacade = (a: WallGroup, b: WallGroup): number =>
+    BOUNDARY_ORDER[a.boundary] - BOUNDARY_ORDER[b.boundary] ||
+    facadeRank(a.orientation) - facadeRank(b.orientation) ||
+    constructionRank(a.construction) - constructionRank(b.construction);
   const wallBlocks: Block[] = [...walls.values()]
-    .sort(
-      (a, b) =>
-        ORIENTATIONS.indexOf(a.orientation) - ORIENTATIONS.indexOf(b.orientation) ||
-        BOUNDARY_ORDER[a.boundary] - BOUNDARY_ORDER[b.boundary] ||
-        constructionRank(a.construction) - constructionRank(b.construction) ||
-        b.heightCm - a.heightCm,
-    )
+    .sort(expert ? byFacade : byOrientation)
     .map((w) => {
       const id = `wall:${w.key}`;
       const deductions = openingDrafts(w, id, w.orientation, w.boundary);
+      // Plusieurs étages ou plusieurs hauteurs : la surface seule, dans « Breite [m] od. Fläche [m²] ».
+      const byArea = expert && (w.storeys.length > 1 || w.heights.size > 1);
       const host = draft({
         id,
         kind: 'wall',
         construction: w.construction,
         windowType: null,
         count: 1,
-        length: w.length,
-        width: w.heightCm / 100,
+        length: byArea ? 1 : w.length,
+        width: byArea ? w.area : w.heightCm / 100,
+        ...(byArea ? { entry: 'area' as const } : {}),
         orientation: w.orientation,
         boundary: w.boundary,
         deduct: false,
@@ -445,11 +506,14 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
         storeyId: storeyIdOf(w.storeys),
         manual: false,
         label: (element) =>
-          t(lang, 'engine.row.wall', {
-            element,
-            orientation: orientationName(w.orientation),
-            storeys: storeyNames(w.storeys),
-          }),
+          // Vers le non chauffé ou la terre (ordre « expert »), l'orientation ne dit rien : elle n'est pas nommée.
+          expert && w.boundary !== 'outside'
+            ? t(lang, 'engine.row.wallInside', { element, storeys: storeyNames(w.storeys) })
+            : t(lang, 'engine.row.wall', {
+                element,
+                orientation: orientationName(w.orientation),
+                storeys: storeyNames(w.storeys),
+              }),
       });
       return { host, deductions };
     });
@@ -736,7 +800,22 @@ export function deriveSheets(project: Project, lang: Lang): LuxeebSheets {
   // ── 7. Assemblage dans l'ordre de saisie, déductions comprises ──
   const envelope: EnvelopeRow[] = [];
   let facadeWindowArea = 0;
-  for (const block of [...wallBlocks, ...roofBlocks, ...ceilingBlocks, ...floorBlocks, ...manualBlocks]) {
+  const order = expert
+    ? [...floorBlocks, ...roofBlocks, ...ceilingBlocks, ...wallBlocks, ...manualBlocks]
+    : [...wallBlocks, ...roofBlocks, ...ceilingBlocks, ...floorBlocks, ...manualBlocks];
+  if (expert) {
+    // Surface horizontale de forme quelconque (portée par la longueur, largeur 1 m) : comme l'expert, la surface
+    // va seule dans « Breite [m] od. Fläche [m²] ». La surface brute ne change pas.
+    for (const block of order) {
+      const r = block.host.row;
+      if (r.kind !== 'wall' && r.entry !== 'area' && r.width === 1 && r.length !== 1) {
+        r.width = r.length;
+        r.length = 1;
+        r.entry = 'area';
+      }
+    }
+  }
+  for (const block of order) {
     let deducted = 0;
     for (const d of block.deductions) {
       envelope.push(d.row);
@@ -1056,4 +1135,172 @@ function manualDraft(m: ManualRow, model: BuildingModel, lang: Lang, draft: Draf
     manual: true,
     label: (element) => (m.label.trim() !== '' ? m.label : element),
   });
+}
+
+// ───────────────────────────── Ordre « expert » : préparation du modèle ─────────────────────────────
+
+/**
+ * Épaisseur (m) d'une composition lue : somme de TOUTES ses couches comptées (le lecteur ne compte pas le béton de
+ * propreté ni les films sous le dernier isolant). null — donc repli sur la convention 'levels' — quand une couche
+ * comptée qui a une résistance n'a pas d'épaisseur lisible : on ne raccourcit pas l'enveloppe en silence.
+ */
+export function compositionThickness(rc: ReadComposition | undefined): number | null {
+  if (!rc) return null;
+  const counted = rc.layers.filter((l) => l.counted);
+  const unreadable = counted.some(
+    (l) => (l.thicknessCm === null || !Number.isFinite(l.thicknessCm) || l.thicknessCm < 0) && MATERIAL_LIBRARY[l.material].family !== 'excluded',
+  );
+  if (unreadable) return null;
+  const sum = counted.reduce((s, l) => s + (l.thicknessCm !== null && l.thicknessCm > 0 ? l.thicknessCm : 0), 0);
+  return sum > 0 ? sum / 100 : null;
+}
+
+export interface EnvelopeHeights {
+  /** Convention effectivement appliquée (repli 'levels' quand la coupe ne donne pas de quoi faire mieux). */
+  convention: 'external' | 'levels';
+  /** Hauteur brute par étage chauffé, du bas vers le haut (m). */
+  heights: Sourced<number>[];
+  /** Bas et haut de l'enveloppe (m, relatifs au ±0,00). */
+  bottom: number;
+  top: number;
+}
+
+/**
+ * Hauteurs brutes des étages tirées des niveaux et des compositions lus sur la planche.
+ *  - 'external' (cotes extérieures) : du dessous du dernier isolant du plancher bas jusqu'au dessus de la toiture
+ *    (niveau fini du dernier étage + hauteur libre lue + épaisseur de la toiture) ; la limite entre deux étages est
+ *    le DESSOUS du plancher qui les sépare (celui au-dessus d'un local non chauffé s'il y en a un, sinon le plancher
+ *    d'étage) : un mur vers un garage s'arrête ainsi sous le plancher qui le couvre ;
+ *  - 'levels' : de niveau fini à niveau fini, puis jusqu'au sommet coté (acrotère, faîtage).
+ * Repli 'levels' quand une donnée de la convention extérieure manque ; null quand les niveaux ne suffisent pas.
+ * Le choix de la convention est un réglage du bureau, jamais une question.
+ */
+export function envelopeHeights(
+  levels: ReadLevels | null | undefined,
+  compositions: readonly ReadComposition[],
+  storeyCount: number,
+  convention: 'external' | 'levels' = 'external',
+): EnvelopeHeights | null {
+  if (!levels || storeyCount < 1) return null;
+  const floors = [...levels.floors].sort((a, b) => a.rel - b.rel).slice(0, storeyCount);
+  if (floors.length < storeyCount) return null;
+  const confidence = Math.min(...floors.map((f) => f.confidence), levels.top?.confidence ?? 1);
+  const find = (element: ReadComposition['element']): ReadComposition | undefined => compositions.find((c) => c.element === element);
+  const last = floors[floors.length - 1]!;
+
+  const tryExternal = (): { bottom: number; splits: number[]; top: number } | null => {
+    const ground = compositionThickness(find('floor-on-ground'));
+    const roof = compositionThickness(find('roof'));
+    const clear = levels.clearHeights.length > 0 ? levels.clearHeights[levels.clearHeights.length - 1]! : null;
+    if (ground === null || roof === null || clear === null) return null;
+    const between = compositionThickness(find('floor-to-unheated')) ?? compositionThickness(find('intermediate-floor'));
+    if (floors.length > 1 && between === null) return null;
+    const splits = floors.slice(1).map((f) => f.rel - (between ?? 0));
+    return { bottom: floors[0]!.rel - ground, splits, top: last.rel + clear + roof };
+  };
+  const tryLevels = (): { bottom: number; splits: number[]; top: number } | null => {
+    const top = levels.top?.rel ?? null;
+    if (top === null || !(top > last.rel)) return null;
+    return { bottom: floors[0]!.rel, splits: floors.slice(1).map((f) => f.rel), top };
+  };
+
+  let used: 'external' | 'levels' = convention;
+  let z = convention === 'external' ? tryExternal() : tryLevels();
+  if (!z && convention === 'external') {
+    used = 'levels';
+    z = tryLevels();
+  }
+  if (!z) return null;
+  const bounds = [z.bottom, ...z.splits, z.top];
+  const heights: Sourced<number>[] = [];
+  for (let i = 0; i < storeyCount; i++) {
+    const h = round(bounds[i + 1]! - bounds[i]!, 3);
+    if (!(h > 0)) return null;
+    heights.push({
+      value: h,
+      from: 'plan',
+      confidence,
+      note: used === 'external' ? 'Cotes extérieures : niveaux et compositions lus' : 'De niveau fini à niveau fini',
+    });
+  }
+  return { convention: used, heights, bottom: z.bottom, top: z.top };
+}
+
+const SIDE_SHORT: Partial<Record<ElevationSide, 'front' | 'back' | 'left' | 'right' | 'side'>> = {
+  front: 'front',
+  back: 'back',
+  left: 'left',
+  right: 'right',
+  side: 'side',
+};
+const SIDE_RANK: Record<ElevationSide, number> = { front: 0, back: 1, left: 2, right: 3, side: 4, north: 5, east: 6, south: 7, west: 8 };
+
+/**
+ * Façades dessinées → ordre et noms courts de l'expert. L'orientation vient du côté du plan auquel la façade
+ * correspond (`planSideDeg`) et du nord lu ; une façade sans l'un des deux est laissée de côté (repli par
+ * orientation dans le relevé). Ordre : avant, arrière, puis les autres comme la planche les donne.
+ */
+export function facadeViewsFromReading(reading: SheetReading | null | undefined, lang: Lang): FacadeView[] {
+  if (!reading?.north) return [];
+  const up = reading.north.sheetUpAzimuth;
+  const out: { view: FacadeView; rank: number }[] = [];
+  reading.elevations.forEach((e, k) => {
+    if (!e.planSideDeg) return;
+    const orientation = sectorOfAzimuth((((up + e.planSideDeg.value) % 360) + 360) % 360);
+    if (out.some((o) => o.view.orientation === orientation)) return;
+    const side = e.sides?.[0] ?? null;
+    const named = side ? SIDE_SHORT[side] : undefined;
+    const title = reading.views.find((v) => v.id === e.viewId)?.title ?? null;
+    out.push({
+      view: { orientation, short: t(lang, `engine.short.${named ?? orientation}`), title, viewId: e.viewId },
+      rank: (side ? SIDE_RANK[side] : 9) * 100 + k,
+    });
+  });
+  return out.sort((a, b) => a.rank - b.rank).map((o) => o.view);
+}
+
+/**
+ * Un type de fenêtre par façade et par dimensions, nommé comme l'expert (« AV 94*125 X2 »), avec la géométrie de la
+ * feuille des fenêtres et les valeurs d'usage étiquetées hypothèses (voir engine/materials). Seules les fenêtres
+ * sans type choisi (type par défaut) sont concernées ; le modèle reçu n'est pas modifié.
+ */
+export function withExpertWindowTypes(model: BuildingModel, lang: Lang): BuildingModel {
+  const north = Number.isFinite(model.northAngle.value) ? model.northAngle.value : 0;
+  const isDefault = (id: string | null): boolean => id === null || id === DEFAULT_WINDOW_TYPE_ID || !model.windowTypes.some((w) => w.id === id);
+  const short = (o: Orientation): string => model.facadeViews?.find((f) => f.orientation === o)?.short || t(lang, `engine.short.${o}`);
+  const groups = new Map<string, { o: Orientation; w: number; h: number; n: number }>();
+  const keyOf = new Map<string, string>(); // `${storeyId}:${openingId}` → clé de groupe
+  for (const s of model.storeys) {
+    const poly = scalePolygon(s.outline, s.metresPerUnit.value);
+    for (const op of s.openings) {
+      if (op.kind !== 'window' || !isDefault(op.windowTypeId) || !(op.width > 0) || !(op.height > 0)) continue;
+      if (poly.length < 3 || !(op.edgeIndex < poly.length)) continue;
+      const boundary = s.edges[op.edgeIndex]?.boundary ?? 'outside';
+      if (boundary === 'heated') continue;
+      const o = sectorOfAzimuth(edgeAzimuth(poly, op.edgeIndex, north));
+      const w = Math.round(op.width * 100);
+      const h = Math.round(op.height * 100);
+      const key = `${o}|${w}|${h}`;
+      const g = groups.get(key) ?? { o, w, h, n: 0 };
+      g.n += op.count;
+      groups.set(key, g);
+      keyOf.set(`${s.id}:${op.id}`, key);
+    }
+  }
+  if (groups.size === 0) return model;
+  const typeId = (key: string): string => `window-${key.replace(/\|/g, '-')}`;
+  const types = [...groups.entries()].map(([key, g]) =>
+    windowTypeHypothesis(typeId(key), `${short(g.o)} ${g.w}*${g.h}${g.n > 1 ? ` X${g.n}` : ''}`, g.w / 100, g.h / 100, lang),
+  );
+  return {
+    ...model,
+    windowTypes: [...model.windowTypes.filter((w) => !types.some((n) => n.id === w.id)), ...types],
+    storeys: model.storeys.map((s) => ({
+      ...s,
+      openings: s.openings.map((op) => {
+        const key = keyOf.get(`${s.id}:${op.id}`);
+        return key ? { ...op, windowTypeId: typeId(key) } : op;
+      }),
+    })),
+  };
 }

@@ -13,6 +13,7 @@
  *  - L'outil est un ASSISTANT : chaque valeur porte sa provenance et l'expert reste responsable du CPE.
  */
 
+import type { Airtightness, Attachment, ConstructionLayer, FacadeView, GroundData, LuxeebElementType, ThermalBridges, WindowGeometry } from './cpe';
 import type { SheetReading } from './reading';
 
 // ───────────────────────────── Bases ─────────────────────────────
@@ -52,6 +53,18 @@ export interface Sourced<T> {
   from: Provenance;
   /** Courte explication affichable (« Échelle 1:100 lue dans le cartouche »). */
   note?: string;
+  /**
+   * Confiance 0..1 (même lecture que core/reading.ts : ≥ 0,85 recoupé, ≥ 0,65 une source, 0 = hypothèse de l'outil).
+   * Absente = non mesurée (projets enregistrés avant la version 2 du fichier, saisies de l'expert).
+   */
+  confidence?: number;
+  /** Raison du doute, courte ; absente ou null quand il n'y en a pas. */
+  doubt?: string | null;
+  /**
+   * Source citée, surtout pour une HYPOTHÈSE (`from: 'default'`) : « valeur d'usage, à remplacer par la valeur
+   * déclarée du produit ». Jamais une valeur réglementaire inventée.
+   */
+  source?: string;
 }
 
 // ───────────────────────────── Plans lus ─────────────────────────────
@@ -232,6 +245,16 @@ export interface Construction {
   category: ConstructionCategory;
   /** Valeur U (W/m²K) si l'expert la connaît déjà ; sinon null → à définir dans LuxEeB-Tool. */
   u: Sourced<number> | null;
+  /** Type d'élément de LuxEeB-Tool ; absent = déduit de la catégorie et du milieu (core/cpe `luxeebTypeOf`). */
+  luxeebType?: LuxeebElementType;
+  /** Couches de l'INTÉRIEUR vers l'extérieur (10 au plus dans l'outil). Présentes → `u` est un pré-calcul. */
+  layers?: ConstructionLayer[];
+  /** Supplément ΔU (W/m²K) de la feuille des valeurs U ; absent = 0. */
+  deltaU?: number;
+  /** Données des éléments contre terre (A, P, profondeur) : l'outil en tire B' et Fx. */
+  ground?: GroundData;
+  /** Élément saisi par sa valeur propre (« Eigene Angaben ») : porte, élément non calculé par couches. */
+  ownValue?: boolean;
 }
 
 /** Type de fenêtre (LuxEeB-Tool : « transparente Bauteile »). */
@@ -240,6 +263,12 @@ export interface WindowType {
   name: string;
   uw: Sourced<number> | null;
   g: Sourced<number> | null;
+  /** Géométrie de la feuille des fenêtres (dimensions brutes, cadre, einfach / mehrfach, vitrages). */
+  geometry?: WindowGeometry;
+  /** U du vitrage, U du cadre (W/m²K) et Ψ de l'intercalaire (W/mK) : avec `geometry`, `uw` en est le pré-calcul. */
+  ug?: Sourced<number> | null;
+  uf?: Sourced<number> | null;
+  psiG?: Sourced<number> | null;
 }
 
 export interface StoreyEdge {
@@ -376,7 +405,23 @@ export interface BuildingModel {
   constructions: Construction[];
   windowTypes: WindowType[];
   manualRows: ManualRow[];
+  /**
+   * Façades DESSINÉES sur la planche, dans leur ordre (« FAÇADE AVANT », « FAÇADE ARRIÈRE »…) : c'est l'ordre de
+   * saisie de l'expert. `short` sert au nom des fenêtres (« AV 94*125 X2 »).
+   */
+  facadeViews?: FacadeView[];
+  /**
+   * Convention des hauteurs brutes : 'external' = cotes extérieures (dessous de l'isolant du plancher bas → dessus
+   * de l'isolant de toiture) ; 'levels' = de niveau fini à niveau fini, puis jusqu'à l'acrotère. Réglage du bureau.
+   */
+  heightConvention?: 'external' | 'levels';
+  /**
+   * Ordre des lignes d'enveloppe : 'expert' = planchers bas, toiture, puis façade par façade (portes, fenêtres, mur),
+   * puis parois vers le non chauffé ; absent ou 'luxeeb' = ordre historique par orientation.
+   */
+  envelopeOrder?: 'expert' | 'luxeeb';
 }
+
 
 // ───────────────────────────── Réponses aux questions ─────────────────────────────
 
@@ -425,10 +470,36 @@ export interface ProjectAnswers {
   n50: number | null;
   solarThermal: boolean | null;
   photovoltaic: boolean | null;
+  // ── Réponses ajoutées avec la version 2 du fichier : absentes = non renseignées (jamais inventées) ──
+  /** Désignation de l'appareil de ventilation (« VMC double flux … »). */
+  ventilationUnit?: string | null;
+  /** Débit moyen de l'installation (m³/h). */
+  ventilationFlow?: number | null;
+  /** Rendement de récupération de chaleur (0..1). */
+  heatRecovery?: number | null;
+  /** Puissance spécifique des ventilateurs (W/(m³/h)). */
+  fanPower?: number | null;
+  /**
+   * Choix de l'étanchéité dans l'outil : 'class-a-with-ventilation' = option « classe A+ ou A avec ventilation »
+   * (n50 = 0,6, observée dans un CPE 6.25) ; 'measured' = valeur mesurée (test d'infiltrométrie, `n50`).
+   */
+  airtightness?: Airtightness | null;
+  /** Ponts thermiques : forfait (W/m²K, choix attestés) ou calcul détaillé. */
+  thermalBridges?: ThermalBridges | null;
+  /** Construction du bâtiment : 'heavy' (lourde, béton ou maçonnerie) ; 'other' = autre choix à faire dans l'outil. */
+  thermalMass?: 'heavy' | 'other' | null;
+  /** Régime de températures de l'émission (« 35/28 »), tel que l'outil le propose. */
+  emissionTemps?: string | null;
+  /** Ballon d'eau chaude à l'intérieur du volume chauffé ? */
+  hotWaterStorageInside?: boolean | null;
+  /** Situation d'accolement (« Anbausituation ») : isolé, accolé d'un côté, de deux côtés. */
+  attachment?: Attachment | null;
 }
 
+
 export interface Project {
-  version: 1;
+  /** 1 : fichiers enregistrés avant le dossier CPE ; 2 : version actuelle (champs v2 tous facultatifs). */
+  version: 1 | 2;
   model: BuildingModel;
   answers: ProjectAnswers;
 }
@@ -465,6 +536,11 @@ export interface EnvelopeRow {
   from: Provenance;
   storeyId: string | null;
   manual: boolean;
+  /**
+   * Saisie : 'area' = surface portée seule par la colonne « Breite [m] od. Fläche [m²] » (longueur 1) quand plusieurs
+   * hauteurs s'ajoutent ; absent ou 'dims' = longueur × largeur.
+   */
+  entry?: 'dims' | 'area';
 }
 
 /** Ligne du tableau « Energiebezugsflächen / Zonen » (An et Vn). */

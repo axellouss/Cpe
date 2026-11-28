@@ -376,7 +376,8 @@ function envelopeSection(rows: readonly EnvelopeRow[], lang: Lang): GuideSection
       String(i + 1),
       excelSafeText(r.elementName),
       luxeebNumber(r.count),
-      luxeebNumber(r.length),
+      // Saisie par surface (ordre « expert ») : « Länge » reste vide, la surface est dans la colonne suivante.
+      r.entry === 'area' ? '' : luxeebNumber(r.length),
       luxeebNumber(r.width),
       luxeebOrientation(r.orientation),
       r.deduct ? E.deductMark : '',

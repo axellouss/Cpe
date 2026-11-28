@@ -14,6 +14,8 @@ import { buildGuide, ENVELOPE_AZIMUTH_COLUMN, guideDisclaimer } from './guide';
 import type { GuideTable } from './index';
 import { LUXEEB_ENVELOPE, LUXEEB_SHEET } from './luxeeb-terms';
 import './messages';
+import type { Dossier } from '../core/cpe';
+import { buildDossier } from './dossier';
 import { luxeebEnvelopeRows } from './paste';
 import { findingLines, totalsFacts } from './summary';
 
@@ -221,6 +223,29 @@ function findingsBlock(sheets: LuxeebSheets, lang: Lang): string {
   return tableHtml([t(lang, 'export.col.severity'), t(lang, 'export.col.message')], rows, '');
 }
 
+/** Hypothèses du dossier CPE (rien sur la planche) : chacune avec sa source, à confirmer avant la saisie. */
+function dossierAssumptionsBlock(dossier: Dossier, lang: Lang): string {
+  const title = `<h3>${e(t(lang, 'export.report.section.dossierAssumptions'))}</h3>`;
+  if (dossier.assumptions.length === 0) return `${title}<p class="empty">${e(t(lang, 'export.report.dossierAssumptions.empty'))}</p>`;
+  const rows = dossier.assumptions.map((a) => `<tr>${td(a.text)}<td><span class="note">${e(a.source)}</span></td></tr>`);
+  return title + tableHtml([t(lang, 'export.common.value'), t(lang, 'export.dossier.col.source')], rows, '');
+}
+
+/** Pré-contrôles avec les plages du « Plausibilitätscheck » de l'outil. */
+function plausibilityBlock(dossier: Dossier, lang: Lang): string {
+  const rows = dossier.plausibility
+    .filter((c) => c.status !== 'n/a')
+    .map((c) => {
+      const digits = c.max < 5 ? 2 : 0;
+      const status = c.status === 'P' ? 'P' : '!';
+      return `<tr${c.status === 'out' ? ' class="plaus-out"' : ''}>${td(c.label)}${td(luxeebNumber(c.value ?? Number.NaN, digits))}${td(`${luxeebNumber(c.min, digits)}–${luxeebNumber(c.max, digits)} ${c.unit}`)}${td(status)}</tr>`;
+    });
+  return (
+    `<h3>${e(t(lang, 'export.report.section.plausibility'))}</h3><p class="note">${e(t(lang, 'export.report.plausibility.note'))}</p>` +
+    tableHtml(['Kennwert', t(lang, 'export.common.value'), 'übliche Werte', 'Check'], rows, t(lang, 'export.report.empty'))
+  );
+}
+
 function legendBlock(lang: Lang): string {
   const entries: (Provenance | null)[] = [...PROVENANCES, null];
   const rows = entries.map((p) => `<tr>${tdHtml(tag(p, lang))}${td(provenanceLabel(p, lang))}</tr>`);
@@ -297,6 +322,7 @@ export function buildReportHtml(sheets: LuxeebSheets, project: Project, lang: La
     return table ? guideTableBlock(table, lang, omit, silentNote) : '';
   };
   const titled = (term: string, key: string): string => `${term} — ${t(lang, key)}`;
+  const dossier = buildDossier(project, [], lang, { derived: sheets });
 
   const body = [
     `<header><h1>${e(t(lang, 'export.report.title'))}</h1><p class="sub">${e(t(lang, 'export.report.subtitle'))}</p>` +
@@ -306,7 +332,7 @@ export function buildReportHtml(sheets: LuxeebSheets, project: Project, lang: La
     section(t(lang, 'export.report.responsibility.title'), `<p>${e(t(lang, 'export.report.responsibility.text'))}</p>`, 'resp'),
     section(t(lang, 'export.report.section.project'), projectBlock(project, lang)),
     section(t(lang, 'export.report.section.totals'), totalsBlock(sheets, project, lang)),
-    section(t(lang, 'export.report.section.assumptions'), assumptionsBlock(project, lang)),
+    section(t(lang, 'export.report.section.assumptions'), assumptionsBlock(project, lang) + dossierAssumptionsBlock(dossier, lang)),
     section(t(lang, 'export.report.section.rooms'), roomsBlock(project, lang) || `<p class="empty">${e(t(lang, 'export.report.empty'))}</p>`),
     section(titled(LUXEEB_SHEET.opaque, 'export.report.section.constructions'), guideTable('constructions')),
     section(titled(LUXEEB_SHEET.windows, 'export.report.section.windows'), guideTable('windowTypes')),
@@ -318,7 +344,7 @@ export function buildReportHtml(sheets: LuxeebSheets, project: Project, lang: La
     ),
     section(titled(LUXEEB_SHEET.zones, 'export.report.section.zones'), guideTable('zones')),
     section(titled(LUXEEB_SHEET.volumes, 'export.report.section.volumes'), guideTable('volumes')),
-    section(t(lang, 'export.report.section.findings'), findingsBlock(sheets, lang)),
+    section(t(lang, 'export.report.section.findings'), findingsBlock(sheets, lang) + plausibilityBlock(dossier, lang)),
     section(t(lang, 'export.report.section.legend'), legendBlock(lang)),
     section(
       t(lang, 'export.report.section.signature'),

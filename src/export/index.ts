@@ -165,7 +165,9 @@ export function buildGuide(sheets: LuxeebSheets, project: Project, lang: Lang): 
 
 export { envelopeProvenance, GUIDE_SECTION_KEYS, guideDisclaimer } from './guide';
 export type { GuideSectionKey } from './guide';
-export { envelopeDeductLines, luxeebEnvelopeRows, PASTE_EOL } from './paste';
+export { envelopeDeductLines, layersPasteBlock, luxeebEnvelopeRows, PASTE_EOL, windowsPasteBlock } from './paste';
+// Dossier CPE : une section par feuille de LuxEeB-Tool 6.25, chaque valeur avec provenance, confiance et source.
+export { buildDossier, plausibilityChecks, type DossierOptions } from './dossier';
 export { buildReportHtml } from './report';
 export type { ReportOptions } from './report';
 export { PROJECT_FILE_APP, PROJECT_FILE_VERSION, ProjectFileError, projectFileErrorMessage } from './project-file';

@@ -514,7 +514,7 @@ describe('modelFromDocument : un document → premier jet de bâtiment', () => {
 describe('projet vide', () => {
   it('createEmptyProject : aucun étage, réponses vides', () => {
     const p = createEmptyProject('de');
-    expect(p.version).toBe(1);
+    expect(p.version).toBe(2); // format de fichier 2 (dossier CPE) : un projet neuf naît dans la version courante
     expect(p.model.storeys).toEqual([]);
     expect(p.model.windowTypes[0]!.name).toBe('Fenster');
     expect(p.answers).toMatchObject({ projectName: '', street: '', postcode: '', locality: '', buildingType: null, yearBuilt: null, n50: null });

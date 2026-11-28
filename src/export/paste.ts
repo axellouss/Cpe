@@ -6,7 +6,7 @@
  * ATTENTION : personne n'a encore vérifié qu'un collage multi-cellules passe dans le classeur protégé.
  * Ces blocs sont donc présentés à l'utilisateur comme « à essayer » ; la recopie ligne par ligne reste la voie sûre.
  */
-import type { EnvelopeRow, VolumeRow, ZoneRow } from '../core/types';
+import type { Construction, EnvelopeRow, VolumeRow, WindowType, ZoneRow } from '../core/types';
 import { excelSafeText, luxeebNumber, luxeebOrientation } from './format';
 
 /** Séparateur de lignes des blocs (celui du presse-papiers d'Excel sous Windows). */
@@ -24,7 +24,48 @@ function block(lines: readonly (readonly string[])[]): string {
  */
 export function envelopePasteBlock(rows: readonly EnvelopeRow[]): string {
   return block(
-    rows.map((r) => [luxeebNumber(r.count), luxeebNumber(r.length), luxeebNumber(r.width), luxeebOrientation(r.orientation)]),
+    rows.map((r) =>
+      // Saisie par surface (ordre « expert ») : « Länge » vide, la surface dans « Breite [m] od. Fläche [m²] ».
+      r.entry === 'area'
+        ? [luxeebNumber(r.count), '', luxeebNumber(r.grossArea / Math.max(1, r.count)), luxeebOrientation(r.orientation)]
+        : [luxeebNumber(r.count), luxeebNumber(r.length), luxeebNumber(r.width), luxeebOrientation(r.orientation)],
+    ),
+  );
+}
+
+/**
+ * Couches d'un élément pour « Berechnung der U-Werte von Bauteilen », de l'intérieur vers l'extérieur :
+ * Baustoff ⇥ λ ⇥ Dicke [cm], une ligne par couche (10 au plus dans l'outil). Une λ inconnue laisse la cellule vide.
+ */
+export function layersPasteBlock(construction: Pick<Construction, 'layers'>): string {
+  return block(
+    (construction.layers ?? []).map((l) => [excelSafeText(l.name), l.lambda ? luxeebNumber(l.lambda.value, 3) : '', l.thicknessUnknown ? '' : luxeebNumber(l.thicknessCm.value, 1)]),
+  );
+}
+
+/**
+ * Types de fenêtres pour « Berechnung der U-Werte von transparenten Bauteilen » : Bezeichnung ⇥ Breite ⇥ Höhe ⇥
+ * Rahmenbreite ⇥ Fenstertyp ⇥ Scheibenzahl ⇥ U-Wert Glas ⇥ U-Wert Rahmen ⇥ Ψg ⇥ g-Wert. La colonne « Einbauart »
+ * (liste) est laissée à l'expert. Une valeur inconnue laisse sa cellule vide.
+ */
+export function windowsPasteBlock(types: readonly WindowType[]): string {
+  const n = (s: { value: number } | null | undefined, digits = 2): string => (s ? luxeebNumber(s.value, digits) : '');
+  return block(
+    types.map((w) => {
+      const g = w.geometry;
+      return [
+        excelSafeText(w.name),
+        g ? luxeebNumber(g.width) : '',
+        g ? luxeebNumber(g.height) : '',
+        n(g?.frameWidth, 3),
+        g ? g.fensterTyp.value : '',
+        g ? luxeebNumber(g.panes, 0) : '',
+        n(w.ug),
+        n(w.uf),
+        n(w.psiG, 3),
+        n(w.g),
+      ];
+    }),
   );
 }
 

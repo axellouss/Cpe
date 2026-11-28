@@ -3,10 +3,12 @@
  * Un seul fichier, plusieurs tableaux séparés par une ligne vide et précédés de leur titre,
  * dans l'ordre de saisie de LuxEeB-Tool (les tableaux sont ceux du guide, avec provenance et remarque).
  */
-import type { Lang, LuxeebSheets, Project } from '../core/types';
+import { bilingual, type DossierValue } from '../core/cpe';
+import type { Lang, LuxeebSheets, Project, Provenance } from '../core/types';
 import { t } from '../i18n';
 import { projectFacts, yesNoText } from './answers';
-import { excelSafeText, luxeebNumber, provenanceLabel, roomAreaNote } from './format';
+import { buildDossier } from './dossier';
+import { excelSafeText, luxeebNumber, provenanceLabel, roomAreaNote, weakestProvenance } from './format';
 import { buildGuide } from './guide';
 import type { GuideTable } from './index';
 import { LUXEEB_SHEET } from './luxeeb-terms';
@@ -120,6 +122,42 @@ export function sheetsToCsv(sheets: LuxeebSheets, project: Project, lang: Lang):
   for (const finding of findingLines(sheets.findings, lang)) {
     lines.push(line([finding.severityLabel, finding.code, finding.text]));
   }
+
+  // Dossier CPE : un tableau par feuille de LuxEeB-Tool, colonnes de l'outil, puis provenance, confiance, source, doute.
+  const dossier = buildDossier(project, [], lang, { derived: sheets });
+  const extra = [provenanceHeader, t(lang, 'export.dossier.col.confidence'), t(lang, 'export.dossier.col.source'), t(lang, 'export.dossier.col.doubt')];
+  const meta = (cells: readonly DossierValue[]): string[] => {
+    const from = weakestProvenance(cells.map((c) => c.from).filter((f): f is Provenance => f !== null));
+    const confidences = cells.map((c) => c.confidence).filter((c): c is number => c !== null);
+    const unique = (list: (string | undefined | null)[]): string => [...new Set(list.filter((x): x is string => !!x))].join(' | ');
+    return [
+      provenanceLabel(cells.some((c) => c.from !== null) ? from : null, lang),
+      confidences.length > 0 ? luxeebNumber(Math.min(...confidences)) : '',
+      unique(cells.map((c) => c.source)),
+      unique(cells.map((c) => c.doubt)),
+    ];
+  };
+  blank();
+  lines.push(line([t(lang, 'export.dossier.title')]));
+  for (const section of dossier.sections) {
+    const heading = section.luxeebName === section.title ? section.title : `${section.luxeebName} — ${section.title}`;
+    if (section.fields.length > 0) {
+      blank();
+      lines.push(line([`${heading} — ${t(lang, 'export.common.field')}`]));
+      lines.push(line([t(lang, 'export.common.field'), t(lang, 'export.common.value'), ...extra]));
+      for (const f of section.fields) lines.push(line([bilingual(f, lang), f.value.text, ...meta([f.value])]));
+    }
+    for (const table of section.tables) {
+      blank();
+      lines.push(line([`${heading} (${table.key})`]));
+      lines.push(line([...table.columns.map((c) => bilingual(c, lang)), ...extra]));
+      for (const row of table.rows) lines.push(line([...row.cells.map((c) => c.text), ...meta(row.cells)]));
+    }
+  }
+  blank();
+  lines.push(line([t(lang, 'export.csv.section.dossierAssumptions')]));
+  lines.push(line([t(lang, 'export.common.value'), t(lang, 'export.dossier.col.source')]));
+  for (const a of dossier.assumptions) lines.push(line([a.text, a.source]));
 
   return BOM + lines.join(EOL) + EOL;
 }
