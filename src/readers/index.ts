@@ -54,6 +54,18 @@ export interface FileLike {
 export interface ReadPlanOptions {
   /** Langue des noms de feuilles, notes et avertissements du lecteur (défaut : français). */
   lang?: Lang;
+  /** Suivi de la lecture, étape par étape, pour l'afficher pendant qu'elle se fait. */
+  onProgress?: (progress: ReadProgress) => void;
+}
+
+/** Étapes de la lecture d'une planche, dans l'ordre. Un lecteur n'émet que celles qui le concernent. */
+export type ReadStage = 'open' | 'views' | 'rooms' | 'envelope' | 'layers' | 'check';
+
+export interface ReadProgress {
+  stage: ReadStage;
+  status: 'running' | 'done' | 'skipped';
+  /** Ce qui vient d'être trouvé, en chiffres bruts (« plans: 2, sections: 2 »…) : l'interface le met en phrase. */
+  counts?: Record<string, number>;
 }
 
 export async function readPlanFile(file: FileLike, options: ReadPlanOptions = {}): Promise<PlanDocument> {

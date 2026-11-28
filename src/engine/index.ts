@@ -124,3 +124,4 @@ export function roofRidgeChoices(model: BuildingModel): RidgeChoice[] {
   return ridgeChoices(poly, model.top, model.northAngle.value, poly.map((_, i) => storey.edges[i]?.boundary));
 }
 export type { RidgeChoice } from './roof';
+export { applyDoubtAnswer, buildAutoProject, DOUBT_UNKNOWN, type AutoBuild } from './auto';
