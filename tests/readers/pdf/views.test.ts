@@ -436,17 +436,18 @@ function framedHairlinePlan(px: number, py: number, rooms: [string, number, numb
 }
 
 describe('page « tout en trait fin » à plusieurs plans que l’on ne sait pas séparer', () => {
-  it('deux plans encadrés et reliés, titres dans leur cadre : la page le dit, la liste des pièces mêle les niveaux', () => {
+  it('deux plans encadrés et reliés, titres dans leur cadre : le découpage par titres les sépare quand même', () => {
     const a = framedHairlinePlan(80, 200, [['Séjour', 3, 3], ['Cuisine', 8, 3]], 'Rez-de-chaussée');
     const b = framedHairlinePlan(560, 200, [['Chambre 1', 3, 3], ['Chambre 2', 8, 3]], 'Étage');
     // Un trait relie les deux cadres : une seule région de dessin, pas de découpage possible.
     const link = seg(80 + 10 * ppm(100) + 20, 300, 560 - 20, 300, 0.5);
     const texts = [...a.texts, ...b.texts, text('Échelle 1:100', 1000, 790, 9)];
     const { doc } = analysePdf([page([...a.segs, ...b.segs, link], texts)], 'deux.pdf');
-    expect(doc.sheets).toHaveLength(1);
-    expect(doc.sheets[0]!.detected.rooms.map((r) => r.name).sort()).toEqual(['Chambre 1', 'Chambre 2', 'Cuisine', 'Séjour']);
-    expect(doc.warnings.some((w) => /Plusieurs niveaux/i.test(w))).toBe(true);
-    expect(doc.sheets[0]!.detected.notes.some((n) => /plusieurs niveaux/i.test(n))).toBe(true);
+    // Chaque titre de niveau a son cadre : une feuille par niveau, chacune avec ses pièces ; plus d'avertissement.
+    expect(doc.sheets.map((s) => s.name)).toEqual(['Rez-de-chaussée', 'Étage']);
+    expect(doc.sheets[0]!.detected.rooms.map((r) => r.name).sort()).toEqual(['Cuisine', 'Séjour']);
+    expect(doc.sheets[1]!.detected.rooms.map((r) => r.name).sort()).toEqual(['Chambre 1', 'Chambre 2']);
+    expect(doc.warnings.some((w) => /Plusieurs niveaux/i.test(w))).toBe(false);
   });
 
   it('un seul plan, à côté d’un tableau dont une case dit « Étage » à la taille du texte courant : pas d’avertissement', () => {

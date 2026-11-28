@@ -9,10 +9,17 @@
  *  4. une feuille par plan : contour (fermeture robuste), pièces (étiquettes + faces si fiables), ouvertures ;
  *  5. les hauteurs lues sur les coupes du document sont distribuées aux feuilles par niveau.
  *
+ * Avant tout cela, la page est DÉCOUPÉE EN VUES d'après ses titres et ses blocs de contenu (sheetviews.ts) : quand
+ * des plans d'étage y sont reconnus avec assez de confiance, chacun devient une feuille, analysée par les étapes
+ * ci-dessus restreintes à sa vue ; les autres vues (coupes, façades, tableau, cartouche…) vont dans `doc.reading`.
+ * Sinon (page sans texte, sans titre, sans plan reconnu), les étapes ci-dessus s'appliquent à la page entière.
+ *
  * Tout ce qui est proposé est accompagné d'une remarque disant d'où il vient ; ce qui n'est pas fiable n'est
  * pas proposé (contour `undefined` + remarque) plutôt que proposé faux.
  */
 import { cleanPolygon, isSelfIntersecting, normDeg, round } from '../../core/geometry';
+import { emptyReading } from '../../core/reading';
+import type { ReadView } from '../../core/reading';
 import type { BBox, DetectedOpening, DetectedRoom, Lang, PlanDocument, PlanSheet, PlanText, Sourced, Vec2 } from '../../core/types';
 import { formatNumber } from '../../i18n';
 import { fold, guessStorey, looksLikeRoomName, parseClearHeight, roomsFromTexts } from '../../semantics/labels';
@@ -26,6 +33,9 @@ import { freeRoomName, isTotalLabel, roomAreaOf, roomyPoint } from './rooms';
 import { STANDARD_SCALES, calibrateObservations, chooseDimensionScale, declaredScales, dimensionObservations, dimensionUnitHint, secondDimensionCluster } from './scale';
 import type { DeclaredScale, DimChoice, DimObservation, DimUnit } from './scale';
 import { drawingRegions } from './regions';
+import { OUTDOOR_RE as SITE_OUTDOOR_RE, decideDims, roomZones } from './building';
+import { containsBox, splitSheet, titleKind, visiblePage } from './sheetviews';
+import type { SheetSplit } from './sheetviews';
 import { TITLE_BLOCK_RE, frameBox, inFrameCorner, isTitleBlockText } from './titleblock';
 import { buildFaces, calibrateByAreas, closedOutlines, faceAt, findWallClass, wallGaps } from './walls';
 import type { AreaCalibration, Faces, WallClass, WallGap } from './walls';
@@ -1222,6 +1232,8 @@ function pageKind(page: RawPage): PageKind {
 
 interface PageResult {
   drafts: SheetDraft[];
+  /** Vues de la page (découpage par titres et blocs), au format du contrat ; sheetId rempli pour les plans. */
+  views: ReadView[];
   warnings: string[];
   report: PageReport;
   sections: SectionReading[];
@@ -1241,15 +1253,363 @@ function wholePagePlacement(page: RawPage, kind: PageKind): SheetPlacement {
   };
 }
 
-function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult {
-  const where = multiPage ? msg(lang, 'pdf.page', { page: page.number }) : '';
+// ───────────────────────────── Découpage en vues ─────────────────────────────
+
+/** Confiance minimale d'un plan d'étage reconnu pour que le découpage commande la page (titre seul : 0,7). */
+const MIN_VIEW_CONFIDENCE = 0.65;
+/** Genres de vues dessinées : leur emprise n'appartient à aucune autre vue. */
+const DRAWN_KINDS = new Set(['floor-plan', 'roof-plan', 'section', 'elevation', 'site-plan']);
+
+function trySplit(page: RawPage, lang: Lang): SheetSplit | null {
+  if (page.texts.length === 0) return null;
+  try {
+    const dens = declaredScales(page.texts).map((d) => d.den);
+    return splitSheet(page, { den: dens[0] ?? null, lang });
+  } catch {
+    // Un découpage en échec laisse la page au chemin habituel.
+    return null;
+  }
+}
+
+/** Plans d'étage du découpage qui commandent la page, dans l'ordre des rangs. */
+function floorViews(split: SheetSplit): ReadView[] {
+  return split.views.filter((v) => v.kind === 'floor-plan' && v.confidence >= MIN_VIEW_CONFIDENCE);
+}
+
+/**
+ * Le découpage commande-t-il la page ? Il faut au moins deux plans d'étage reconnus avec assez de confiance — ou un
+ * seul, dont l'emprise du bâtiment a été lue (plan dessiné dans un cadre de situation : le chemin de la page entière
+ * y prend les limites de parcelle pour des murs) ; un plan seul sur sa page, sans cela, garde le chemin habituel, qui
+ * le lit déjà bien. Et aucun titre de niveau resté sans vue ne doit être écrit DANS un plan d'un autre rang (deux
+ * niveaux pris pour une seule vue : le chemin de la page entière le dit, le découpage le tairait).
+ */
+function viewsUsable(split: SheetSplit): boolean {
+  const floors = floorViews(split);
+  if (floors.length === 0) return false;
+  if (floors.length === 1) {
+    const fp = split.footprints.get(floors[0]!.id);
+    if (!fp?.width || !fp.depth) return false;
+  }
+  // Seul un titre au moins aussi gros que ceux des plans reconnus annonce un niveau manqué : plus petit, c'est une
+  // étiquette de pièce (« Garage ») ou une marque de niveau d'une coupe.
+  const floorTitleSize = Math.min(...split.details.filter((d, i) => d.title && floors.includes(split.views[i]!)).map((d) => d.title!.size));
+  for (const t of split.orphanTitles) {
+    if (Number.isFinite(floorTitleSize) && t.size < 0.9 * floorTitleSize) continue;
+    if (titleKind(fold(t.text)) !== 'floor-plan') continue;
+    const rank = guessStorey(t.text)?.rank;
+    if (rank === undefined) continue;
+    if (floors.some((v) => containsBox(v.box, t.box, 1) && v.storeyRank !== rank)) return false;
+  }
+  return true;
+}
+
+/**
+ * Contenu d'une vue, comme une page : textes, traits visibles, remplissages, hachures et trames dont le centre tombe
+ * dans sa boîte élargie de 3 % (cotes et titre débordent), sauf ce qui tombe dans une autre vue dessinée ou le
+ * cartouche ; et les textes de son titre. Les zones de découpe sont gardées telles quelles (mêmes indices).
+ */
+function subPage(page: RawPage, box: BBox, others: readonly BBox[], titleBox: BBox | null = null): RawPage {
+  const pad = Math.max(4, 0.03 * Math.max(box.maxX - box.minX, box.maxY - box.minY));
+  const wide: BBox = { minX: box.minX - pad, minY: box.minY - pad, maxX: box.maxX + pad, maxY: box.maxY + pad };
+  const mine = (x: number, y: number): boolean => rectDistance(x, y, wide) === 0 && (rectDistance(x, y, box) === 0 || !others.some((o) => rectDistance(x, y, o) === 0));
+  const mineBox = (b: BBox): boolean => mine((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2);
+  const reach = Math.max(box.maxX - box.minX, box.maxY - box.minY) + 2 * pad;
+  const segs = page.segs.filter((sg) => mine((sg.x0 + sg.x1) / 2, (sg.y0 + sg.y1) / 2) && Math.hypot(sg.x1 - sg.x0, sg.y1 - sg.y0) <= reach);
+  return {
+    ...page,
+    // Le titre de la vue lui appartient, même écrit un peu plus loin que ses cotes.
+    texts: page.texts.filter((t) => mine(t.cx, t.cy) || (titleBox !== null && rectDistance(t.cx, t.cy, titleBox) === 0)),
+    segs,
+    fills: page.fills.filter((f) => mineBox(f.bbox)),
+    hatches: page.hatches.filter((h) => mineBox(h.bbox)),
+    stipples: page.stipples.filter((z) => mineBox(z.bbox)),
+    imageAreas: [],
+    images: 0,
+    imageCoverage: 0,
+    imagePixelsPerPoint: 0,
+    truncated: false,
+    lightening: { rawStrokeSegs: segs.length, stippleSegs: 0, hatchSegs: 0 },
+  };
+}
+
+/** Nom lisible d'un plan d'étage dans la langue de lecture : son niveau, sinon son titre, sinon son rang sur la page. */
+function viewSheetName(view: ReadView, page: number, n: number, single: boolean, lang: Lang): string {
+  const storey = view.title ? guessStorey(view.title) : null;
+  if (storey) return storey[lang];
+  if (view.title) return capitalise(view.title.toLowerCase());
+  return single ? msg(lang, 'pdf.sheet.page', { page }) : msg(lang, 'pdf.sheet.pagePlan', { page, n });
+}
+
+/** Une étiquette « intitulé : valeur » (« Surface vitrée : 13,54 m² », « Composition mur : ») n'est pas une pièce. */
+function isCaptionLabel(page: RawPage, room: DetectedRoom): boolean {
+  const at = room.at;
+  if (!at) return false;
+  const t = page.texts.find((x) => Math.abs(x.cx - at.x) < 0.5 && Math.abs(x.cy - at.y) < 0.5);
+  return !!t && /[a-zà-ÿ]{3,}[^:]*:/i.test(t.s) && !/^\s*S\s*[:=]/i.test(t.s);
+}
+
+/**
+ * Pièces lues sur les ZONES de la vue (remplissage clair + nom + ligne de surface, voir building.ts) réunies aux
+ * pièces trouvées par les étiquettes : une zone complète la pièce de même nom écrite dedans (surface écrite, et
+ * polygone si sa surface mesurée confirme la surface écrite à 3 % près), ou devient une pièce.
+ */
+function mergeZoneRooms(page: RawPage, view: BBox, body: number, mpp: number, rooms: DetectedRoom[]): DetectedRoom[] {
+  const zones = roomZones(page, view, body);
+  const out = [...rooms];
+  for (const z of zones) {
+    const inZone = (p: Vec2): boolean => p.x >= z.fill.bbox.minX && p.x <= z.fill.bbox.maxX && p.y >= z.fill.bbox.minY && p.y <= z.fill.bbox.maxY;
+    let room = out.find((r) => r.at && inZone(r.at) && fold(r.name) === fold(z.label));
+    if (!room) {
+      const at = { x: z.nameText.cx, y: z.nameText.cy };
+      const texts: PlanText[] = [{ text: z.label, x: at.x, y: at.y, height: z.nameText.size }];
+      if (z.area !== null) texts.push({ text: `${formatNumber(z.area, 2)} m²`, x: z.areaText.cx, y: z.areaText.cy, height: z.areaText.size });
+      const made = roomsFromTexts(texts)[0];
+      room = made ? { ...made, name: z.label, at } : { name: z.label, at, heatedGuess: 'ask' };
+      if (z.area !== null) room.statedArea = z.area;
+      out.push(room);
+    } else if (room.statedArea === undefined && z.area !== null) room.statedArea = z.area;
+    if (!room.polygon && room.statedArea !== undefined) {
+      const ring = z.fill.rings.reduce((best, r) => (Math.abs(polyRingArea(r)) > Math.abs(polyRingArea(best)) ? r : best), z.fill.rings[0] ?? []);
+      const measured = Math.abs(polyRingArea(ring)) * mpp * mpp;
+      if (ring.length >= 3 && Math.abs(measured / room.statedArea - 1) <= ROOM_AREA_TOLERANCE) {
+        room.polygon = ring.map(([x, y]) => ({ x, y }));
+        room.measuredArea = round(measured, 2);
+      }
+    }
+  }
+  return out;
+}
+
+/** Aire signée d'un anneau [x, y][] (uf²). */
+function polyRingArea(r: readonly [number, number][]): number {
+  let a = 0;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += (r[j]![0] - r[i]![0]) * (r[j]![1] + r[i]![1]);
+  return a / 2;
+}
+
+/**
+ * Une feuille par plan d'étage reconnu : l'analyse habituelle (échelle, murs, contour, pièces, ouvertures) restreinte
+ * à la vue ; emprise du bâtiment lue sur la vue ; pièces hors du bâtiment marquées extérieures. Coupes et façades
+ * fournissent leurs niveaux ; les autres vues ne deviennent pas des feuilles.
+ */
+function analyseByViews(page: RawPage, split: SheetSplit, multiPage: boolean, lang: Lang, result: PageResult, kind: PageKind): PageResult {
+  const pageWhere = multiPage ? msg(lang, 'pdf.page', { page: page.number }) : '';
+  const visible = visiblePage(page);
+  const declared = [...new Set(declaredScales(page.texts).map((d) => d.den))];
+  const floors = floorViews(split);
+  const single = floors.length === 1;
+  const report = result.report;
+  report.declared = declared;
+  // Bilan de la page : les cotes se lisent sur toute la page (comme sur le chemin de la page entière) ; le calibrage
+  // par les surfaces est celui de la vue qui en recoupe le plus.
+  report.dims = chooseDimensionScale(calibrateObservations(dimensionObservations(visible)), declared, dimensionUnitHint(visible.texts));
+  const m = (declared[0] ?? 100) * METRES_PER_POINT;
+  report.views = split.views
+    .filter((v) => DRAWN_KINDS.has(v.kind))
+    .map((v) => ({
+      kind: v.kind === 'floor-plan' ? ('plan' as const) : v.kind === 'section' || v.kind === 'elevation' ? ('section' as const) : ('other' as const),
+      title: v.title,
+      areaM2: (v.box.maxX - v.box.minX) * (v.box.maxY - v.box.minY) * m * m,
+    }));
+  result.north = northDirection(page);
+  let pageWallWidth: number | null | undefined;
+  const viewWarnings: { where: string; list: string[] }[] = [];
+  floors.forEach((view, k) => {
+    pageWallWidth ??= findWallClass(visible)?.width ?? null;
+    const name = viewSheetName(view, page.number, k + 1, single, lang);
+    const others = split.views.filter((o) => o !== view && (DRAWN_KINDS.has(o.kind) || o.kind === 'title-block' || o.kind === 'table')).map((o) => o.box);
+    const sub = subPage(visible, view.box, others, view.titleBox);
+    // Les murs se cherchent dans l'emprise du bâtiment (élargie de 1,5 m) quand elle est connue : les traits forts du
+    // cadre de situation (limites de parcelle, bordures) ne sont pas des murs.
+    const building0 = view.buildingBox;
+    const grow = 1.5 / m;
+    const focus = building0 ? { minX: building0.minX - grow, minY: building0.minY - grow, maxX: building0.maxX + grow, maxY: building0.maxY + grow } : null;
+    const where = `${pageWhere}${msg(lang, 'pdf.view', { view: name })}`;
+    const res = analysePage(sub, multiPage, lang, { declared, where, focus, pageWallWidth });
+    const own = { where, list: res.warnings };
+    viewWarnings.push(own);
+    const areas = res.report.areas;
+    if (areas && (!report.areas || areas.inliers > report.areas.inliers)) report.areas = areas;
+    report.wallWidth ??= res.report.wallWidth;
+    result.sections.push(...res.sections);
+    // La vue ne donne qu'une feuille, en principe ; sinon on garde celle qui porte le plus de pièces.
+    const draft = [...res.drafts].sort((a, b) => b.sheet.detected.rooms.length - a.sheet.detected.rooms.length)[0];
+    if (!draft) return;
+    const sheet = draft.sheet;
+    const id = single ? `p${page.number}` : `p${page.number}-v${k + 1}`;
+    sheet.id = id;
+    sheet.name = name;
+    sheet.role = 'floor-plan';
+    sheet.storeyRank = view.storeyRank;
+    sheet.page = page.number;
+    sheet.bbox = { ...view.box };
+    const notes = sheet.detected.notes.filter((n) => !view.title || n !== msg(lang, 'pdf.note.title', { title: view.title }));
+    if (view.title) notes.push(msg(lang, 'pdf.note.view', { title: view.title }));
+    let fp = split.footprints.get(view.id);
+    if (!fp && sheet.detected.outline && sheet.detected.outline.length >= 3) {
+      // Repli : pas de zones de pièces (pièces sans remplissage) mais un contour fermé sur les murs — sa boîte est
+      // l'emprise ; ses dimensions sont recoupées par les cotes écrites autour, sinon laissées à confirmer.
+      const xs = sheet.detected.outline.map((q) => q.x);
+      const ys = sheet.detected.outline.map((q) => q.y);
+      const box: BBox = { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
+      const d = decideDims(sub, view.box, [{ box, source: 'outline' }], sheet.metresPerUnit?.value ?? m, lang);
+      fp = { box, confidence: 0.6, sources: [], width: d.width, depth: d.depth, doubts: [d.width.doubt, d.depth.doubt].filter((x): x is string => x !== null) };
+      view.buildingBox = box;
+      view.sources = [...view.sources, 'outline-box'];
+      view.doubts = [...view.doubts, ...fp.doubts];
+    }
+    if (fp?.width && fp.depth) {
+      const confidence = Math.min(fp.width.confidence, fp.depth.confidence);
+      sheet.detected.footprintSize = { width: round(fp.width.value, 2), depth: round(fp.depth.value, 2), confidence: round(confidence, 2) };
+      notes.push(msg(lang, confidence >= 0.8 ? 'pdf.note.building' : 'pdf.note.building.doubt', { width: formatNumber(fp.width.value, 2), depth: formatNumber(fp.depth.value, 2) }));
+    }
+    // Pièces : un intitulé « … : » n'en est pas une ; une pièce extérieure (terrasse) ou écrite hors de l'emprise du
+    // bâtiment est marquée extérieure : jamais comptée.
+    const building = view.buildingBox;
+    // Échelle de la page (cartouche) recoupée par l'emprise : une cote hors tout écrite qui tombe sur la longueur
+    // mesurée à cette échelle (boîte des murs ou toiture) la confirme, même si les chaînes de cotes n'ont pu être lues.
+    const pageDen = declared[0];
+    if (fp && pageDen !== undefined && sheet.metresPerUnit && sheet.metresPerUnit.from !== 'plan' && Math.abs(sheet.metresPerUnit.value / (pageDen * METRES_PER_POINT) - 1) < 0.005) {
+      const confirmed = [fp.width, fp.depth].filter((d) => d && d.confidence >= 0.8 && d.votes.some((x) => x.source === 'cote') && d.votes.some((x) => x.source !== 'cote' && Math.abs(x.value - d.value) <= 0.05));
+      if (confirmed.length >= 1 && fp.width && fp.depth) {
+        const estimate = capitalise(msg(lang, 'pdf.warn.scale.estimate', { where: `${pageWhere}${msg(lang, 'pdf.view', { view: name })}` }));
+        sheet.metresPerUnit = { value: pageDen * METRES_PER_POINT, from: 'plan', note: msg(lang, 'pdf.scale.agree.building', { scale: scaleLabel(pageDen), width: formatNumber(fp.width.value, 2), depth: formatNumber(fp.depth.value, 2) }) };
+        own.list = own.list.filter((w) => w !== estimate);
+      }
+    }
+    const mpp = sheet.metresPerUnit?.value ?? m;
+    const rooms = mergeZoneRooms(
+      sub,
+      view.box,
+      split.body,
+      mpp,
+      sheet.detected.rooms.filter((r) => !isCaptionLabel(sub, r)),
+    );
+    const outside: string[] = [];
+    for (const r of rooms) {
+      const named = r.name !== '' && SITE_OUTDOOR_RE.test(fold(r.name));
+      const away = building !== null && r.at !== undefined && rectDistance(r.at.x, r.at.y, building) > 0.3 / mpp;
+      if (!named && !away) continue;
+      r.exterior = true;
+      r.heatedGuess = 'no';
+      outside.push(r.name);
+    }
+    if (outside.length > 0) notes.push(msg(lang, 'pdf.note.rooms.exterior', { rooms: outside.join(', ') }));
+    sheet.detected.rooms = rooms;
+    sheet.detected.notes = notes;
+    view.sheetId = id;
+    result.drafts.push({ sheet, placement: wholePagePlacement(page, kind), rank: view.storeyRank });
+  });
+  // Coupes et façades : leurs niveaux et hauteurs libres vont aux plans.
+  const den = declared[0] ?? null;
+  for (const v of split.views) {
+    if (v.kind !== 'section' && v.kind !== 'elevation') continue;
+    const texts = visible.texts.filter((t) => rectDistance(t.cx, t.cy, v.box) === 0);
+    result.sections.push(readSection(texts, den !== null ? den * METRES_PER_POINT : null));
+  }
+  result.warnings.push(...mergeViewWarnings(viewWarnings, pageWhere));
+  const first = result.drafts[0]?.sheet.metresPerUnit;
+  report.scaleDen = first ? round(first.value / METRES_PER_POINT, 2) : den;
+  return result;
+}
+
+/**
+ * Avertissements des vues d'une page : celui que TOUTES les vues donnent dans les mêmes mots (« tous les traits ont la
+ * même épaisseur ») n'est dit qu'une fois, pour la page ; les autres gardent le nom de leur vue.
+ */
+function mergeViewWarnings(views: readonly { where: string; list: string[] }[], pageWhere: string): string[] {
+  const restOf = (w: string, where: string): string | null => (where && w.toLowerCase().startsWith(where.toLowerCase()) ? w.slice(where.length) : null);
+  const out: string[] = [];
+  const shared = new Set<string>();
+  if (views.length > 1) {
+    for (const w of views[0]!.list) {
+      const rest = restOf(w, views[0]!.where);
+      if (rest !== null && views.every((v) => v.list.some((x) => restOf(x, v.where) === rest))) shared.add(rest);
+    }
+  }
+  for (const rest of shared) out.push(capitalise(pageWhere + rest));
+  for (const v of views) for (const w of v.list) {
+    const rest = restOf(w, v.where);
+    if (rest === null || !shared.has(rest)) out.push(w);
+  }
+  return out;
+}
+
+/**
+ * Traits de murs d'une VUE : un morceau de moins de 15 cm, hors courbe, n'est pas un mur quand il est oblique, ou
+ * quand l'une de ses extrémités est libre (aucun autre trait de mur à moins d'un demi-point) : c'est un tiret d'une
+ * ligne tiretée dessinée trait par trait à l'épaisseur des murs (limite, axe, débord). Un vrai petit morceau de mur
+ * (tableau de baie, retour) touche des murs par ses deux bouts. Ces tirets ne changent pas le contour mais rendent sa
+ * fermeture très lente (une seconde et plus pour quelques centaines de morceaux).
+ */
+function viewWalls(walls: WallClass | null, ctx: ViewContext | undefined, den: number): WallClass | null {
+  if (!walls || !ctx) return walls;
+  const short = 0.15 / (den * METRES_PER_POINT);
+  const TOUCH = 0.5;
+  const all = walls.segs;
+  const touches = (x: number, y: number, self: RawSeg): boolean =>
+    all.some((o) => {
+      if (o === self) return false;
+      if (x < Math.min(o.x0, o.x1) - TOUCH || x > Math.max(o.x0, o.x1) + TOUCH || y < Math.min(o.y0, o.y1) - TOUCH || y > Math.max(o.y0, o.y1) + TOUCH) return false;
+      return pointSegDistance(x, y, o) <= TOUCH;
+    });
+  const segs = all.filter((sg) => {
+    if (sg.curve) return true;
+    const dx = Math.abs(sg.x1 - sg.x0);
+    const dy = Math.abs(sg.y1 - sg.y0);
+    const len = Math.hypot(dx, dy);
+    if (len >= short) return true;
+    const axis = Math.min(dx, dy) <= 0.035 * len;
+    return axis && touches(sg.x0, sg.y0, sg) && touches(sg.x1, sg.y1, sg);
+  });
+  return segs.length === all.length ? walls : { width: walls.width, segs };
+}
+
+/** Distance d'un point à un trait (uf). */
+function pointSegDistance(x: number, y: number, s: RawSeg): number {
+  const vx = s.x1 - s.x0;
+  const vy = s.y1 - s.y0;
+  const l2 = vx * vx + vy * vy;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((x - s.x0) * vx + (y - s.y0) * vy) / l2)) : 0;
+  return Math.hypot(x - (s.x0 + t * vx), y - (s.y0 + t * vy));
+}
+
+/** Murs d'une vue d'après l'épaisseur lue sur la page entière (voir ViewContext.pageWallWidth). */
+function pageWallsInView(page: RawPage, ctx: ViewContext | undefined): WallClass | null {
+  const width = ctx?.pageWallWidth ?? null;
+  if (width === null) return null;
+  const segs = page.segs.filter((s) => s.stroke && !s.dash && Math.abs(s.w - width) < 0.011 && Math.hypot(s.x1 - s.x0, s.y1 - s.y0) > 0.05);
+  return segs.length >= 4 ? { width, segs } : null;
+}
+
+/**
+ * Analyse d'une VUE de la page : `page` n'en porte que le contenu (voir subPage), l'échelle annoncée dans le cartouche
+ * de la page lui est transmise, et les messages nomment la vue.
+ */
+interface ViewContext {
+  /** Échelles annoncées sur la page (cartouche), utilisées si la vue n'en écrit aucune. */
+  declared: number[];
+  /** Préfixe des messages (« Page 2 : « Rez-de-chaussée » : »). */
+  where: string;
+  /** Emprise du bâtiment élargie, si elle est connue : la classe des murs s'y cherche. */
+  focus: BBox | null;
+  /**
+   * Épaisseur des murs lue sur la page entière (repli) : une vue seule peut n'avoir qu'une épaisseur de trait, la
+   * hiérarchie des épaisseurs se lisant alors en la comparant au reste de la planche.
+   */
+  pageWallWidth: number | null;
+}
+
+function analysePage(page: RawPage, multiPage: boolean, lang: Lang, ctx?: ViewContext): PageResult {
+  const where = ctx ? ctx.where : multiPage ? msg(lang, 'pdf.page', { page: page.number }) : '';
   const say = (key: string, params: Record<string, string | number> = {}): string => capitalise(msg(lang, key, { where, ...params }));
-  const kind = pageKind(page);
+  // Une vue appartient à une page vectorielle déjà reconnue : peu de traits ne la rendent pas « vide ».
+  const kind: PageKind = ctx ? 'vector' : pageKind(page);
   const warnings: string[] = [];
   const report: PageReport = { page: page.number, kind, declared: [], dims: null, areas: null, scaleDen: null, wallWidth: null, views: [], sheets: 0 };
-  const result: PageResult = { drafts: [], warnings, report, sections: [], north: null, sectionOnly: false };
-  if (page.turned !== 0) warnings.push(say('pdf.warn.turned'));
-  if (page.truncated) warnings.push(say('pdf.warn.truncated'));
+  const result: PageResult = { drafts: [], views: [], warnings, report, sections: [], north: null, sectionOnly: false };
+  if (!ctx && page.turned !== 0) warnings.push(say('pdf.warn.turned'));
+  if (!ctx && page.truncated) warnings.push(say('pdf.warn.truncated'));
 
   const display = displaySegments(page, null);
   const wholeSheet = (scale: Sourced<number> | null, rooms: DetectedRoom[], notes: string[]): SheetDraft => {
@@ -1275,9 +1635,22 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
     return result;
   }
 
-  const walls = findWallClass(page);
-  const declaredAll = declaredScales(page.texts);
-  const declared = [...new Set(declaredAll.map((d) => d.den))];
+  // Découpage en vues d'abord : une feuille par plan d'étage reconnu ; sinon, chemin de la page entière ci-dessous.
+  if (!ctx) {
+    const split = trySplit(page, lang);
+    if (split) {
+      result.views = split.views;
+      if (viewsUsable(split)) return analyseByViews(page, split, multiPage, lang, result, kind);
+    }
+  }
+
+  const focus = ctx?.focus ?? null;
+  const walls = viewWalls(findWallClass(focus ? { ...page, segs: page.segs.filter((sg) => rectDistance((sg.x0 + sg.x1) / 2, (sg.y0 + sg.y1) / 2, focus) === 0) } : page) ?? pageWallsInView(page, ctx), ctx, ctx?.declared[0] ?? 100);
+  const ownDeclared = declaredScales(page.texts);
+  // Vue sans échelle écrite : celle du cartouche de la page (ses indices de texte ne valent pas ici : aucun intitulé).
+  const inherited = ctx && ownDeclared.length === 0 && ctx.declared.length > 0;
+  const declaredAll = inherited ? [] : ownDeclared;
+  const declared = inherited ? [...(ctx?.declared ?? [])] : [...new Set(declaredAll.map((d) => d.den))];
   const observations = dimensionObservations(page);
   const hint = dimensionUnitHint(page.texts);
   const scale = decideScale({ declared, source: 'block', observations, hint, labels: areaLabels(page.texts), walls }, lang, where);
@@ -1330,7 +1703,7 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
     // Pas d'échelle, ou pas de murs reconnaissables : la page entière, avec ce que le texte donne.
     const rooms = allRooms();
     const labelled = rooms.filter((r) => r.statedArea !== undefined).length;
-    if (labelled === 0 && pageTitles.length > 0 && pageStoreys.length === 0) {
+    if (!ctx && labelled === 0 && pageTitles.length > 0 && pageStoreys.length === 0) {
       // Une coupe ou une façade en traits fins : pas un plan.
       result.sections.push(readSection(page.texts, scale.den !== null ? scale.den * METRES_PER_POINT : null));
       result.sectionOnly = true;
@@ -1387,7 +1760,7 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
         return result;
       }
       const sectionView = split.views.find((v) => v.kind === 'section');
-      if (sectionView && split.views.every((v) => v.kind !== 'plan') && split.kept.length === 0) {
+      if (!ctx && sectionView && split.views.every((v) => v.kind !== 'plan') && split.kept.length === 0) {
         // Rien que des coupes ou façades, reconnues à leur titre : pas un plan.
         result.sections.push(readSection(page.texts, scale.den !== null ? scale.den * METRES_PER_POINT : null));
         result.sectionOnly = true;
@@ -1443,7 +1816,7 @@ function analysePage(page: RawPage, multiPage: boolean, lang: Lang): PageResult 
   }
 
   if (plans.length === 0) {
-    if (sections.length > 0) {
+    if (!ctx && sections.length > 0) {
       result.sectionOnly = true;
       warnings.push(sections[0]!.title ? say('pdf.warn.section', { title: sections[0]!.title.s }) : say('pdf.warn.section.untitled'));
       return result;
@@ -1550,6 +1923,8 @@ export function analysePdf(pages: readonly RawPage[], fileName: string, options:
   const sections: SectionReading[] = [];
   const sectionPages: RawPage[] = [];
   let north: number | null = null;
+  // Les autres champs de la lecture (cartouche, niveaux, compositions…) sont remplis par leurs propres lecteurs.
+  const reading = emptyReading();
 
   for (const page of pages) {
     let result: PageResult;
@@ -1571,6 +1946,7 @@ export function analysePdf(pages: readonly RawPage[], fileName: string, options:
       if (page.texts.length > 0) sheet.texts = sheetTexts(page.texts);
       result = {
         drafts: [{ sheet, placement: wholePagePlacement(page, kind), rank: null }],
+        views: [],
         warnings: [capitalise(msg(lang, 'pdf.warn.analysis', { where }))],
         report: { page: page.number, kind, declared: [], dims: null, areas: null, scaleDen: null, wallWidth: null, views: [], sheets: 0 },
         sections: [],
@@ -1579,6 +1955,11 @@ export function analysePdf(pages: readonly RawPage[], fileName: string, options:
       };
     }
     result.report.sheets = result.drafts.length;
+    for (const d of result.drafts) {
+      d.sheet.page ??= page.number;
+      if (d.sheet.storeyRank === undefined && d.rank !== null) d.sheet.storeyRank = d.rank;
+    }
+    reading.views.push(...result.views);
     reports.push(result.report);
     warnings.push(...result.warnings);
     drafts.push(...result.drafts);
@@ -1641,7 +2022,11 @@ export function analysePdf(pages: readonly RawPage[], fileName: string, options:
     sheets: drafts.map((d) => d.sheet),
     storeysAligned: false,
     warnings: [...new Set(warnings)],
+    reading,
   };
+  // Garde-fou : une vue ne renvoie qu'à une feuille du document.
+  const ids = new Set(doc.sheets.map((s) => s.id));
+  for (const v of reading.views) if (v.sheetId !== null && !ids.has(v.sheetId)) v.sheetId = null;
   if (north !== null) {
     // `north` = direction du nord, en degrés horaires depuis le haut ; le haut de la feuille pointe donc vers −north.
     doc.northAngle = { value: round(normDeg(-north), 1), from: 'estimate', note: msg(lang, 'pdf.north.note') };

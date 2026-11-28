@@ -74,8 +74,8 @@ describe('A — tous les traits de la même épaisseur (export « tout en trait 
     expect(etage.detected.rooms.map((r) => r.name).sort()).toEqual(['Chambre 1', 'Chambre 2', 'Chambre 3', 'Palier', 'SdB']);
     // « Grenier (non chauffé) » est écrit dans la coupe A-A : ce n'est une pièce d'aucun des deux plans.
     expect(doc.sheets.some((s) => s.detected.rooms.some((r) => /Grenier/.test(r.name)))).toBe(false);
-    expect(rdc.detected.notes.join('\n')).toMatch(/Étiquettes écartées.*Grenier/);
-    expect(rdc.detected.notes.join('\n')).toMatch(/d’après leur place sur la page/);
+    // Découpage par titres : chaque feuille ne reçoit que le texte de sa vue, la coupe n'y entre pas.
+    expect(rdc.detected.notes.join('\n')).toMatch(/Vue lue sur la planche : « Rez-de-chaussée »/);
     // Chaque feuille ne garde que les traits de son plan.
     expect(rdc.segments!.length).toBeLessThan(hairline(await firstPage('fr_A3_1-100.pdf')).segs.length * 4 * 0.7);
   });
@@ -88,10 +88,10 @@ describe('A — tous les traits de la même épaisseur (export « tout en trait 
     const ys = rooms.map((r) => r.at!.y);
     const link = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys), w: 0.5, curve: false, stroke: true, fill: false, dash: false, pid: 0 };
     const doc = analyse({ ...p, segs: [...p.segs, link] });
-    expect(doc.sheets).toHaveLength(1);
-    expect(doc.sheets[0]!.name).toBe('Page 1');
-    expect(doc.warnings.some((w) => /plusieurs niveaux sur cette page n’ont pas pu être séparés/i.test(w))).toBe(true);
-    expect(doc.sheets[0]!.detected.notes.join('\n')).toMatch(/La liste des pièces couvre toute la page/);
+    // Les titres de niveau délimitent les vues malgré le trait qui relie les plans : une feuille par niveau.
+    expect(doc.sheets.map((s) => s.name)).toEqual(['Rez-de-chaussée', 'Étage']);
+    expect(doc.sheets[1]!.detected.rooms.map((r) => r.name).sort()).toEqual(['Chambre 1', 'Chambre 2', 'Chambre 3', 'Palier', 'SdB']);
+    expect(doc.warnings.some((w) => /plusieurs niveaux sur cette page n’ont pas pu être séparés/i.test(w))).toBe(false);
   });
 
   it.fails('LIMITE CONNUE : sans hiérarchie d’épaisseurs, pas de contour ni de découpage en vues', async () => {
@@ -108,8 +108,9 @@ describe('B — sans cotes', () => {
     for (const s of doc.sheets) {
       expect(scaleDen(s)).toBeCloseTo(100, 6);
       expect(s.metresPerUnit!.from).toBe('plan');
-      expect(s.metresPerUnit!.note).toMatch(/surfaces écrites de 11 pièces/);
     }
+    // Chaque plan est confirmé par les surfaces écrites DANS sa vue (7 au rez-de-chaussée, 4 à l'étage).
+    expect(doc.sheets.map((s) => s.metresPerUnit!.note!.match(/surfaces écrites de (\d+) pièces/)?.[1])).toEqual(['7', '4']);
     const [rdc, etage] = outlineAreas(doc);
     expect(Math.abs(rdc! / 114.75 - 1)).toBeLessThan(0.01);
     expect(Math.abs(etage! / 85 - 1)).toBeLessThan(0.01);
@@ -163,8 +164,10 @@ describe('C — sans surfaces écrites', () => {
     for (const s of doc.sheets) {
       expect(scaleDen(s)).toBeCloseTo(100, 6);
       expect(s.metresPerUnit!.from).toBe('plan');
-      expect(s.metresPerUnit!.note).toMatch(/41 cotes concordantes \(cotes entières lues en cm\)/);
+      expect(s.metresPerUnit!.note).toMatch(/cotes concordantes \(cotes entières lues en cm\)/);
     }
+    // Cotes lues dans la vue de chaque plan (la coupe garde les siennes).
+    expect(doc.sheets.map((s) => s.metresPerUnit!.note!.match(/(\d+) cotes concordantes/)?.[1])).toEqual(['22', '10']);
   });
 });
 

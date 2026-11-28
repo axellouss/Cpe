@@ -73,9 +73,10 @@ describe('fr_A3_1-100.pdf — une page, deux plans et une coupe', () => {
       expect(s.metresPerUnit!.from).toBe('plan');
       expect(s.metresPerUnit!.note).toMatch(/1:100/);
       expect(s.metresPerUnit!.note).toMatch(/cartouche/);
-      expect(s.metresPerUnit!.note).toMatch(/41 cotes/);
-      expect(s.metresPerUnit!.note).toMatch(/11 pièces/);
     }
+    // Chaque plan est recoupé par les cotes et les surfaces écrites de SA vue.
+    expect(doc.sheets.map((s) => s.metresPerUnit!.note!.match(/(\d+) cotes/)?.[1])).toEqual(['22', '10']);
+    expect(doc.sheets.map((s) => s.metresPerUnit!.note!.match(/(\d+) pièces/)?.[1])).toEqual(['7', '4']);
     // Toutes les cotes du plan (41) ont trouvé leur intervalle, lues en centimètres.
     const report = details.pages[0]!;
     const cotes = truth.pages[0]!.views.reduce((n, v) => n + v.dims.length, 0);
