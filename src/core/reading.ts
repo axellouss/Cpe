@@ -167,9 +167,9 @@ export type LevelRole =
   | 'unknown';
 
 export interface ReadLevelMark {
-  /** Cote relative (m), p. ex. +3,145 ; null si seule l'altitude est écrite. */
+  /** Cote relative (m), p. ex. +3,10 ; null si seule l'altitude est écrite. */
   rel: number | null;
-  /** Altitude (m), p. ex. 252,69 ; null si absente. */
+  /** Altitude (m), p. ex. 312,45 ; null si absente. */
   abs: number | null;
   raw: string;
   label: string | null;
@@ -293,7 +293,7 @@ export interface ReadOpeningPair {
   at: Vec2;
 }
 
-/** Encadré d'éclairement naturel d'une pièce de vie (« Surface vitrée : 13,54 m² »). */
+/** Encadré d'éclairement naturel d'une pièce de vie (« Surface vitrée : 9,80 m² »). */
 export interface ReadGlazingBox {
   viewId: string | null;
   room: string | null;
